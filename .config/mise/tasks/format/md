@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#MISE description="Format Markdown with rumdl"
+set -euo pipefail
+
+# Same scoping as lint:md — see that task for why each split exists.
+rumdl fmt README.md skills/*/README.md skills/*/SKILL.md
+rumdl fmt --extend-disable MD057 skills/*/references/
+
+# skills/*/examples/ is excluded in .rumdl.toml: byte-exact test fixtures whose
+# contents the fidelity assertions depend on. Never run a formatter over them.

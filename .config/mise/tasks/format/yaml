@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#MISE description="Format YAML files with yamlfmt"
+set -euo pipefail
+
+yaml_files=$(git ls-files -co --exclude-standard '*.yaml' '*.yml')
+if [ -n "$yaml_files" ]; then
+  while IFS= read -r file; do
+    yamlfmt "$file"
+  done <<< "$yaml_files"
+else
+  echo "No standalone YAML files."
+fi
+
+# SKILL.md frontmatter is deliberately NOT formatted. lint:yaml validates it,
+# but rewriting it means splicing yamlfmt's output back into a Markdown file,
+# and yamlfmt is free to re-style or fold the long `description:` scalar —
+# the one field whose exact text decides whether the skill triggers.

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+#MISE description="Run all lint tasks (js, md, yaml)"
+#MISE depends=["lint:js", "lint:md", "lint:yaml"]

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+#MISE description="Run all test tasks (js)"
+#MISE depends=["test:js"]

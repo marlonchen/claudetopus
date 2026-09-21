@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Lint Markdown with rumdl"
+set -euo pipefail
+
+# Prose docs get the full ruleset.
+rumdl check README.md skills/*/README.md skills/*/SKILL.md
+
+# Reference templates additionally waive MD057 (relative link must exist):
+# their links are deliberate placeholders — {topic-name}/{article}.md,
+# other-article.md — that are meant to illustrate a shape, not resolve.
+rumdl check --extend-disable MD057 skills/*/references/
+
+# skills/*/examples/ is excluded in .rumdl.toml; see the comment there.

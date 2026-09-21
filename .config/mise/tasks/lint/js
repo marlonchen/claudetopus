@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Lint and format-check JavaScript with Biome"
+set -euo pipefail
+biome check skills/

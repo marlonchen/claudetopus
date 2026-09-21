@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+commit_msg_file="$1"
+# Only the subject line is validated, and only the subject decides whether the
+# merge/fixup escape below applies. Grepping the whole message would let any
+# commit whose *body* mentions "Merge" skip every check here.
+subject=$(head -n1 "$commit_msg_file")
+
+# Skip merge commits and fixup commits
+if printf '%s\n' "$subject" | grep -qE "^(Merge|fixup!|squash!)"; then
+    exit 0
+fi
+
+# Check commit message format: type(scope): description
+# Valid types: feat, fix, docs, style, refactor, test, chore, build, ci, perf, revert
+pattern="^(feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert)(\([a-zA-Z0-9_-]+\))?: .+"
+
+if ! printf '%s\n' "$subject" | grep -qE "$pattern"; then
+    echo "Error: Invalid commit message format."
+    echo ""
+    echo "Expected format: type(scope): description"
+    echo "  type: feat|fix|docs|style|refactor|test|chore|build|ci|perf|revert"
+    echo "  scope: optional, e.g., (api), (ui), (auth)"
+    echo "  description: brief description of changes"
+    echo ""
+    echo "Examples:"
+    echo "  feat(ui): add login form"
+    echo "  fix(api): handle null response"
+    echo "  chore: update dependencies"
+    exit 1
+fi
+
+# Check commit message length (first line should be <= 50 chars)
+if [ ${#subject} -gt 50 ]; then
+    echo "Error: Commit message first line is too long (${#subject} chars)."
+    echo "First line must be 50 characters or less."
+    exit 1
+fi
+
+echo "Commit message format valid."

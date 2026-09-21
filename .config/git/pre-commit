@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Running pre-commit checks..."
+
+# Check for empty commit (no staged files)
+if git diff --cached --quiet; then
+    echo "Error: No files staged for commit."
+    exit 1
+fi
+
+# Check that all changed files are staged (no partial commits).
+#
+# Read line by line and compare with grep -Fxq: a `for file in $unstaged`
+# loop splits paths on whitespace (so `my file.txt` becomes two tokens that
+# match nothing and the check silently passes), and an unanchored regex
+# match would treat `.` and `[` in a path as metacharacters.
+# core.quotePath=false keeps non-ASCII paths as literal UTF-8 on both sides.
+staged=$(git -c core.quotePath=false diff --cached --name-only)
+while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if printf '%s\n' "$staged" | grep -Fxq -- "$file"; then
+        echo "Error: File '$file' has both staged and unstaged changes."
+        echo "Please stage all changes or stash unstaged changes before committing."
+        exit 1
+    fi
+done <<< "$(git -c core.quotePath=false diff --name-only)"
+
+# Run lint
+echo "Running lint..."
+mise run lint || exit 1
+
+# Run tests
+echo "Running tests..."
+mise run test || exit 1
+
+echo "Pre-commit checks passed!"

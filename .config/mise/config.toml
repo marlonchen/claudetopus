@@ -1,0 +1,13 @@
+# The mywiki skill's checker is deliberately zero-dependency and runs on any
+# Node 20+, so Node is intentionally NOT pinned here: `mise run test` should
+# exercise whatever Node the developer (and the installed skill) actually uses.
+# The linters below are pinned; all three are standalone binaries from aqua,
+# so the repo still needs no package.json, no node_modules, and no Python.
+[tools]
+biome = "latest"   # JavaScript
+rumdl = "latest"   # Markdown
+yamlfmt = "latest" # YAML
+
+[env]
+# Load variables from the .env and .env.local files
+_.file = [".env"]

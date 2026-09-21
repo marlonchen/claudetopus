@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#MISE description="Lint YAML files and skill frontmatter with yamlfmt"
+set -euo pipefail
+
+status=0
+
+# Standalone YAML files. There are none in the repo today; this covers
+# workflows and configs as they get added.
+yaml_files=$(git ls-files -co --exclude-standard '*.yaml' '*.yml')
+if [ -n "$yaml_files" ]; then
+  while IFS= read -r file; do
+    yamlfmt -lint "$file" || status=1
+  done <<< "$yaml_files"
+else
+  echo "No standalone YAML files."
+fi
+
+# Skill frontmatter is the only YAML this repo actually carries, and it is
+# load-bearing: Claude Code reads name/description from it to decide when the
+# skill fires, so a malformed block silently stops the skill from triggering.
+for skill in skills/*/SKILL.md; do
+  [ -e "$skill" ] || continue
+  if ! frontmatter=$(awk 'NR==1{if($0!="---") exit 1; next} $0=="---"{exit} {print}' "$skill"); then
+    echo "$skill: missing YAML frontmatter" >&2
+    status=1
+    continue
+  fi
+  if printf '%s\n' "$frontmatter" | yamlfmt -lint - >/dev/null 2>&1; then
+    echo "$skill: frontmatter OK"
+  else
+    echo "$skill: invalid YAML frontmatter" >&2
+    status=1
+  fi
+done
+
+exit "$status"

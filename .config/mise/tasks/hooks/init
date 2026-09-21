@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#MISE description="Point git at the tracked hooks in .config/git"
+set -euo pipefail
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+
+# core.hooksPath rather than copying into .git/hooks: a copy goes stale the
+# moment someone edits .config/git/*, and nothing tells you it has. The hook
+# files are tracked mode 755, so they are directly runnable from here.
+git -C "$PROJECT_ROOT" config core.hooksPath .config/git
+echo "✓ core.hooksPath -> .config/git"
+
+# Remove copies left behind by the older version of this task, which git now
+# ignores entirely — leaving them is just a second, silently dead copy.
+for hook in pre-commit commit-msg; do
+    stale="$PROJECT_ROOT/.git/hooks/$hook"
+    if [ -f "$stale" ]; then
+        rm "$stale"
+        echo "✓ Removed stale .git/hooks/$hook (superseded by core.hooksPath)"
+    fi
+done
+
+echo ""
+echo "Git hooks installed successfully!"

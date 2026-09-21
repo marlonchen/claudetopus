@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Run JavaScript tests with the node:test builtin"
+set -euo pipefail
+node --test skills/mywiki/tests/

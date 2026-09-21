@@ -1,0 +1,18 @@
+# Markdown lint configuration.
+
+[global]
+respect-gitignore = true
+
+# MD013 (line length): SKILL.md and the reference templates are prose read by
+#   an LLM, not wrapped for a terminal. Hard-wrapping them would be churn.
+disable = ["MD013"]
+
+exclude = [
+    ".git",
+    ".rumdl_cache",
+    # Byte-exact test fixtures. tests/check_evidence.test.js asserts these two
+    # files produce 0 fidelity suspects, which requires every number, date and
+    # quote to match verbatim between the raw file and the article. Reformatting
+    # them would silently break the suite.
+    "skills/mywiki/examples",
+]

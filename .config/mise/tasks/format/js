@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Format JavaScript with Biome"
+set -euo pipefail
+biome check --write skills/
