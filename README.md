@@ -30,35 +30,44 @@ curl https://mise.run | sh   # anything else
 Adding `eval "$(mise activate zsh)"` to your shell rc is optional. `mise run <task>`
 resolves the tools it needs on its own, so every command below works without it.
 
-### 2. Trust the config and install the tools
+### 2. Trust the config
 
 ```bash
 mise trust
-mise install
 ```
 
-`mise trust` is required, not optional — `.config/mise/config.toml` sets environment
-variables, so mise refuses to parse it until the repo is trusted and every later
-command fails with a trust error.
+Required, not optional, and deliberately a step of its own: `.config/mise/config.toml`
+sets environment variables, so mise refuses to parse it — or to run any task in this
+repo — until you trust it. That is a decision about letting this checkout's config act
+on your machine, so it stays an explicit thing you do rather than something a setup
+task does on your behalf. (Run `mise init` first and mise will prompt you for it; in a
+non-interactive environment there is no prompt, only an error.)
 
-`mise install` fetches three standalone binaries:
+### 3. Set up the repo
+
+```bash
+mise init
+```
+
+One task for both mechanical setup steps:
+
+1. **Hooks** — `mise run hooks:init` points git's `core.hooksPath` at `.config/git`, so
+   the tracked scripts run directly and can never drift from a stale copy in
+   `.git/hooks`. `pre-commit` rejects partial commits and runs `mise run lint` plus
+   `mise run test`; `commit-msg` enforces the message format below.
+2. **Tools** — `mise install` fetches the three standalone binaries below.
+
+`mise init` is this repo's task, not a mise builtin — `mise <task>` is shorthand for
+`mise run <task>`, and `mise run init` is the unambiguous form. It is idempotent: run it
+again any time to re-check the setup.
+
+The tools `mise install` provisions:
 
 | Tool | Covers | Config |
 | --- | --- | --- |
 | [biome](https://biomejs.dev) | JavaScript lint + format | `biome.jsonc` |
 | [rumdl](https://github.com/rvben/rumdl) | Markdown lint + format | `.rumdl.toml` |
 | [yamlfmt](https://github.com/google/yamlfmt) | YAML lint + format | none |
-
-### 3. Install the git hooks
-
-```bash
-mise run hooks:init
-```
-
-This points git's `core.hooksPath` at `.config/git`, so the tracked scripts run directly
-and can never drift from a stale copy in `.git/hooks`. `pre-commit` rejects partial commits
-and runs `mise run lint` plus `mise run test`; `commit-msg` enforces the message format
-below.
 
 ## Tasks
 
@@ -68,6 +77,8 @@ mise tasks   # list them all
 
 | Task | Does |
 | --- | --- |
+| `mise run init` | Install the tools and the git hooks |
+| `mise run hooks:init` | Just the git hooks half of `init` |
 | `mise run lint` | All of the below |
 | `mise run lint:js` | Biome check over `skills/` |
 | `mise run lint:md` | rumdl over the prose docs and reference templates |
@@ -108,10 +119,10 @@ fix: handle missing raw.config
 
 ```text
 .config/
-  git/               # hook scripts, installed by `mise run hooks:init`
+  git/               # hook scripts, installed by `mise init`
   mise/
     config.toml      # tool pins and env
-    tasks/           # lint/, format/, test/, hooks/
+    tasks/           # init, lint/, format/, test/, hooks/
 skills/
   mywiki/            # the skill: SKILL.md, references, scripts, tests
 biome.jsonc          # JavaScript lint + format config
