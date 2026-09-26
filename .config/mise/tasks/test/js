@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
 #MISE description="Run JavaScript tests with the node:test builtin"
 set -euo pipefail
-node --test skills/mywiki/tests/
+
+# `node --test <dir>` exits 0 when it discovers nothing, so a test file renamed
+# off the *.test.js pattern — or a tests/ directory that moves — would leave
+# every caller (the pre-commit hook, CI) reporting green while running zero
+# tests. Discover the files here and treat an empty set as a failure.
+shopt -s nullglob
+files=(skills/*/tests/*.test.js)
+if [ ${#files[@]} -eq 0 ]; then
+    echo "Error: no test files discovered under skills/*/tests/" >&2
+    exit 1
+fi
+
+node --test "${files[@]}"
