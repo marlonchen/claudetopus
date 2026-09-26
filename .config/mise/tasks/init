@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="Set up the repo: install the tools and the git hooks"
+set -euo pipefail
+
+# Trust is deliberately not handled here. mise refuses to parse
+# .config/mise/config.toml until the repo is trusted, and this task lives under
+# that config — so `mise trust` has to happen before this file can even be
+# read, and a call to it here could never be what grants trust. It is also a
+# security decision that belongs to the person running it, not to a setup task.
+
+# Hooks before tools, deliberately. hooks:init is offline and cannot fail;
+# `mise install` can, and under `set -e` a failure there would abort before the
+# hooks were wired. git says nothing when core.hooksPath is unset, so that
+# half-finished setup would commit with no lint, no tests, and no message
+# check, silently. This order makes the same failure loud instead: the hooks
+# are in place, so the next `git commit` stops at `mise run lint`.
+echo "==> Git hooks"
+mise run hooks:init
+
+echo ""
+echo "==> Tools"
+mise install
+
+echo ""
+echo "Setup complete. Next: mise run lint && mise run test"
