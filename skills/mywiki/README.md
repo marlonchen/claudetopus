@@ -109,6 +109,7 @@ scripts/
   check_evidence.js             # wiki lint: source-fidelity checker (report-only)
 tests/
   check_evidence.test.js
+  template-parity.test.js       # asserts the two day templates stay identical apart from Reflections
 ```
 
 ## Requirements
