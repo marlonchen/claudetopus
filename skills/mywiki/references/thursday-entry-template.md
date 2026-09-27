@@ -34,16 +34,14 @@
 
 ---
 
-## Reflections
+## Weekly Reflection
 
-### What Happened
+### What went well
 
-### How I feel
+### What didn't
 
-### Thoughts
+### Why (root cause, not blame)
 
-### End of Day Micro-reflection
+### Lessons / patterns noticed
 
-* 3 good:
-* 2 learned:
-* 1 to improve:
+### One change for next week
