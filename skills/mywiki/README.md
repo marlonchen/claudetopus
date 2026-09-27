@@ -2,10 +2,12 @@
 
 Personal journal + knowledge base skill for Claude Code. Two systems, one skill:
 
-- **Journal** — today's dated entry, built from your existing daily template (Weekly Big Three, Habit, Tasks, Meetings, Reflections, Plan for tomorrow, Backlog), with tasks/habits/backlog carried forward from the previous entry.
+- **Journal** — today's dated entry, built from your existing daily template (Weekly Big Three, Habit, Tasks as Top 3 / Stretch Goals / Not-to-do List, Meetings, Reflections), with tasks, habits and the Not-to-do List carried forward from the previous entry. Thursday entries swap Reflections for a Weekly Reflection.
 - **Wiki** — a [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) for research and learning material: ingest sources into a source directory (`raw/` by default, configurable via `raw.config`), compile durable articles into `.wiki/`, query with citations, lint for consistency. Adapted from [Astro-Han/karpathy-llm-wiki](https://github.com/Astro-Han/karpathy-llm-wiki) (MIT).
 
 See [SKILL.md](SKILL.md) for the full spec.
+
+**Backlog**, **OoM List** and **Plan for tomorrow** were retired in favour of Top 3 / Stretch Goals / Not-to-do List. The skill does not migrate them: move anything you still want out of your most recent entry before the next one is created, or it stays only in that old file.
 
 This directory is the skill's *source*, versioned in the [claudetopus](../../README.md) repo — develop it here, independently of the journal/wiki data it operates on.
 
@@ -98,6 +100,7 @@ there is usually nothing to redirect.
 SKILL.md                        # the skill: journal workflow + wiki workflow
 references/
   daily-entry-template.md       # journal day-file template (matches existing ~/j format)
+  thursday-entry-template.md    # journal day-file template, Thursday variant (Weekly Reflection)
   raw-template.md               # wiki: raw source file format
   article-template.md           # wiki: compiled article format
   index-template.md             # wiki: index.md format
@@ -106,6 +109,7 @@ scripts/
   check_evidence.js             # wiki lint: source-fidelity checker (report-only)
 tests/
   check_evidence.test.js
+  template-parity.test.js       # asserts the two day templates stay identical apart from Reflections
 ```
 
 ## Requirements
