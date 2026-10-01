@@ -552,12 +552,18 @@ function checkArticle(article, root, config) {
     if (header.some((line) => ARCHIVED_RE.test(line.trim()))) return { misses: [], errors: [] };
     return { misses: [], errors: ["article has no Raw field"] };
   }
-  const rawRoot = resolvePath(config.dir(root));
+  // A link is contained if it lands in raw/ either as written or once symlinks
+  // resolve: the first lets a source linked into raw/ (e.g. a synced vault) be
+  // cited, the second keeps /var vs /private/var aliases working. A `..`
+  // escape fails both.
+  const rawDir = path.resolve(config.dir(root));
+  const rawRoot = resolvePath(rawDir);
   const raws = [];
   const errors = [];
   for (const link of links) {
-    const target = resolvePath(path.join(path.dirname(article), link));
-    if (!isRelativeTo(target, rawRoot)) {
+    const written = path.resolve(path.join(path.dirname(article), link));
+    const target = resolvePath(written);
+    if (!isRelativeTo(written, rawDir) && !isRelativeTo(target, rawRoot)) {
       errors.push(`Raw link escapes ${config.source}/: ${link}`);
     } else if (!isFile(target)) {
       errors.push(`unresolvable Raw link: ${link}`);
