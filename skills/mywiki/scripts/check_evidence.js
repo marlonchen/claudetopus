@@ -182,22 +182,38 @@ function comparePathParts(a, b) {
   return left.length - right.length;
 }
 
-/** Python's Path.rglob("*.md"), sorted. */
+/**
+ * Python's Path.rglob("*.md"), sorted — except that symlinks are followed, so
+ * a source directory linked in from elsewhere (e.g. a synced vault) is
+ * walked. Each real directory is visited once, which stops link cycles.
+ */
 function walkMarkdown(dir) {
   const found = [];
+  const visited = new Set();
   const stack = [dir];
   while (stack.length) {
     const current = stack.pop();
     let entries;
     try {
+      const real = fs.realpathSync(current);
+      if (visited.has(real)) continue;
+      visited.add(real);
       entries = fs.readdirSync(current, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
       const full = path.join(current, entry.name);
-      if (entry.isDirectory()) stack.push(full);
-      else if (entry.isFile() && entry.name.endsWith(".md")) found.push(full);
+      let kind = entry;
+      if (entry.isSymbolicLink()) {
+        try {
+          kind = fs.statSync(full);
+        } catch {
+          continue; // dangling link
+        }
+      }
+      if (kind.isDirectory()) stack.push(full);
+      else if (kind.isFile() && entry.name.endsWith(".md")) found.push(full);
     }
   }
   found.sort(comparePathParts);

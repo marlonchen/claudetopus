@@ -856,6 +856,31 @@ describe("RawInventory", () => {
       has(out, "raw/other/notes.md");
     });
   });
+
+  it("follows a symlinked source directory", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      const vault = fs.mkdtempSync(path.join(os.tmpdir(), "mywiki-vault-"));
+      try {
+        write(vault, "2026-09/30.md", SECOND_RAW);
+        fs.symlinkSync(vault, path.join(root, "raw", "linked"));
+        has(runChecker(root).stdout, "raw/linked/2026-09/30.md");
+      } finally {
+        fs.rmSync(vault, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("survives a symlink cycle and a dangling link", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      fs.symlinkSync(path.join(root, "raw"), path.join(root, "raw", "misc", "loop"));
+      fs.symlinkSync(path.join(root, "nowhere"), path.join(root, "raw", "dangling"));
+      const out = runChecker(root).stdout;
+      has(out, "raw/misc/notes.md");
+      hasNot(out, "raw/misc/loop");
+    });
+  });
 });
 
 describe("RawConfig", () => {
