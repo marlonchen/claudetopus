@@ -7,6 +7,7 @@ My Claude Code skills.
 | Skill | What it does |
 | --- | --- |
 | [mywiki](skills/mywiki/README.md) | Personal journal (dated daily entries with carry-forward) plus a Karpathy-style LLM wiki: ingest sources, compile durable articles, query with citations, lint for source fidelity. |
+| [research-candidates](skills/research-candidates/README.md) | Cited, equal-depth candidate research for a voter's ballot: every claim backed by a verbatim excerpt from a saved source, reviewed, then published as one phone-friendly page per ballot. Scaffold. |
 
 ## Development setup
 
