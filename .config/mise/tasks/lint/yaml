@@ -4,9 +4,10 @@ set -euo pipefail
 
 status=0
 
-# Standalone YAML files. There are none in the repo today; this covers
-# workflows and configs as they get added.
-yaml_files=$(git ls-files -co --exclude-standard '*.yaml' '*.yml')
+# Standalone YAML files: the CI workflow, plus configs as they get added.
+# .yamlfmt is listed by name because it carries no extension, so the globs
+# below would miss the one file that configures this very check.
+yaml_files=$(git ls-files -co --exclude-standard '*.yaml' '*.yml' '.yamlfmt')
 if [ -n "$yaml_files" ]; then
   while IFS= read -r file; do
     yamlfmt -lint "$file" || status=1

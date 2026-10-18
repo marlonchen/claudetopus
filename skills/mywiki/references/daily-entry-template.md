@@ -6,7 +6,7 @@
 2. {…}
 3. {…}
 
-### Habit
+## Habit
 
 * {carried forward from the most recent entry's Habit list, unchecked}
 
@@ -14,20 +14,36 @@
 
 ## Tasks
 
-* {seeded from yesterday's "Plan for tomorrow" section}
+### Top 3
 
-### Meetings
+1. {seeded based on unchecked items from yesterday's "Tasks" section}
+2. {…}
+3. {…}
 
-### Reflections
+### Stretch Goals
 
-### Plan for tomorrow
+* {only if the Top 3 are covered — never promote a stretch goal into the Top 3 without asking}
+
+### Not-to-do List
+
+* {carried forward from yesterday's Not-to-do list}
 
 ---
 
-## OoM List
+## Meetings
 
 ---
 
-## Backlog
+## Reflections
 
-* {carried forward verbatim from yesterday's Backlog — never drop an item, only remove it once the user says it's done or no longer relevant}
+### What Happened
+
+### How I feel
+
+### Thoughts
+
+### End of Day Micro-reflection
+
+* 3 good:
+* 2 learned:
+* 1 to improve:

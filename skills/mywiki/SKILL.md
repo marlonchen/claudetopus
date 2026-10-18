@@ -1,6 +1,6 @@
 ---
 name: mywiki
-description: "Personal journal + knowledge base. Use when creating today's journal entry, reviewing/carrying-forward tasks and habits from prior entries, or building a Karpathy-style LLM wiki from research/learning sources: ingesting sources, querying accumulated knowledge, linting wiki quality. Triggers: 'new journal entry', 'today's entry', 'plan for tomorrow', 'add to wiki', 'what do I know about', 'research this and add it to the wiki', or any mention of 'LLM wiki'."
+description: "Personal journal + knowledge base. Use when creating today's journal entry, reviewing/carrying-forward tasks and habits from prior entries, or building a Karpathy-style LLM wiki from research/learning sources: ingesting sources, querying accumulated knowledge, linting wiki quality. Triggers: 'new journal entry', 'today's entry', 'add to wiki', 'what do I know about', 'research this and add it to the wiki', or any mention of 'LLM wiki'."
 ---
 
 # My Wiki
@@ -31,19 +31,25 @@ One file per day, grouped by month. This mirrors the format already in use — d
 
 Trigger phrases: "new journal entry", "today's entry", "start today's journal".
 
-1. Determine today's date and find yesterday's entry (the most recent `YYYY-MM/DD.md` before today — check the previous month's folder if today is the 1st).
+1. Determine today's date and find yesterday's entry (the most recent `YYYY-MM/DD.md` before today — check the previous month's folder if today is the 1st). Use the user's local date, not UTC: the weekday it yields also decides which template step 3 uses.
 2. Create `YYYY-MM/DD.md` if it doesn't already exist. Never overwrite an existing entry.
-3. Fill it in from `references/daily-entry-template.md`:
+3. Fill it in from the template for today: `references/thursday-entry-template.md` on Thursdays, `references/daily-entry-template.md` on every other day. The two are identical except that Thursday's carries a **Weekly Reflection** section in place of **Reflections**.
    - **Weekly Big Three** — if today is Monday, or yesterday's entry has no Big Three set, ask the user for this week's three priorities. Otherwise carry forward this week's Big Three unchanged.
    - **Habit** — carry forward the habit list from the most recent entry, reset to unchecked.
-   - **Tasks** — seed from yesterday's "Plan for tomorrow" section, if any.
-   - **Backlog** — carry forward verbatim from yesterday. Never drop an item silently; only remove one when the user says it's done or no longer relevant.
-   - **Meetings**, **Reflections**, **Plan for tomorrow**, **OoM List** — leave empty for the user to fill in during the day, unless they dictate content now.
+   - **Tasks → Top 3** — seed from yesterday's unchecked **Top 3**, then yesterday's unchecked **Stretch Goals**. Anything beyond three goes under **Stretch Goals**. If fewer than three carry forward, ask the user for the rest rather than leaving `{…}` placeholders in the file.
+   - **Not-to-do List** — carry forward verbatim from yesterday. Never drop an item silently; only remove one when the user says it no longer applies.
+   - **Meetings** and **Reflections** (or **Weekly Reflection** on Thursdays) — leave empty for the user to fill in during the day, unless they dictate content now. Keep the section's subsections even when blank: Reflections has What Happened, How I feel, Thoughts, End of Day Micro-reflection; Weekly Reflection has What went well, What didn't, Why (root cause, not blame), Lessons / patterns noticed, One change for next week.
 4. Do not touch any other day's file when creating today's entry, except reading yesterday's for carry-forward.
+
+<!-- gstack-shortcut(dec-6f6c8f3a-c361-4970-ae21-9eac488aadea): entries written against the pre-Top-3 template carry
+     **Backlog**, **OoM List** and **Plan for tomorrow** sections that step 3 neither reads nor carries forward, so their
+     contents are dropped without surfacing. Ceiling: a README note, not a migration step. Upgrade to a one-time
+     "surface unresolved items from those sections and ask where each goes" instruction when a pre-change entry is still
+     the most recent one at the time a new entry is created. -->
 
 ### Editing an existing entry
 
-Read the whole file first. Make targeted edits to the relevant section; don't append duplicate sections or a second "Plan for tomorrow" block. If the user dictates a brain-dump, route it into the section it actually belongs to (a task → Tasks, a person/call → Meetings, an open-ended idea → Backlog) rather than pasting it in verbatim at the bottom.
+Read the whole file first. Make targeted edits to the relevant section; don't append duplicate sections. If the user dictates a brain-dump, route it into the section it actually belongs to (a task → Tasks, a person/call → Meetings, an open-ended idea or feeling → Reflections, or Weekly Reflection in a Thursday entry) rather than pasting it in verbatim at the bottom.
 
 ### Journal → Wiki handoff
 

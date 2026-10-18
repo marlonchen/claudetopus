@@ -1,0 +1,5 @@
+# yamlfmt's default strips every blank line. This repo's only YAML is GitHub
+# workflows, where blank lines between top-level keys and between jobs are how
+# the file stays readable; collapse runs of them to one instead of deleting.
+formatter:
+  retain_line_breaks_single: true
