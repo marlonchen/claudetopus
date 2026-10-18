@@ -7,27 +7,43 @@ description: "Objective, cited candidate research for a US election ballot, publ
 
 Builds a ballot guide for each voter address: every contest on the official ballot, every candidate at equal depth, every claim backed by a verbatim excerpt from a saved source. After the researcher reviews a short list of flagged items, the guide is published as one static page per ballot.
 
-**Status: scaffold.** The scripts this spec names (`fetch-snapshot`, `check`, `coverage`, `publish`) are not built yet. Until a script exists, say so and stop instead of improvising its job by hand.
+**Status: scaffold.** None of the scripts in the table below are built yet. When a step needs a script that does not exist, say so and stop. Do not do its job by hand.
 
 All paths below are relative to the project root (the private data repo this skill is installed in).
 
 ## Rules that never bend
 
-1. **The model is a compiler, never a source.** Every claim comes from a saved snapshot, and every claim carries an excerpt found verbatim in that snapshot. Never write a fact from memory, including who is running.
+1. **The model is a compiler, never a source.** Every claim comes from a saved snapshot, and every claim carries an excerpt found verbatim in the one snapshot it links to. Never write a fact from memory, including who is running.
 2. **The candidate list comes from the official sample ballot.** District lookups and third-party guides help find it; they never replace it.
 3. **Snapshots are write-once.** Never edit a file under `sources/`. A re-fetch writes a new file.
 4. **Facts only on the page.** The researcher's own opinions, scores and notes never reach a published page.
-5. **Private data stays private.** Addresses, ballot ids and precincts never appear in a page, a URL, a commit message, or any public repo. Only the random slug and the page itself are public.
-6. **Publishing asks first.** A push makes the page public. Show what will change and get an explicit yes every time.
+5. **Private data stays private.** Addresses, ballot ids, precincts and `private_strings` never appear in a page, a public URL, a commit message, or any public repo. Only the random slug and the page itself are public. The one place an address leaves the machine is the district lookup in step 2, sent to the US Census Geocoder.
+6. **Publishing asks first.** A push makes the page public, and it stays in the Pages repo's public history even after a later change or removal. Show what will change and get an explicit yes every time.
+
+## Scripts
+
+| Script | Job | Used in |
+| --- | --- | --- |
+| `fetch-snapshot` | Save a URL or API response as a snapshot ([snapshot-format.md](references/snapshot-format.md)); log failures to `unfetchable.md` | 2, 4.2 |
+| `new-slug` | Print a publish slug: 6 lowercase letters and digits from a cryptographic random source | 3 |
+| `ballot-check` | Check `ballot.yaml` against the saved sample ballot, in both directions ([ballot-format.md](references/ballot-format.md)) | 3, 6.1 |
+| `check` | Per claim: excerpt found in its own snapshot, tag matches the snapshot, figures appear in the excerpt, derived numbers recompute ([article-format.md](references/article-format.md)) | 4.4, 6.1 |
+| `coverage` | Every candidate has every section from [sections.md](references/sections.md) in order, in exactly one state; lists snapshots no claim cites | 4.4, 6.1 |
+| `review-list` | Write `review/<contest>.md`, adding every mechanical item and keeping marks by key ([review-list.md](references/review-list.md)) | 4.5, 5 |
+| `publish` | Render the page, run the privacy scan, copy it into the Pages repo, commit after a yes | 6 |
+
+All scripts live in `scripts/` in this skill. The neutrality pass (4.5) is a separate agent, not a script.
 
 ## Layout
 
 ```text
 <project root>/
   addresses.yaml                        # address -> ballot id (private)
+  publish.yaml                          # Pages repo settings
   <election>/                           # e.g. 2026-general
-    <ballot-id>/                        # e.g. <state>-<county>-<precinct>
+    <ballot-id>/                        # opaque label, e.g. ballot-a
       ballot.yaml                       # contests + candidates, publish slug
+      unfetchable.md                    # append-only log of sources that could not be saved
       sources/_ballot/                  # official sample ballot, candidate list, voter pamphlet
       sources/<contest>/_race/          # debates, multi-candidate articles, measure texts
       sources/<contest>/<candidate>/    # candidate-specific sources
@@ -48,34 +64,44 @@ Record the address in `addresses.yaml` with a short label (for example, whose ad
 
 ### 2. Find the ballot
 
-Look up the address's districts to identify the county and the contests to expect (the US Census Geocoder returns congressional and state legislative districts). Then point the researcher to the county's official sample ballot and save it, plus the county's official candidate list if one exists, under `sources/_ballot/`. Choose a `<ballot-id>` and write it into `addresses.yaml`.
+Look up the address's districts to identify the county and the contests to expect (the US Census Geocoder returns congressional and state legislative districts). Then point the researcher to the county's official sample ballot, and save it with `fetch-snapshot` under `sources/_ballot/`, plus the county's official candidate list if one exists. Choose a `<ballot-id>`: an opaque label such as `ballot-a`, never built from the address, county or precinct. Write it into `addresses.yaml`.
 
 ### 3. Confirm the ballot
 
-The researcher types every contest and candidate into `ballot.yaml` from the saved sample ballot (format: [references/ballot-format.md](references/ballot-format.md)), including the counts they make by eye. Assign the ballot's publish slug now: 6 random lowercase letters and digits, generated with a cryptographic random source, never invented by the model.
+The researcher types every contest and candidate into `ballot.yaml` from the saved sample ballot (format: [references/ballot-format.md](references/ballot-format.md)), including the counts they make by eye and any precinct text under `private_strings`. Set `slug` from `new-slug`. Run `ballot-check` and fix every failure.
 
 ### 4. Research a contest
 
 Trigger: "research `<contest>`". Work top of ballot first.
 
 1. Discover sources with web search using the fixed checklist in [references/source-tiers.md](references/source-tiers.md). Do not ask the researcher to hunt for URLs.
-2. Save each one with `scripts/fetch-snapshot` (planned). Unfetchable pages are logged, never paraphrased from search snippets.
+2. Save each one with `fetch-snapshot`. Unfetchable pages are logged, never paraphrased from search snippets.
 3. Compile `articles/<contest>.md` in the format in [references/article-format.md](references/article-format.md), from snapshots only.
-4. Run `check` and `coverage` (planned) and fix every failure.
-5. Run the neutrality pass and write `review/<contest>.md` (see [references/review-list.md](references/review-list.md)).
+4. Run `check` and `coverage` and fix every failure.
+5. Run the neutrality pass, then `review-list` to write `review/<contest>.md`.
 
 ### 5. Review
 
-The researcher clears `review/<contest>.md`, marking each item `[x]` or editing the claim. A contest is `ready` only when `check` and `coverage` pass and the review list has no unchecked items.
+The researcher clears `review/<contest>.md` by marking items `[x]`. A changed claim is edited in the article, and `check` and `review-list` are rerun; it comes back as a new unchecked item. A contest is `ready` only when `check` and `coverage` pass and the review list has no unchecked items.
 
 ### 6. Publish
 
 Trigger: "publish the ballot guide", "publish `<ballot-id>`".
 
-1. Refuse unless every contest shown with content is `ready`. Contests that are not ready appear as "Not yet covered", never blank or partial.
+`publish.yaml` names the Pages target:
+
+```yaml
+pages_repo: <user>/ballots      # a separate public repo, used only for pages
+pages_dir: ~/src/ballots        # its local clone
+branch: main
+```
+
+1. Refuse unless `ballot-check` passes and every contest shown with content is `ready`. Contests that are not ready appear as "Not yet covered", never blank or partial.
 2. Render `site/index.html`: one self-contained file, inline CSS, receipts as `<details>` elements, no external requests, `<meta name="robots" content="noindex, nofollow">`.
-3. Copy only that file to `<slug>/index.html` in the Pages worktree. Show the diff and ask before committing and pushing.
-4. Give the researcher the page URL to text to the family members on that ballot.
+3. Privacy scan: refuse if the rendered page contains the ballot id, any `private_strings` entry, or any address or label from `addresses.yaml`.
+4. Refuse if `pages_dir` is the data repo or shares any commit with it. The Pages repo has its own history and never holds private data.
+5. Copy only that file to `<slug>/index.html` in `pages_dir`. Show the diff and the list of contests on the page. Tell the researcher the contest list becomes public and can narrow down where a voter lives. Ask before committing with the message `publish <slug>` and pushing.
+6. Give the researcher the page URL to text to the family members on that ballot.
 
 ## The page
 
