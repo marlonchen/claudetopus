@@ -30,7 +30,7 @@ Section headings come from [sections.md](sections.md), in that order, for every 
 - The tag is inline code, one of the claim tags in [source-tiers.md](source-tiers.md).
 - The link points at exactly one snapshot and is relative to the article.
 - The excerpt is an indented blockquote on its own line, copied verbatim from the body of *that* snapshot. `check` matches each excerpt against the one snapshot its own claim links to, never against other snapshots the article cites. It needs no quote marks, so it may contain any quote character.
-- The excerpt is 20 to 300 characters. For a short value (a roll-call "Yea", a dollar figure), quote enough of the surrounding line to reach 20, for example the bill number and the vote together. The cap keeps the figure check meaningful and keeps long stretches of a news article off the page.
+- The excerpt is 20 to 300 characters, except a sample-ballot excerpt, which is exactly one whole span from `ballot-view.md` whatever its length (a short entry such as `Jo Li REP`). For a short value (a roll-call "Yea", a dollar figure), quote enough of the surrounding line to reach 20, for example the bill number and the vote together. The cap keeps the figure check meaningful and keeps long stretches of a news article off the page.
 
 ## Matching
 
@@ -59,7 +59,7 @@ Each figure left in the claim must match a figure in that claim's own excerpt, n
 | `says-missing` | A "Says:" claim does not start with `Says:`, or a `says-only` section holds another claim |
 | `figure-missing` | A figure in the claim is not in its excerpt |
 | `derived-mismatch` | A derived number's formula, inputs or result do not check out |
-| `ballot-excerpt` | A `_ballot` excerpt falls outside a listed title or candidate entry |
+| `ballot-excerpt` | An excerpt citing the sample ballot is not one whole span of `ballot-view.md` |
 | `title-in-excerpt` | An excerpt contains the printed title of a contest with a `display_title` |
 | `comment-marker` | A claim or excerpt contains `<!--` or `-->` |
 | `private-match` | Reported by `publish`: a claim or excerpt matches the privacy scan (SKILL.md step 6.3) |

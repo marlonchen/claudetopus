@@ -36,6 +36,9 @@ const between = (text, heading, next = "\n## ") => {
   return text.slice(start, end === -1 ? undefined : end);
 };
 
+// Tiers named in the source-tiers.md tier table ("T1, statements only" counts as T1).
+const TABLE_TIERS = new Set([...TIERS.matchAll(/^\| (T\d)\b/gm)].map((m) => m[1]));
+
 const cells = (line) =>
   line
     .slice(1, -1)
@@ -215,14 +218,9 @@ describe("Tiers", () => {
     const declared = read("snapshot-format.md").match(/^tier: \w+ +# ([^,]+)/m);
     assert.ok(declared, "snapshot-format.md no longer declares the tier enum");
     const enumTiers = declared[1].split("|").map((tier) => tier.trim());
-    const start = TIERS.indexOf("| Tier |");
-    assert.ok(start !== -1, "source-tiers.md is missing the tier table");
-    const tableTiers = TIERS.slice(start, TIERS.indexOf("\n\n", start))
-      .split("\n")
-      .filter((l) => /^\| T\d/.test(l))
-      .map((l) => cells(l)[0].match(/^T\d/)[0]);
+    assert.ok(TABLE_TIERS.size > 0, "source-tiers.md is missing the tier table");
     assert.deepStrictEqual(
-      [...new Set(tableTiers)].sort(),
+      [...TABLE_TIERS].sort(),
       [...enumTiers].sort(),
       "snapshot-format.md tier enum differs from the source-tiers.md tier table",
     );
@@ -400,6 +398,28 @@ describe("KeyStripping", () => {
   });
 });
 
+// Every path in the SKILL.md Layout tree, relative to the data repo root, with
+// each placeholder replaced per `fill` (unfilled placeholders stay literal).
+function layoutEntries(fill = {}) {
+  const block = SKILL.slice(SKILL.indexOf("## Layout")).match(/```text\n([\s\S]*?)```/);
+  assert.ok(block, "SKILL.md Layout has no text block");
+  const entries = [];
+  const stack = [];
+  for (const line of block[1].split("\n").filter((l) => l.trim())) {
+    const indent = line.length - line.trimStart().length;
+    let entry = line
+      .trim()
+      .replace(/\s+#.*$/, "")
+      .replace("<project root>/", "");
+    for (const [from, to] of Object.entries(fill)) entry = entry.replaceAll(from, to);
+    while (stack.length && stack.at(-1).indent >= indent) stack.pop();
+    const full = (stack.at(-1)?.path ?? "") + entry;
+    if (full.endsWith("/")) stack.push({ indent, path: full });
+    entries.push(full);
+  }
+  return entries;
+}
+
 describe("PrivateDataIgnored", () => {
   it("this public repo ignores every private data file the Layout names", () => {
     const { execFileSync } = require("node:child_process");
@@ -408,26 +428,12 @@ describe("PrivateDataIgnored", () => {
     // Value: protects=every file the SKILL.md Layout names is gitignored here;
     //   fails_when=Layout gains a private file the .gitignore misses; why_new=the path list
     //   was hand-copied, so a new Layout entry went unchecked; seam=none
-    const block = SKILL.slice(SKILL.indexOf("## Layout")).match(/```text\n([\s\S]*?)```/);
-    assert.ok(block, "SKILL.md Layout has no text block");
-    const fill = {
-      "<project root>/": "",
+    const entries = layoutEntries({
       "<election>": "2026-general",
       "<ballot-id>": "ballot-a",
       "<contest>": "us-house-07",
       "<candidate>": "jane-example",
-    };
-    const entries = [];
-    const stack = [];
-    for (const line of block[1].split("\n").filter((l) => l.trim())) {
-      const indent = line.length - line.trimStart().length;
-      let entry = line.trim().replace(/\s+#.*$/, "");
-      for (const [from, to] of Object.entries(fill)) entry = entry.replaceAll(from, to);
-      while (stack.length && stack.at(-1).indent >= indent) stack.pop();
-      const full = (stack.at(-1)?.path ?? "") + entry;
-      if (full.endsWith("/")) stack.push({ indent, path: full });
-      entries.push(full);
-    }
+    });
     // Leaves only: files, plus a file inside each directory with no listed children.
     const paths = entries
       .filter((p) => p !== "" && !entries.some((q) => q !== p && q.startsWith(p)))
@@ -455,10 +461,7 @@ describe("PrivateDataIgnored", () => {
       out
         .split("\n")
         .filter(Boolean)
-        .map((line) => {
-          const [source, file] = line.split("\t");
-          return [file, source];
-        }),
+        .map((line) => line.split("\t").reverse()),
     );
     for (const p of all) {
       assert.ok(sources.has(p), `${p} is not ignored; private data could be committed here`);
@@ -500,5 +503,183 @@ describe("RuleReferences", () => {
       }
     }
     assert.ok(count >= 4, `only ${count} Rule citations found`);
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=every failure code the spec names is in the article-format.md table, once;
+//   fails_when=a code is renamed or added in SKILL.md or a reference but not in the table;
+//   why_new=no test reads the failure-code table; seam=none
+describe("FailureCodes", () => {
+  it("every kebab-case code named in the spec is in the failure-code table", () => {
+    const table = between(read("article-format.md"), "## Failure codes");
+    const codes = table
+      .split("\n")
+      .filter((line) => line.startsWith("| `"))
+      .map((line) => cells(line)[0].match(/^`([a-z-]+)`$/)?.[1]);
+    assert.ok(codes.length >= 10, `only ${codes.length} failure codes parsed`);
+    assert.ok(codes.every(Boolean), "a failure-code row is not a single backticked code");
+    assert.strictEqual(new Set(codes).size, codes.length, "a failure code is listed twice");
+    // Other kebab-case tokens the spec uses: script names, Rule markers, example ids and labels.
+    const scripts = between(SKILL, "## Scripts")
+      .split("\n")
+      .filter((line) => line.startsWith("| `"))
+      .map((line) => cells(line)[0].replaceAll("`", ""));
+    const ids = [...read("ballot-format.md").matchAll(/^ +-? *id: ([\w-]+)/gm)].map((m) => m[1]);
+    const known = new Set([...codes, ...scripts, ...ids, "says-only", "addr-mom", "ballot-a"]);
+    let cited = 0;
+    const texts = [
+      SKILL,
+      ...fs
+        .readdirSync(REFS_DIR)
+        .map((f) => (f === "article-format.md" ? read(f).replace(table, "") : read(f))),
+    ];
+    for (const text of texts) {
+      for (const [, token] of text.matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g)) {
+        if (codes.includes(token)) cited++;
+        assert.ok(known.has(token), `\`${token}\` reads as a failure code but is not in the table`);
+      }
+    }
+    assert.ok(cited > 0, "no failure code is cited outside its table");
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=every data-repo file the spec names appears in the SKILL.md Layout tree;
+//   fails_when=a reference adds a data file (a log, a ledger) the Layout and its gitignore
+//   check never see; why_new=PrivateDataIgnored checks only paths the Layout lists; seam=none
+describe("LayoutComplete", () => {
+  it("every data file or directory named in the spec is in the Layout", () => {
+    const entries = layoutEntries().map((entry) => `/${entry}`);
+    const named = new Set();
+    const pattern =
+      /`((?:<ballot-id>\/)?(?:[\w.<>-]+\/)*[\w.<>-]*(?:\.yaml|\.md|\.html|\.accepted|\.baseline|\.ledger|\/))`/g;
+    for (const text of SPEC_TEXTS) {
+      for (const [, token] of text.matchAll(pattern)) named.add(token.replace("<ballot-id>/", ""));
+    }
+    // Snapshot and source names are examples or placeholders, <slug>/ is in the Pages repo,
+    // and scripts/ is in this skill.
+    const data = [...named].filter(
+      (t) => !/<name>|<subject>|<slug>|^fec-totals|^\.\.\/|^scripts\/$/.test(t),
+    );
+    assert.ok(data.length >= 10, `only ${data.length} data paths named in the spec`);
+    for (const token of data) {
+      assert.ok(
+        // A bare suffix (`.accepted`) names any Layout file ending with it.
+        entries.some((entry) =>
+          token.startsWith(".") ? entry.endsWith(token) : entry.includes(`/${token}`),
+        ),
+        `${token} is named in the spec but missing from the SKILL.md Layout`,
+      );
+    }
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the ballot.yaml example passes the ballot-check id, slug, jurisdiction and
+//   display_title rules, and the slug command and README length match the slug pattern;
+//   fails_when=one file changes the slug length or id pattern; why_new=no test reads them; seam=none
+describe("BallotExample", () => {
+  const BALLOT = read("ballot-format.md");
+  const rule = (name) => {
+    const found = BALLOT.match(new RegExp(`\\*\\*${name}:\\*\\*[^\\n]*?\`(\\^[^\`]+\\$)\``));
+    assert.ok(found, `ballot-format.md no longer gives the ${name} pattern`);
+    return new RegExp(found[1]);
+  };
+
+  it("every example id matches the Ids pattern, which never matches _race or _ballot", () => {
+    const pattern = rule("Ids");
+    const ids = [...BALLOT.matchAll(/^ +-? *id: (\S+)/gm)].map((m) => m[1]);
+    assert.ok(ids.length >= 5, `only ${ids.length} ids in the ballot.yaml example`);
+    for (const id of ids) assert.match(id, pattern, `example id ${id} fails the Ids pattern`);
+    for (const reserved of ["_race", "_ballot", "Jane", "../x", "-a"]) {
+      assert.doesNotMatch(reserved, pattern, `Ids pattern accepts ${reserved}`);
+    }
+  });
+
+  it("the slug example, SKILL.md slug command and README agree with the Slug pattern", () => {
+    const pattern = rule("Slug");
+    const slug = BALLOT.match(/^slug: (\S+)/m);
+    assert.ok(slug, "ballot.yaml example has no slug");
+    assert.match(slug[1], pattern, `example slug ${slug[1]} fails the Slug pattern`);
+    const length = Number(pattern.source.match(/\{(\d+)\}/)?.[1]);
+    const command = SKILL.match(/`LC_ALL=C tr -dc ([a-z0-9-]+) <\/dev\/urandom \| head -c(\d+)`/);
+    assert.ok(command, "SKILL.md step 3 no longer gives the slug command");
+    assert.strictEqual(Number(command[2]), length, "slug command length differs from the pattern");
+    assert.ok(pattern.source.includes(`[${command[1]}]`), "slug command charset differs");
+    const readme = fs.readFileSync(path.join(SKILL_DIR, "README.md"), "utf8");
+    const stated = readme.match(/The slug is (\d+) random lowercase letters and digits/);
+    assert.ok(stated, "README.md no longer states the slug length");
+    assert.strictEqual(Number(stated[1]), length, "README slug length differs");
+  });
+
+  it("every example contest has a jurisdiction, and display_title differs from title", () => {
+    const contests = BALLOT.slice(BALLOT.indexOf("contests:"), BALLOT.indexOf("\n```\n"))
+      .split(/\n {2}- id: /)
+      .slice(1);
+    assert.ok(contests.length >= 3, "ballot.yaml example has fewer than 3 contests");
+    const value = (block, key) =>
+      block.match(new RegExp(`^ +${key}: (.+?)(?: +#.*)?$`, "m"))?.[1]?.replace(/^"(.*)"$/, "$1");
+    for (const block of contests) {
+      const id = block.split("\n")[0];
+      assert.ok(value(block, "jurisdiction"), `example contest ${id} has no jurisdiction`);
+      const display = value(block, "display_title");
+      if (display) {
+        const title = value(block, "title");
+        assert.notStrictEqual(display, title, `${id}: same titles`);
+        for (const key of ["jurisdiction", "search_terms"]) {
+          const text = value(block, key) ?? "";
+          assert.ok(!text.includes(title), `${id}: ${key} holds the printed title`);
+        }
+      }
+    }
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the allegation word list compiles to whole-word matches that catch every
+//   listed form but not "in charge of" or "settled in"; fails_when=a bare stem such as charg or
+//   settle joins the list; why_new=no test reads the word list; seam=none
+describe("AllegationWords", () => {
+  it("the allegation list matches its own forms and not the stated false hits", () => {
+    const bullet = REVIEW.split("\n").find((line) => line.includes("allegation word"));
+    assert.ok(bullet, "review-list.md no longer gives the allegation word list");
+    const list = bullet.split("Bare stems")[0];
+    const items = [...list.matchAll(/`([a-z]+)(?:\(([a-z|]+)\))?`/g)];
+    assert.ok(items.length >= 20, `only ${items.length} allegation words parsed`);
+    const forms = items.flatMap(([, stem, endings]) =>
+      endings ? endings.split("|").map((end) => stem + end) : [stem],
+    );
+    const pattern = new RegExp(
+      `\\b(?:${items
+        .map(([, stem, endings]) => (endings ? `${stem}(?:${endings})?` : stem))
+        .join("|")})\\b`,
+      "i",
+    );
+    for (const form of forms) assert.match(`was ${form.toUpperCase()} in`, pattern, form);
+    for (const text of ["in charge of", "settled in", "she settles", "the chargers"]) {
+      assert.doesNotMatch(text, pattern, `allegation list matches "${text}"`);
+    }
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the tiers.yaml example uses only table tiers and marks every T4 entry
+//   statements_only, which fetch-snapshot requires to load it; fails_when=the example or the
+//   tier table drifts; why_new=Tiers checks the snapshot enum, not tiers.yaml; seam=none
+describe("TiersYaml", () => {
+  it("the tiers.yaml example is one fetch-snapshot would load", () => {
+    const block = TIERS.match(/```yaml\n([\s\S]*?)```/);
+    assert.ok(block, "source-tiers.md has no tiers.yaml example");
+    const entries = block[1].split(/^- /m).slice(1);
+    assert.ok(entries.length >= 2, "tiers.yaml example has fewer than 2 entries");
+    for (const entry of entries) {
+      assert.match(entry, /^match: \S+/, `tiers.yaml entry has no match: ${entry}`);
+      const tier = entry.match(/^ +tier: (\S+)/m)?.[1];
+      assert.ok(TABLE_TIERS.has(tier), `tiers.yaml example uses tier ${tier}, not in the table`);
+      if (tier === "T4") {
+        assert.match(entry, /^ +statements_only: true\b/m, "T4 entry lacks statements_only: true");
+      }
+    }
   });
 });

@@ -165,6 +165,8 @@ tiers.yaml
 /*/*/articles/
 /*/*/review/
 /*/*/site/
+/*/*/ballot.ledger
+/*/*/ballot-view.md
 # Skill source in this repo is never data.
 !/skills/*/sources/
 !/skills/*/articles/
