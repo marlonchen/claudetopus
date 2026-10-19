@@ -472,9 +472,13 @@ describe("PrivateDataIgnored", () => {
   it("skill source directories are not swallowed by the data ignores", () => {
     const { spawnSync } = require("node:child_process");
     const repoRoot = path.join(SKILL_DIR, "..", "..");
-    const probes = ["sources", "articles", "review", "site"].map(
-      (dir) => `skills/research-candidates/${dir}/example.md`,
-    );
+    const probes = [
+      ...["sources", "articles", "review", "site"].map(
+        (dir) => `skills/research-candidates/${dir}/example.md`,
+      ),
+      "skills/research-candidates/ballot.ledger",
+      "skills/research-candidates/ballot-view.md",
+    ];
     const result = spawnSync(
       "git",
       ["-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", ...probes],

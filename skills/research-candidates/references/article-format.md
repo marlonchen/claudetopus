@@ -54,7 +54,7 @@ Each figure left in the claim must match a figure in that claim's own excerpt, n
 | Code | Meaning |
 | --- | --- |
 | `excerpt-not-found` | The excerpt is not in the body of the snapshot the claim links to |
-| `excerpt-length` | The excerpt is under 20 or over 300 characters |
+| `excerpt-length` | The excerpt is under 20 or over 300 characters (a sample-ballot excerpt is checked by `ballot-excerpt` instead) |
 | `tag-mismatch` | The claim tag does not fit the snapshot's tier or `statements_only` |
 | `says-missing` | A "Says:" claim does not start with `Says:`, or a `says-only` section holds another claim |
 | `figure-missing` | A figure in the claim is not in its excerpt |

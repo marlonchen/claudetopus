@@ -172,3 +172,5 @@ tiers.yaml
 !/skills/*/articles/
 !/skills/*/review/
 !/skills/*/site/
+!/skills/*/ballot.ledger
+!/skills/*/ballot-view.md
