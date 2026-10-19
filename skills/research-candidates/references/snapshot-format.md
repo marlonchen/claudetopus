@@ -24,7 +24,7 @@ supersedes: sample-ballot.md       # optional: the earlier snapshot this one cor
 
 ## Cleaning the URL
 
-`fetch-snapshot` removes API keys (`api_key`, `key`, `token` parameters) from every URL it records, in snapshots and in the unfetchable log alike. For `_ballot` snapshots it also drops the whole query string and fragment, because county lookups often carry the address, precinct or voter id there.
+`fetch-snapshot` removes API keys from every URL it records, in snapshots and in the unfetchable log alike. A key parameter is any query parameter whose name matches `/^(api[_-]?key|key|token|access[_-]?token|secret|sig(nature)?)$/i` (`api_key`, OpenStates' `apikey`, `apiKey`, `access_token`). Key values are the values of the API-key environment variables the scripts read (`OPENFEC_API_KEY`, `OPENSTATES_API_KEY`); `fetch-snapshot` and the publish privacy scan both refuse any URL or page that contains one. For `_ballot` snapshots it also drops the whole query string and fragment, because county lookups often carry the address, precinct or voter id there.
 
 ## Body
 

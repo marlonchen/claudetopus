@@ -44,6 +44,6 @@ One block for the judge or official on the ballot:
 
 ## Not part of this office's job
 
-A contest marked `office_type: judicial` in `ballot.yaml` has section E. Positions in the state `Not part of this office's job` for every candidate, because judicial ethics rules bar candidates from committing on issues. No other office has exemptions, and no other section may use that state.
+A candidate contest marked `office_type: judicial` in `ballot.yaml` has its Positions section in the state `Not part of this office's job` for every candidate, because judicial ethics rules bar candidates from committing on issues. No other office has exemptions, and no other section may use that state.
 
 Add any new exemption here before the first compile of an election. Adding one later means recompiling every contest it affects.
