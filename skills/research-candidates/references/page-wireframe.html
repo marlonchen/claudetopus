@@ -18,10 +18,10 @@ h3{font:700 17px/1.4 var(--body);margin:0}
 .party{font-weight:400}
 a,.link{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 .link{display:inline-flex;align-items:center;gap:4px;min-height:44px}
-a:focus-visible{outline:2px solid var(--accent);outline-offset:2px} a.link:visited{color:var(--visited)}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px} a:not(.row):not(.chip):visited{color:var(--visited)}
 summary{list-style:none;cursor:pointer} summary::-webkit-details-marker{display:none}
 details[open]>summary .dc,details:not([open])>summary .do{display:none}
-.lab{white-space:nowrap}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 details.how{margin:8px 0;font-size:14px;color:var(--muted)} details.how summary{min-height:44px;display:flex;align-items:center;gap:4px;color:var(--accent);text-decoration:underline}
 details.src summary{min-height:44px;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
 .banner{border:2px solid var(--fg);border-radius:8px;padding:8px 12px;margin:8px 0}
@@ -32,7 +32,7 @@ details.src summary{min-height:44px;display:flex;align-items:center;flex-wrap:wr
 .chev{color:var(--muted);margin-left:4px}
 .sub{display:block;color:var(--muted);font-size:14px}
 nav.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-.chip{border:1px solid var(--muted);border-radius:22px;padding:0 12px;min-height:44px;display:flex;align-items:center;font-size:14px;white-space:nowrap;color:var(--fg);text-decoration:none}
+.chip{border:1px solid var(--muted);border-radius:22px;padding:0 12px;min-height:44px;display:flex;align-items:center;font-size:14px;max-width:100%;color:var(--fg);text-decoration:none}
 .cand{border-top:1px solid var(--line);padding:12px 0}
 .says{font-weight:700}
 blockquote{margin:8px 0 4px;padding:8px 12px;border-left:3px solid var(--fg);background:var(--quote-bg);font:17px/1.45 var(--serif)}
@@ -75,11 +75,11 @@ details.src .note{font-size:17px;color:var(--fg)}
  <div class="cand"><h3>Cand. A <span class="party">· Democratic</span></h3>
   <div><span class="says">Says:</span> would expand the Child Tax Credit.</div>
   <blockquote>“Expanding the Child Tax Credit is my first priority.”<cite>Vote411 questionnaire</cite></blockquote>
-  <details class="src"><summary><span class="lab"><span class="badge">Candidate's own words</span> <span aria-hidden="true">·</span></span><span class="link">Source <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
+  <details class="src"><summary><span class="lab"><span class="badge">Candidate's own words</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. A on Positions</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
  <div class="cand"><h3>Cand. B <span class="party">· Republican</span></h3>
   <div><span class="says">Says:</span> would make the 2017 tax cuts permanent.</div>
   <blockquote>“I will fight to make the 2017 tax cuts permanent for working families.”<cite>Campaign website</cite></blockquote>
-  <details class="src"><summary><span class="lab"><span class="badge">Candidate's own words</span> <span aria-hidden="true">·</span></span><span class="link">Source <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
+  <details class="src"><summary><span class="lab"><span class="badge">Candidate's own words</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. B on Positions</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
  <div class="cand"><h3>Cand. C <span class="party">· Libertarian</span></h3>
   <div class="unk"><span aria-hidden="true">○</span> Unknown: no source found.</div></div>
 </main></div>
@@ -90,15 +90,15 @@ details.src .note{font-size:17px;color:var(--fg)}
  <div class="cand"><h3>Cand. A <span class="party">· Democratic</span></h3>
   <div>Total receipts: $2,104,330.</div>
   <blockquote>“Total receipts: $2,104,330”<cite>FEC candidate financial summary</cite></blockquote>
-  <details class="src" open><summary><span class="lab"><span class="badge">Official record</span> <span aria-hidden="true">·</span></span><span class="link">Source <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary>
+  <details class="src" open><summary><span class="lab"><span class="badge">Official record</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. A on Money</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary>
   <div class="note">FEC candidate financial summary<br>
    The quote above was saved on Oct 19, 2026 from the official record this link shows.<br>
    <span class="link">Original page <span aria-hidden="true">↗</span></span></div></details></div>
  <div class="cand"><h3>Cand. B <span class="party">· Republican</span></h3>
   <div>Total receipts: $890,212.</div>
   <blockquote>“Total receipts: $890,212”<cite>FEC candidate financial summary</cite></blockquote>
-  <details class="src"><summary><span class="lab"><span class="badge">Official record</span> <span aria-hidden="true">·</span></span><span class="link">Source <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
- <div class="next"><span class="link">Next on your ballot: U.S. Senate <span aria-hidden="true">→</span></span><span class="link"><span aria-hidden="true">←</span> All races</span></div>
+  <details class="src"><summary><span class="lab"><span class="badge">Official record</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. B on Money</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
+ <div class="next"><span class="link">Next on your ballot: Governor <span aria-hidden="true">→</span></span><span class="link"><span aria-hidden="true">←</span> All races</span></div>
 </main></div>
 
 <!-- 3 · Measure (5A) -->
@@ -110,15 +110,15 @@ details.src .note{font-size:17px;color:var(--fg)}
  <nav class="chips" aria-label="Topics in this race"><a class="chip" href="#question-1--what-it-does">What it does</a><a class="chip" href="#question-1--fiscal-effect">Fiscal effect</a><a class="chip" href="#question-1--arguments-for">Arguments for</a><a class="chip" href="#question-1--arguments-against">Arguments against</a><a class="chip" href="#question-1--independent-analysis">Independent analysis</a></nav>
  <h2>What it does</h2>
  <blockquote>“…authorize the County to borrow up to $25,000,000 to acquire and preserve open space…”<cite>Official question text</cite></blockquote>
- <details class="src"><summary><span class="lab"><span class="badge">Official record</span> <span aria-hidden="true">·</span></span><span class="link">Source <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details>
+ <details class="src"><summary><span class="lab"><span class="badge">Official record</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Question 1 on What it does</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details>
  <h2>Arguments for</h2>
  <div class="meta">These are arguments, not facts.</div>
  <blockquote>“…”<cite>Official voter guide</cite></blockquote>
- <details class="src"><summary><span class="lab"><span class="badge">From the official voter guide</span> <span aria-hidden="true">·</span></span><span class="link">Source <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details>
+ <details class="src"><summary><span class="lab"><span class="badge">From the official voter guide</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Question 1 on Arguments for</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details>
  <h2>Arguments against</h2>
  <div class="meta">These are arguments, not facts.</div>
  <blockquote>“…”<cite>Official voter guide</cite></blockquote>
- <details class="src"><summary><span class="lab"><span class="badge">From the official voter guide</span> <span aria-hidden="true">·</span></span><span class="link">Source <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details>
+ <details class="src"><summary><span class="lab"><span class="badge">From the official voter guide</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Question 1 on Arguments against</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details>
 </main></div>
 
 <!-- 4 · Not ready yet (3A) -->

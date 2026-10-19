@@ -76,7 +76,7 @@ Each section is in exactly one state:
 - `Unknown, no source found`: the checklist was run and nothing usable turned up;
 - `Not part of this office's job`: only where [sections.md](sections.md) says so.
 
-The one exception is a withdrawn candidate who is still printed: the On the ballot section only, holding the withdrawal receipt (a claim citing the `withdrawal_notice` snapshot, [ballot-format.md](ballot-format.md)). Certified write-ins come after printed candidates and get every section.
+A withdrawn candidate who is still printed has only the sections [sections.md](sections.md) gives it; the rest are absent, not in any state. Its On the ballot claim cites the `withdrawal_notice` snapshot ([snapshot-format.md](snapshot-format.md)). Certified write-ins come after printed candidates.
 
 ## Wording rules
 

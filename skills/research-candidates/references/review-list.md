@@ -45,4 +45,4 @@ Before the pass, `review-list --keys` prints every claim's location (article pat
 - To accept an item, mark it `[x]`.
 - To change a claim, edit the article, not the review list. Then rerun SKILL.md steps 4.4-4.5 (`check` and `coverage`, `review-list --keys`, the neutrality pass, `review-list`). The edited claim gets a new key and comes back as an unchecked item, and the old item is dropped. A single `[x]` then clears it.
 
-On every run, `review-list` keeps a mark only when an item with the same key still exists. A contest is `ready` when `check` and `coverage` pass, no box is unchecked, and every claim key in the article is accepted. `publish` recomputes this itself rather than trusting the file (SKILL.md step 6).
+On every run, `review-list` keeps a mark only when an item with the same key still exists. A contest is `ready` when `check` and `coverage` pass, no box is unchecked (unfetchable entries included), and every claim key in the article is accepted. `publish` recomputes this itself rather than trusting the file (SKILL.md step 6).

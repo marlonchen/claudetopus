@@ -3,6 +3,7 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
 
 // The reference files depend on each other in ways markdown lint cannot see:
@@ -21,6 +22,46 @@ const REF_FILES = fs.readdirSync(REFS_DIR).filter((f) => /\.(md|html)$/.test(f))
 const SECTIONS = read("sections.md");
 const REVIEW = read("review-list.md");
 const TIERS = read("source-tiers.md");
+const BALLOT = read("ballot-format.md");
+const SNAPSHOT = read("snapshot-format.md");
+const ARTICLE = read("article-format.md");
+const PAGE = read("page.md");
+// The snapshot role enum snapshot-format.md declares.
+const snapshotRoles = () => {
+  const declared = SNAPSHOT.match(/^role: \w+ +# (.+)$/m);
+  assert.ok(declared, "snapshot-format.md no longer declares the role enum");
+  return declared[1].split("|").map((role) => role.trim());
+};
+// The contest and candidate ids in the ballot.yaml example.
+const exampleIds = () => [...BALLOT.matchAll(/^ +-? *id: (\S+)/gm)].map((m) => m[1]);
+// A ballot-check pattern ballot-format.md gives as **<name>:** ... `^...$`.
+const ballotRule = (name) => {
+  const found = BALLOT.match(new RegExp(`\\*\\*${name}:\\*\\*[^\\n]*?\`(\\^[^\`]+\\$)\``));
+  assert.ok(found, `ballot-format.md no longer gives the ${name} pattern`);
+  return new RegExp(found[1]);
+};
+// The wireframe source without comments or the style block.
+const wireframeBody = () =>
+  read("page-wireframe.html")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<style>[\s\S]*?<\/style>/, "");
+// The chip labels of the first chip row after the wireframe screen titled `screen`.
+const wireframeChips = (screen) => {
+  const nav = read("page-wireframe.html").match(
+    new RegExp(`${screen}[\\s\\S]*?<nav class="chips"[^>]*>([\\s\\S]*?)<\\/nav>`),
+  );
+  assert.ok(nav, `the wireframe has no chip row after "${screen}"`);
+  return [...nav[1].matchAll(/<a class="chip"[^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
+};
+const REPO_ROOT = path.join(SKILL_DIR, "..", "..");
+// git check-ignore against this repo's .gitignore only: a developer's global excludes must not
+// make a test pass. Exits 0 when any path is ignored, 1 when none is.
+const checkIgnore = (flags, paths) =>
+  spawnSync(
+    "git",
+    ["-c", "core.excludesFile=/dev/null", "check-ignore", ...flags, "--no-index", ...paths],
+    { cwd: REPO_ROOT, encoding: "utf8" },
+  );
 const RULE_MARKERS = ["", "`says-only`", "`always reviewed`"];
 // ballot.yaml contest type -> its section table in sections.md.
 const TYPE_TABLES = {
@@ -55,7 +96,7 @@ const tableRows = (text, heading, prefix = "| `") =>
 // The key-parameter pattern snapshot-format.md gives. A function, so a missing pattern fails the
 // test that needs it rather than the whole file.
 const keyParamPattern = () => {
-  const declared = read("snapshot-format.md").match(/matches `\/(.+?)\/(\w*)`/);
+  const declared = SNAPSHOT.match(/matches `\/(.+?)\/(\w*)`/);
   assert.ok(declared, "snapshot-format.md no longer gives the key-parameter pattern");
   return new RegExp(declared[1], declared[2]);
 };
@@ -122,21 +163,24 @@ describe("SectionRules", () => {
 });
 
 describe("ChecklistReferences", () => {
-  it("checklist items cited in sections.md exist in source-tiers.md", () => {
+  it("sections.md cites exactly the checklist items source-tiers.md numbers", () => {
     const items = new Set([...TIERS.matchAll(/^(\d+)\. \*\*/gm)].map((match) => match[1]));
+    assert.ok(items.size > 0, "no numbered checklist items in source-tiers.md");
     const table = sectionTable("Candidate contests");
     const cited = column(table, "Discovery checklist");
-    let count = 0;
+    const used = new Set();
     for (const row of table.rows) {
       for (const item of row[cited].match(/\d+/g) || []) {
-        count++;
+        used.add(item);
         assert.ok(
           items.has(item),
           `${row[0]} cites checklist item ${item}, not in source-tiers.md`,
         );
       }
     }
-    assert.ok(count > 0, "no checklist items cited in the Candidate contests table");
+    for (const item of items) {
+      assert.ok(used.has(item), `checklist item ${item} fills no candidate section`);
+    }
   });
 });
 
@@ -198,7 +242,7 @@ describe("Exemptions", () => {
     const keyed = SECTIONS.match(/marked `office_type: (\w+)` in `ballot\.yaml`/);
     assert.ok(keyed, "sections.md exemption no longer names its office_type value");
     assert.match(
-      read("ballot-format.md"),
+      BALLOT,
       new RegExp(`^ +office_type: ${keyed[1]}\\b`, "m"),
       `ballot-format.md has no office_type: ${keyed[1]} in its example`,
     );
@@ -211,7 +255,6 @@ describe("Exemptions", () => {
 //   why_new=nothing else ties the contest types to the section tables; seam=none
 describe("ContestTypes", () => {
   it("every contest type has a section table, and the example uses only listed types", () => {
-    const BALLOT = read("ballot-format.md");
     const line = BALLOT.match(/^Contest types: (.+)$/m);
     assert.ok(line, 'ballot-format.md no longer lists "Contest types:"');
     const listed = [...line[1].matchAll(/`(\w+)`/g)].map((m) => m[1]);
@@ -235,7 +278,7 @@ describe("ContestTypes", () => {
 //   snapshot front-matter tier enum; seam=none
 describe("Tiers", () => {
   it("the snapshot tier enum matches the source-tiers.md tier table", () => {
-    const declared = read("snapshot-format.md").match(/^tier: \w+ +# ([^,]+)/m);
+    const declared = SNAPSHOT.match(/^tier: \w+ +# ([^,]+)/m);
     assert.ok(declared, "snapshot-format.md no longer declares the tier enum");
     const enumTiers = declared[1].split("|").map((tier) => tier.trim());
     assert.ok(TABLE_TIERS.size > 0, "source-tiers.md is missing the tier table");
@@ -271,10 +314,8 @@ describe("ClaimTags", () => {
 
 describe("SnapshotRoles", () => {
   it("every snapshot role used in ballot-format.md is in the snapshot-format.md enum", () => {
-    const declared = read("snapshot-format.md").match(/^role: \w+ +# (.+)$/m);
-    assert.ok(declared, "snapshot-format.md no longer declares the role enum");
-    const roles = new Set(declared[1].split("|").map((role) => role.trim()));
-    const used = [...read("ballot-format.md").matchAll(/`role: (\w+)`/g)].map((m) => m[1]);
+    const roles = new Set(snapshotRoles());
+    const used = [...BALLOT.matchAll(/`role: (\w+)`/g)].map((m) => m[1]);
     assert.ok(used.length > 0, "ballot-format.md uses no snapshot roles");
     for (const role of used) {
       assert.ok(roles.has(role), `ballot-format.md uses role ${role}, not in snapshot-format.md`);
@@ -348,14 +389,20 @@ describe("StepReferences", () => {
 describe("NamedSections", () => {
   it("the first candidate section is On the ballot, which withdrawn candidates keep", () => {
     assert.strictEqual(sectionTable("Candidate contests").rows[0][0], "A. On the ballot");
-    for (const file of ["sections.md", "article-format.md"]) {
-      assert.match(read(file), /the On the ballot section only/, `${file} lost the withdrawn rule`);
+    assert.match(SECTIONS, /the On the ballot section only/, "sections.md lost the withdrawn rule");
+    // The rule lives in sections.md alone; the other specs point to it instead of restating it.
+    for (const file of ["article-format.md", "page.md"]) {
+      assert.match(
+        read(file),
+        /withdrawn candidate[^.]*only the sections \[sections\.md\]\(sections\.md\)/,
+        `${file} no longer defers the withdrawn rule to sections.md`,
+      );
     }
   });
 
   it("article-format.md example headings are candidate sections", () => {
     const names = new Set(sectionTable("Candidate contests").rows.map((row) => row[0]));
-    const headings = [...read("article-format.md").matchAll(/^### ([A-Z]\. .+)$/gm)];
+    const headings = [...ARTICLE.matchAll(/^### ([A-Z]\. .+)$/gm)];
     assert.ok(headings.length > 0, "article-format.md example has no section headings");
     for (const [, heading] of headings) {
       assert.ok(names.has(heading), `article-format.md heading "${heading}" is not in sections.md`);
@@ -363,22 +410,8 @@ describe("NamedSections", () => {
   });
 });
 
-describe("ChecklistMapping", () => {
-  it("every discovery checklist item fills some candidate section", () => {
-    const items = [...TIERS.matchAll(/^(\d+)\. \*\*/gm)].map((match) => match[1]);
-    assert.ok(items.length > 0, "no numbered checklist items in source-tiers.md");
-    const table = sectionTable("Candidate contests");
-    const cited = column(table, "Discovery checklist");
-    const used = new Set(table.rows.flatMap((row) => row[cited].match(/\d+/g) || []));
-    for (const item of items) {
-      assert.ok(used.has(item), `checklist item ${item} fills no candidate section`);
-    }
-  });
-});
-
 describe("CandidateStatus", () => {
   it("statuses named in the spec are in the ballot.yaml status enum", () => {
-    const BALLOT = read("ballot-format.md");
     const declared = BALLOT.match(/status: \w+ +# (.+)$/m);
     assert.ok(declared, "ballot-format.md no longer declares the status enum");
     const statuses = new Set(declared[1].split("|").map((status) => status.trim()));
@@ -394,7 +427,6 @@ describe("CandidateStatus", () => {
 
 describe("KeyStripping", () => {
   it("the key-parameter pattern matches every example it names", () => {
-    const SNAPSHOT = read("snapshot-format.md");
     const pattern = keyParamPattern();
     const examples = SNAPSHOT.match(/\(`api_key`[^)]*\)/);
     assert.ok(examples, "snapshot-format.md no longer lists key-parameter examples");
@@ -434,8 +466,6 @@ function layoutEntries(fill = {}) {
 
 describe("PrivateDataIgnored", () => {
   it("this public repo ignores every private data file the Layout names", () => {
-    const { execFileSync } = require("node:child_process");
-    const repoRoot = path.join(SKILL_DIR, "..", "..");
     // Extended by /ship test coverage audit.
     // Value: protects=every file the SKILL.md Layout names is gitignored here;
     //   fails_when=Layout gains a private file the .gitignore misses; why_new=the path list
@@ -460,17 +490,10 @@ describe("PrivateDataIgnored", () => {
         .filter((p) => p.startsWith("2026-general/"))
         .map((p) => p.replace("2026-general/", "general-2026/")),
     ];
-    // Only this repo's .gitignore counts: a developer's global excludes must not make it pass.
-    const out = execFileSync(
-      "git",
-      ["-c", "core.excludesFile=/dev/null", "check-ignore", "-v", "--no-index", ...all],
-      {
-        cwd: repoRoot,
-        encoding: "utf8",
-      },
-    );
+    const result = checkIgnore(["-v"], all);
+    assert.strictEqual(result.status, 0, `no Layout path is ignored: ${result.stderr}`);
     const sources = new Map(
-      out
+      result.stdout
         .split("\n")
         .filter(Boolean)
         .map((line) => line.split("\t").reverse()),
@@ -482,8 +505,6 @@ describe("PrivateDataIgnored", () => {
   });
 
   it("skill source directories are not swallowed by the data ignores", () => {
-    const { spawnSync } = require("node:child_process");
-    const repoRoot = path.join(SKILL_DIR, "..", "..");
     const probes = [
       ...["sources", "articles", "review", "site"].map(
         (dir) => `skills/research-candidates/${dir}/example.md`,
@@ -502,11 +523,7 @@ describe("PrivateDataIgnored", () => {
         (file) => `skills/research-candidates/tests/fixtures/${file}`,
       ),
     ];
-    const result = spawnSync(
-      "git",
-      ["-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", ...probes],
-      { cwd: repoRoot, encoding: "utf8" },
-    );
+    const result = checkIgnore([], probes);
     assert.strictEqual(result.status, 1, `skill source would be ignored: ${result.stdout}`);
   });
 
@@ -515,18 +532,13 @@ describe("PrivateDataIgnored", () => {
   //   public repo; fails_when=a scripts/ negation is widened (scripts/**) and re-includes .env
   //   or node_modules; why_new=the probes above only check what must stay committable; seam=none
   it("secrets and build output under a skill's scripts/ stay ignored", () => {
-    const { execFileSync } = require("node:child_process");
-    const repoRoot = path.join(SKILL_DIR, "..", "..");
     const probes = [".env", ".env.local", "node_modules/x.js", "debug.log"].map(
       (file) => `skills/research-candidates/scripts/${file}`,
     );
-    const out = execFileSync(
-      "git",
-      ["-c", "core.excludesFile=/dev/null", "check-ignore", "-v", "--no-index", ...probes],
-      { cwd: repoRoot, encoding: "utf8" },
-    );
+    const result = checkIgnore(["-v"], probes);
+    assert.strictEqual(result.status, 0, `no scripts/ probe is ignored: ${result.stderr}`);
     for (const p of probes) {
-      const line = out.split("\n").find((l) => l.endsWith(`\t${p}`));
+      const line = result.stdout.split("\n").find((l) => l.endsWith(`\t${p}`));
       assert.ok(line, `${p} is not ignored`);
       assert.doesNotMatch(line, /:!/, `${p} is re-included by a negation: ${line}`);
     }
@@ -561,8 +573,8 @@ describe("RuleReferences", () => {
 //   why_new=no test reads the failure-code table; seam=none
 describe("FailureCodes", () => {
   it("every kebab-case code named in the spec is in the failure-code table", () => {
-    const table = between(read("article-format.md"), "## Failure codes");
-    const codes = tableRows(read("article-format.md"), "## Failure codes").map(
+    const table = between(ARTICLE, "## Failure codes");
+    const codes = tableRows(ARTICLE, "## Failure codes").map(
       (row) => row[0].match(/^`([a-z-]+)`$/)?.[1],
     );
     assert.ok(codes.length >= 10, `only ${codes.length} failure codes parsed`);
@@ -570,7 +582,7 @@ describe("FailureCodes", () => {
     assert.strictEqual(new Set(codes).size, codes.length, "a failure code is listed twice");
     // Other kebab-case tokens the spec uses: script names, Rule markers, example ids and labels.
     const scripts = tableRows(SKILL, "## Scripts").map((row) => row[0].replaceAll("`", ""));
-    const ids = [...read("ballot-format.md").matchAll(/^ +-? *id: ([\w-]+)/gm)].map((m) => m[1]);
+    const ids = exampleIds();
     const known = new Set([...codes, ...scripts, ...ids, "says-only", "addr-mom", "ballot-a"]);
     let cited = 0;
     const texts = [
@@ -632,16 +644,9 @@ describe("LayoutComplete", () => {
 //   display_title rules, and the slug command and README length match the slug pattern;
 //   fails_when=one file changes the slug length or id pattern; why_new=no test reads them; seam=none
 describe("BallotExample", () => {
-  const BALLOT = read("ballot-format.md");
-  const rule = (name) => {
-    const found = BALLOT.match(new RegExp(`\\*\\*${name}:\\*\\*[^\\n]*?\`(\\^[^\`]+\\$)\``));
-    assert.ok(found, `ballot-format.md no longer gives the ${name} pattern`);
-    return new RegExp(found[1]);
-  };
-
   it("every example id matches the Ids pattern, which never matches _race or _ballot", () => {
-    const pattern = rule("Ids");
-    const ids = [...BALLOT.matchAll(/^ +-? *id: (\S+)/gm)].map((m) => m[1]);
+    const pattern = ballotRule("Ids");
+    const ids = exampleIds();
     assert.ok(ids.length >= 5, `only ${ids.length} ids in the ballot.yaml example`);
     for (const id of ids) assert.match(id, pattern, `example id ${id} fails the Ids pattern`);
     // "--" joins a contest id and a section in page anchors, so ids never hold it.
@@ -651,7 +656,7 @@ describe("BallotExample", () => {
   });
 
   it("the slug example, SKILL.md slug command and README agree with the Slug pattern", () => {
-    const pattern = rule("Slug");
+    const pattern = ballotRule("Slug");
     const slug = BALLOT.match(/^slug: (\S+)/m);
     assert.ok(slug, "ballot.yaml example has no slug");
     assert.match(slug[1], pattern, `example slug ${slug[1]} fails the Slug pattern`);
@@ -802,7 +807,6 @@ describe("FieldNames", () => {
 //   stale contrast; why_new=no test reads page.md; seam=none; no_claim=rendered page colors
 //   (no renderer exists yet)
 describe("PageTokens", () => {
-  const PAGE = read("page.md");
   const rows = tableRows(PAGE, "## Tokens", "| `--");
   const tokens = Object.fromEntries(
     rows.map((row) => [row[0].replaceAll("`", ""), [row[1], row[2]].map((c) => c.slice(1, 8))]),
@@ -866,7 +870,7 @@ describe("PageTokens", () => {
 //   why_new=no test reads page.md's chip list; seam=none; no_claim=rendered chips (no renderer yet)
 describe("PageChips", () => {
   it("the race-screen chips are the candidate sections, in order", () => {
-    const line = read("page.md").match(
+    const line = PAGE.match(
       /chips that jump to each section in \[sections\.md\]\(sections\.md\): ([^.]+)\./,
     );
     assert.ok(line, "page.md no longer lists the race-screen chips");
@@ -882,11 +886,11 @@ describe("PageChips", () => {
       );
     });
     // Extended by /ship pre-landing review: the wireframe's race screen shows the same chips.
-    const html = read("page-wireframe.html");
-    const nav = html.match(/One race, by topic[\s\S]*?<nav class="chips"[^>]*>([\s\S]*?)<\/nav>/);
-    assert.ok(nav, "the wireframe has no race-screen chip row");
-    const shown = [...nav[1].matchAll(/<a class="chip"[^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
-    assert.deepStrictEqual(shown, chips, "wireframe race chips differ from page.md");
+    assert.deepStrictEqual(
+      wireframeChips("One race, by topic"),
+      chips,
+      "wireframe race chips differ from page.md",
+    );
   });
 
   // Extended by /ship pre-landing review.
@@ -899,22 +903,18 @@ describe("PageChips", () => {
     ["Retention contests", "Retention:", "then "],
   ]) {
     it(`the ${heading.toLowerCase()} stack names its sections.md sections, in order`, () => {
-      const line = read("page.md")
-        .split("\n")
-        .find((l) => l.startsWith(`- **${label}**`));
+      const line = PAGE.split("\n").find((l) => l.startsWith(`- **${label}**`));
       assert.ok(line, `page.md has no ${label} stack`);
       const list = line.slice(line.indexOf(lead, label.length + 6) + lead.length).split(". ")[0];
       const named = list.split("·").map((s) => s.replace(/\(.*?\)/g, "").trim());
       const sections = sectionTable(heading).rows.map((row) => row[0].slice(3));
       assert.deepStrictEqual(named, sections, `page.md ${label} stack differs from sections.md`);
       if (heading === "Measures") {
-        const html = read("page-wireframe.html");
-        const nav = html.match(
-          /A ballot question[\s\S]*?<nav class="chips"[^>]*>([\s\S]*?)<\/nav>/,
+        assert.deepStrictEqual(
+          wireframeChips("A ballot question"),
+          sections,
+          "wireframe measure chips differ from sections.md",
         );
-        assert.ok(nav, "the wireframe has no measure chip row");
-        const shown = [...nav[1].matchAll(/<a class="chip"[^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
-        assert.deepStrictEqual(shown, sections, "wireframe measure chips differ from sections.md");
       }
     });
   }
@@ -927,10 +927,8 @@ describe("PageChips", () => {
 //   no_claim=that ballot-check writes ballot-view.md (no scripts exist yet)
 describe("BallotRoles", () => {
   it("the ballot view and step 2 cover every snapshot role", () => {
-    const declared = read("snapshot-format.md").match(/^role: \w+ +# (.+)$/m);
-    assert.ok(declared, "snapshot-format.md no longer declares the role enum");
-    const roles = declared[1].split("|").map((role) => role.trim());
-    const view = read("ballot-format.md").match(/whose role is ([^.]+?), the only `_ballot` files/);
+    const roles = snapshotRoles();
+    const view = BALLOT.match(/whose role is ([^.]+?), the only `_ballot` files/);
     assert.ok(view, "ballot-format.md no longer lists the ballot-view roles");
     const listed = [...view[1].matchAll(/`(\w+)`/g)].map((m) => m[1]);
     assert.deepStrictEqual(
@@ -955,7 +953,6 @@ describe("BallotRoles", () => {
 //   seam=none; no_claim=that coverage enforces the states (no scripts exist yet)
 describe("SectionStates", () => {
   it("every section state named in the spec is an article-format.md state", () => {
-    const ARTICLE = read("article-format.md");
     const states = new Set(
       [...between(ARTICLE, "## Section states").matchAll(/^- `([^`]+)`:/gm)].map((m) => m[1]),
     );
@@ -978,7 +975,7 @@ describe("SectionStates", () => {
 //   why_new=no test reads the source labels; seam=none; no_claim=rendered labels (no renderer yet)
 describe("SourceLabels", () => {
   it("every plain claim tier has a page label, and the wireframe uses only page labels", () => {
-    const para = read("page.md").match(/\*\*Source labels\.\*\*([^\n]+)/);
+    const para = PAGE.match(/\*\*Source labels\.\*\*([^\n]+)/);
     assert.ok(para, "page.md no longer gives the source labels");
     const mapped = [...para[1].matchAll(/"([^"]+)" \((T\d)\b/g)];
     const plain = between(TIERS, "## Claim tags")
@@ -1008,16 +1005,150 @@ describe("SourceLabels", () => {
 //   why_new=FailureCodes checks code names only; seam=none; no_claim=check enforces the bounds
 describe("ExcerptLength", () => {
   it("the excerpt bounds agree across the claim rules, failure code and page cut", () => {
-    const ARTICLE = read("article-format.md");
     const rule = ARTICLE.match(/The excerpt is (\d+) to (\d+) characters/);
     assert.ok(rule, "article-format.md no longer states the excerpt bounds");
     const code = ARTICLE.match(/`excerpt-length` \| The excerpt is under (\d+) or over (\d+)/);
     assert.ok(code, "the excerpt-length row no longer states its bounds");
     assert.deepStrictEqual(code.slice(1), rule.slice(1), "excerpt-length bounds differ");
-    const cut = read("page.md").match(/An excerpt over (\d+) characters shows its first ~(\d+)/);
+    const cut = PAGE.match(/An excerpt over (\d+) characters shows its first ~(\d+)/);
     assert.ok(cut, "page.md no longer states the excerpt cut");
     assert.strictEqual(cut[1], cut[2], "page.md excerpt cut threshold and length differ");
     const [min, max, at] = [rule[1], rule[2], cut[1]].map(Number);
     assert.ok(min < at && at < max, `page cut ${at} is outside the excerpt bounds ${min}-${max}`);
+  });
+});
+
+// The wireframe's visible text: comments and tags dropped, entities decoded, whitespace collapsed.
+const wireframeText = () =>
+  wireframeBody()
+    .replace(/<[^>]+>/g, "")
+    .replaceAll("&#39;", "'")
+    .replaceAll("&nbsp;", " ")
+    .replace(/\s+/g, " ");
+
+// Added by /ship test coverage audit.
+// Value: protects=the fixed reader-facing lines page.md gives (trust header, banners, not-ready
+//   note, receipt line) are the ones the wireframe shows; fails_when=one is reworded in one file
+//   only; why_new=no test reads page.md copy; seam=none; no_claim=rendered page copy (no renderer)
+describe("PageCopy", () => {
+  for (const phrase of [
+    "Not affiliated with any campaign or party. Facts only, every one with its source.",
+    "Updated Oct 24, 2026 · Not affiliated with any campaign or party · About this guide ↑",
+    "21 contests on your ballot · 14 ready to read",
+    "Tap a race to compare the candidates",
+    "3 of 3 candidates on the official ballot covered",
+    "Official text and fiscal note saved",
+    "Not ready yet. Every candidate gets the same research before anything shows here. Check back; this link stays the same.",
+    "The quote above was saved on Oct 19, 2026 from the official record this link shows.",
+    "○ Unknown: no source found",
+    "Next on your ballot:",
+    "← All races",
+  ]) {
+    it(`page.md and the wireframe both show "${phrase.slice(0, 40)}"`, () => {
+      assert.ok(PAGE.includes(phrase), `page.md no longer says "${phrase}"`);
+      assert.ok(wireframeText().includes(phrase), `the wireframe does not show "${phrase}"`);
+    });
+  }
+
+  it("the wireframe trust header fills page.md's display_name template", () => {
+    const template = PAGE.match(/"Made by <`display_name` from `publish\.yaml`> ([^"]+)"/);
+    assert.ok(template, "page.md trust header no longer names display_name");
+    const escaped = template[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(wireframeText(), new RegExp(`Made by \\S+ ${escaped}`), "trust header differs");
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the page CSP loosens only style-src 'unsafe-inline' and font-src data:, as
+//   SKILL.md 6.2 states; fails_when=a script-src, 'self' or https: source is added to the CSP;
+//   why_new=no test reads the CSP; seam=none; no_claim=that publish emits this CSP (no script)
+describe("PageCsp", () => {
+  it("every CSP directive but style-src and font-src is 'none', and no script-src exists", () => {
+    const meta = SKILL.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
+    assert.ok(meta, "SKILL.md step 6.2 no longer gives the page CSP");
+    const directives = Object.fromEntries(
+      meta[1].split(";").map((d) => {
+        const [name, ...sources] = d.trim().split(/\s+/);
+        return [name, sources.join(" ")];
+      }),
+    );
+    assert.strictEqual(directives["default-src"], "'none'", "default-src is not 'none'");
+    assert.ok(!("script-src" in directives), "the CSP allows scripts");
+    const loosened = SKILL.match(/`font-src ([^`]+)` exists only for the embedded fonts/);
+    assert.ok(loosened, "SKILL.md no longer limits font-src to the embedded fonts");
+    const allowed = { "style-src": "'unsafe-inline'", "font-src": loosened[1] };
+    for (const [name, sources] of Object.entries(directives)) {
+      assert.strictEqual(sources, allowed[name] ?? "'none'", `CSP ${name} is loosened: ${sources}`);
+    }
+    assert.match(SKILL, /- `<script`, any `src` or `href` that is external/, "scan lost <script");
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=every decorative glyph page.md lists sits in an aria-hidden span in the
+//   wireframe, source-line dots included; fails_when=a glyph is added bare and screen readers
+//   speak it; why_new=no test reads the a11y list; seam=none; no_claim=rendered markup
+describe("PageGlyphs", () => {
+  it("the wireframe hides every decorative glyph from screen readers", () => {
+    const listed = PAGE.match(/Decorative glyphs \(([^)]+)\)/);
+    assert.ok(listed, "page.md no longer lists the decorative glyphs");
+    const glyphs = listed[1]
+      .split(",")
+      .map((g) => g.trim())
+      .filter((g) => [...g].length === 1);
+    assert.ok(glyphs.length >= 8, `only ${glyphs.length} glyphs parsed`);
+    const body = wireframeBody();
+    let count = 0;
+    for (const glyph of glyphs) {
+      for (const m of body.matchAll(new RegExp(glyph, "g"))) {
+        count++;
+        const before = body.slice(0, m.index);
+        assert.match(
+          before,
+          /<span[^>]*aria-hidden="true"[^>]*>$/,
+          `wireframe glyph ${glyph} at offset ${m.index} is not in an aria-hidden span`,
+        );
+      }
+    }
+    assert.ok(count >= 10, `only ${count} glyphs found in the wireframe`);
+    // The source line's "·" is listed in words, not as a bare glyph.
+    assert.match(listed[1], /the source line's "·"/, "page.md no longer hides the source-line dot");
+    // Lazy, so each capture ends just before the dot span's own closing tag.
+    const labs = [...body.matchAll(/<span class="lab">([\s\S]*?)<\/span><\/span>/g)];
+    assert.ok(labs.length > 0, "the wireframe has no source lines");
+    for (const [, lab] of labs) {
+      assert.match(lab, /<span aria-hidden="true">·$/, `source-line dot not hidden: ${lab}`);
+    }
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the ballot-list anchor page.md names is the id ballot-format.md reserves, and
+//   wireframe links use it, <contest> or <contest>--<section>; fails_when=the list anchor is renamed in one
+//   file only; why_new=Ids test covers _race/_ballot, not ballot; seam=none; no_claim=page anchors
+describe("PageAnchors", () => {
+  it("the reserved ballot anchor agrees across page.md, ballot-format.md and the wireframe", () => {
+    const anchor = PAGE.match(/The ballot list's anchor is `#([a-z-]+)`/);
+    assert.ok(anchor, "page.md no longer names the ballot list anchor");
+    const reserved = BALLOT.match(/A contest id may not be `([a-z-]+)`/);
+    assert.ok(reserved, "ballot-format.md no longer reserves a contest id");
+    assert.strictEqual(reserved[1], anchor[1], "reserved contest id differs from the list anchor");
+    const ids = exampleIds();
+    assert.ok(!ids.includes(anchor[1]), `example contest id uses the reserved ${anchor[1]}`);
+    const html = read("page-wireframe.html");
+    assert.match(html, new RegExp(`<main [^>]*id="${anchor[1]}"`), "wireframe list lacks anchor");
+    const idPattern = ballotRule("Ids");
+    const hrefs = [...html.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(hrefs.length >= 10, `only ${hrefs.length} wireframe anchor links`);
+    for (const href of hrefs) {
+      if (href === anchor[1]) continue;
+      // A race anchor is the bare contest id; a section anchor adds --<section> (page.md).
+      const [contest, section, extra] = href.split("--");
+      assert.ok(
+        section !== "" && extra === undefined,
+        `wireframe link #${href} is not <contest> or <contest>--<section>`,
+      );
+      assert.match(contest, idPattern, `wireframe link #${href} has a bad contest id`);
+    }
   });
 });
