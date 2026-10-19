@@ -151,14 +151,16 @@ vite.config.ts.timestamp-*
 
 # research-candidates data belongs in a private data repo, never here.
 # Defensive ignores in case the skill is run from this public repo by mistake.
-addresses.yaml
-publish.yaml
-ballot.yaml
-unfetchable.md
-archives.tsv
-private.yaml
-tiers.yaml
+# Anchored to where the skill writes them, so same-named files in skill source (test
+# fixtures) are never swallowed.
+/addresses.yaml
+/publish.yaml
+/tiers.yaml
 /downloads/
+/*/*/ballot.yaml
+/*/*/private.yaml
+/*/*/unfetchable.md
+/*/*/archives.tsv
 # Per-ballot data lives under <election>/<ballot-id>/ at the data repo root. Ignore it
 # by its inner layout so any election directory name is covered.
 /[0-9][0-9][0-9][0-9]-*/
@@ -175,3 +177,9 @@ tiers.yaml
 !/skills/*/site/
 !/skills/*/ballot.ledger
 !/skills/*/ballot-view.md
+!/skills/*/ballot.yaml
+!/skills/*/private.yaml
+!/skills/*/unfetchable.md
+!/skills/*/archives.tsv
+# Generic rules above (coverage) must not swallow a skill's scripts.
+!/skills/*/scripts/**

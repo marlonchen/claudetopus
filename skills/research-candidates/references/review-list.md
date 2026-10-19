@@ -23,7 +23,7 @@ All but the last are mechanical, and `review-list` adds them itself, so complete
   > <excerpt>
 ```
 
-The key is a short hash of the candidate id (the retention official's id, or the contest id for a measure), the section heading text as written in [sections.md](sections.md), the claim text, its tag, the excerpt and the snapshot path. For an unfetchable entry it is a hash of the URL and subject. `review-list` reads only the trailing `<!-- id:... -->` comment on an item line, and recomputes each key from the item's fields rather than trusting the comment. For a derived claim, the formula takes the place of the excerpt and the snapshot path is empty. Two candidates with the same claim text get different keys, and swapping only the excerpt, the tag or the source changes the key.
+The key is a short hash of the candidate id (the retention official's id, or the contest id for a measure), the section heading text as written in [sections.md](sections.md), the claim text, its tag, the excerpt, the snapshot path and a hash of the whole snapshot file. Snapshots are write-once (SKILL.md Rule 3); the file hash makes that checkable, since any later edit to a cited snapshot (its `source:` name, `url`, `public_url`, tier or body) changes the key and puts the claim back on the list. For an unfetchable entry it is a hash of the URL and subject. `review-list` reads only the trailing `<!-- id:... -->` comment on an item line, and recomputes each key from the item's fields rather than trusting the comment. Two candidates with the same claim text get different keys, and swapping only the excerpt, the tag, the source or the snapshot's contents changes the key.
 
 ## Accepted keys
 

@@ -6,6 +6,8 @@ Wireframe: [page-wireframe.png](page-wireframe.png) (source: [page-wireframe.htm
 
 ## Every screen
 
+The page is one file, so the trust header and freshness line appear once, at the top, under the ballot title; contest screens below it do not repeat them.
+
 - **Trust header.** Under the title, one quiet line: "Made by <`display_name` from `publish.yaml`> for our family. Not affiliated with any campaign or party. Facts only, every one with its source." Right under it, a collapsed `<details>` titled "How to read this" holds five short lines:
   1. The quote under each claim is the exact text from the source.
   2. The source labels, and what each means.
@@ -19,7 +21,7 @@ Wireframe: [page-wireframe.png](page-wireframe.png) (source: [page-wireframe.htm
 
 The title, then a two-part banner, "21 contests on your ballot · 14 ready to read". The first number comes from the official sample ballot, and the second counts `ready` contests. Then one line: "Tap a race to compare the candidates".
 
-Contests follow in ballot order under plain group headings (Federal, State, Local & measures). Each contest is a row in a divided list, not a bordered card: one link that fills the row, holding the contest name on the left, its status in words on the right, and a chevron. Rows are at least 48px tall. A multi-seat contest shows "Vote for 3" under its name, from `vote_for` ([ballot-format.md](ballot-format.md)).
+Contests follow in ballot order as one list, with no group headings (`ballot.yaml` has no level to group by, and grouping would break ballot order). Each contest is a row in a divided list, not a bordered card: one link that fills the row, holding the contest name on the left, its status in words on the right, and a chevron. Rows are at least 48px tall. A multi-seat contest shows "Vote for 3" under its name, from `vote_for` ([ballot-format.md](ballot-format.md)).
 
 ## Contest states
 
@@ -34,7 +36,7 @@ Each section is a heading. Under it, every candidate appears in ballot order as 
 - name, then party exactly as printed on the official ballot, in muted 14px text ("Cand. A · Democratic"), never abbreviated and never colored; contests with no printed party show none;
 - the claim, with "Says:" on candidate-statement claims;
 - **the verbatim excerpt, shown by default** as a quote, never hidden behind a tap, so the fairness of each summary is plain to every reader. An excerpt over 200 characters shows its first ~200 characters, cut at a word boundary, followed by a `<details>` "… full quote" with the rest;
-- a source line: "Campaign website · Candidate's own words · Source ▸".
+- a source line: "Candidate's own words · Source ▸". The source name is not repeated here; the excerpt's `<cite>` and the receipt carry it.
 
 The same block works for 2 to 6 candidates and for multi-seat contests.
 
@@ -44,7 +46,7 @@ The same block works for 2 to 6 candidates and for multi-seat contests.
 
 **Withdrawn and write-in candidates.** The banner counts printed, non-withdrawn candidates. A withdrawn candidate stays in ballot position, in `--muted` text (never faded with opacity), labeled "Withdrew (still on printed ballot)", with the withdrawal receipt and no other sections. Certified write-ins come after printed candidates, labeled "Certified write-in", get the full template, and are counted separately ("+1 certified write-in covered"). When the county publishes no write-in list, the race says "Certified write-ins: none published".
 
-**Receipts.** Tapping "Source ▸" opens an inline `<details>` receipt with the source name, the fetch date and the link, when there is one (the snapshot's `public_url` when it has one). There is no bottom sheet, so receipts work without JavaScript. Every receipt carries a fixed line: "The quote above was saved from this page on Oct 19, 2026. If the page has changed, the saved quote is what this summary used." Three receipts use a different line instead. A `public_url` link: "The quote above was saved on Oct 19, 2026 from the official record this link shows." A `_ballot` receipt, whose link is the county origin: "The quote above was saved on Oct 19, 2026 from the official ballot record; this link opens the county election site." A receipt with no link: "The quote above was saved on Oct 19, 2026 from this source; its address can't be shared." When `archives.tsv` has a Wayback Machine capture of the snapshot, the receipt shows "Saved copy ↗" next to "Original page ↗", built as SKILL.md step 6.2 says. `_ballot` receipts link only to the county site's origin and never get a saved copy. A source with a query string and no `public_url` shows no original-page link.
+**Receipts.** The whole source line is the `<summary>` of a block `<details>`, so it stays one line and the receipt opens below it, full width. Tapping it opens the receipt with the source name, the fetch date and the link, when there is one (the snapshot's `public_url` when it has one). There is no bottom sheet, so receipts work without JavaScript. Every receipt carries a fixed line: "The quote above was saved from this page on Oct 19, 2026. If the page has changed, the saved quote is what this summary used." Three receipts use a different line instead. A `public_url` link: "The quote above was saved on Oct 19, 2026 from the official record this link shows." A `_ballot` receipt, whose link is the county origin: "The quote above was saved on Oct 19, 2026 from the official ballot record; this link opens the county election site." A receipt with no link: "The quote above was saved on Oct 19, 2026 from this source; its address can't be shared." When `archives.tsv` has a Wayback Machine capture of the snapshot, the receipt shows "Saved copy ↗" next to "Original page ↗", built as SKILL.md step 6.2 says. `_ballot` receipts link only to the county site's origin and never get a saved copy. A source with a query string and no `public_url` shows no original-page link.
 
 **Moving between races.** Every race has an anchor named for its contest id (for example `#us-house-07`), so a reader can text back a link to one race. Each section heading's anchor adds the section to the contest id (`#us-house-07--money`), and the chips link to their own race's anchors, so no id repeats on the page. Each race ends with two full-width links, stacked: "Next on your ballot: Governor →", then "← All races". These are plain anchors. Contest ids are neutral office names, never the ballot id, and `ballot-check` keeps private place names out of them ([ballot-format.md](ballot-format.md)).
 
@@ -57,7 +59,7 @@ The same stack, with one block per section instead of one per candidate.
 
 ## Type
 
-Two open-license fonts, Latin subset, embedded as base64 `woff2` in the inline CSS, so the page makes no external requests (the woff2 files live in this skill's fonts directory; about 150-200KB added for the four faces; base64 adds a third to the woff2 size).
+Two open-license fonts, Latin subset, embedded as base64 `woff2` in the inline CSS, so the page makes no external requests (the woff2 files live in this skill's fonts directory). Budget: the four faces total at most 200KB of `woff2` before base64, which adds a third, so at most about 270KB in the page; subset further rather than exceed it.
 
 - Atkinson Hyperlegible Next (400, 700) for body and UI. It was designed for low-vision readers, with distinct 1/l/I and 0/O, which matters for dollar figures and vote counts.
 - Source Serif 4 (400, 600) for headings and excerpts, so the source's own words read differently from the summary.
@@ -79,17 +81,20 @@ Colors are CSS variables on `:root`, with dark values under `prefers-color-schem
 - Type scale: body 17px/1.5; h1 24px Source Serif 600; h2 19px; excerpt 17px/1.45 Source Serif; banners, notes and next/back links at body size; labels and source lines 14px minimum. No text smaller than 14px.
 - Spacing: 4, 8, 12, 16, 24, 32. 16px side gutter; content max width 640px. Headings get more space above than below (24 above, 8 below).
 - Tap targets: list rows, chips, every link and every `<summary>` ("Source ▸", "… full quote", "How to read this", next/back links) are at least 44px tall.
+- Every `<summary>` hides the browser's own disclosure marker (`list-style: none` and `::-webkit-details-marker { display: none }`) and shows one `aria-hidden="true"` glyph instead: ▸ closed, ▾ open (`details[open]`), so Chrome and Safari give the same cue.
 - Links are underlined, except list rows and chips, whose chevron or border marks them as tappable. Visited links use `--visited`. The focus ring is a 2px `--accent` outline with a 2px offset. `::selection` uses `--accent` at 25% opacity.
 - The accent teal belongs to no US party. Red and blue are never used, even for status.
 
-One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid. Each race section sets `content-visibility: auto` with `contain-intrinsic-size: auto 1200px`, so anchor links land in the right place, so a long ballot does not lay out every race at once on a slow phone.
+One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid. Each race section sets `content-visibility: auto` with `contain-intrinsic-size: auto 1200px`, so a long ballot does not lay out every race at once on a slow phone; the placeholder size keeps the scrollbar and anchor jumps roughly stable as races render.
+
+Page budget: the whole file, fonts included, should stay under 1MB. `publish` prints its size and warns above that (SKILL.md step 6.5).
 
 ## Accessibility
 
 - `lang="en"` and a `<main>` landmark.
 - Heading levels: h1 is the ballot or contest title, h2 is a section, h3 is a candidate. Measure and retention races have no h3: their sections are h2.
 - The chips are a `<nav aria-label="Topics in this race">`.
-- Each receipt `<summary>` is spoken in full: it shows "Source ▸" but reads "Source for Cand. A on Money", using visually hidden text.
+- Each receipt `<summary>` is spoken in full: it shows "Candidate's own words · Source ▸" but reads "Candidate's own words. Source for Cand. A on Money", using visually hidden text.
 - Each excerpt is a `<blockquote>`, with the source name in `<cite>`.
 - Decorative glyphs (○, ✓, ›, ▸, ↗, →, ←) sit in `aria-hidden="true"` spans, so screen readers skip them.
 - At 200% text size nothing overlaps and nothing scrolls sideways. Long contest titles and candidate names wrap.
@@ -99,7 +104,8 @@ One reading column at every width, capped at 640px and centered. Tablets and lap
 1. iPhone Safari at the largest text size.
 2. One Android phone in Chrome.
 3. VoiceOver through one full race.
-4. Dark mode on both phones.
+4. A chip and a "Next on your ballot" link each land on their target.
+5. Dark mode on both phones.
 
 ## Scope order
 

@@ -58,7 +58,6 @@ Each figure left in the claim must match a figure in that claim's own excerpt, n
 | `tag-mismatch` | The claim tag does not fit the snapshot's tier or `statements_only` |
 | `says-missing` | A "Says:" claim does not start with `Says:`, or a `says-only` section holds another claim |
 | `figure-missing` | A figure in the claim is not in its excerpt |
-| `derived-mismatch` | A derived number's formula, inputs or result do not check out |
 | `ballot-excerpt` | An excerpt citing the sample ballot is not one whole span of `ballot-view.md` |
 | `title-in-excerpt` | An excerpt contains the printed title of a contest with a `display_title` |
 | `comment-marker` | A claim or excerpt contains `<!--` or `-->` |
@@ -81,8 +80,8 @@ The one exception is a withdrawn candidate who is still printed: the On the ball
 
 ## Wording rules
 
-- No claim without an excerpt, except a derived number (below).
+- No claim without a link and an excerpt.
 - No `<!--` or `-->` in a claim or excerpt, so claim text can never forge a review key.
 - Positions use the candidate's own words, quoted, labeled "Says:". Sections marked `says-only` in [sections.md](sections.md) allow nothing else.
 - No adjectives about candidates.
-- A derived number (for example "61% from PACs") is allowed only when both inputs are claims in the same section with their own excerpts, and the derived claim shows its formula in inline code (`` `= 1,220,000 / 2,000,000` ``). A derived claim is the one claim with no link and no excerpt of its own: its evidence is its inputs. Its tag is the weakest of its inputs' tags (the highest tier number), and `check` verifies that instead of a snapshot's tier. `check` skips the excerpt-figure match for its result, requires each number in the formula to match a figure in a sibling claim, recomputes it, rounds half-up to the decimal places the claim shows, and fails unless the result equals the claimed value. Otherwise show the raw figures.
+- Money and vote figures are shown raw, as the excerpt gives them. A computed share ("61% from PACs") is not a claim; derived-number claims are not supported yet.

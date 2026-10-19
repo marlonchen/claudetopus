@@ -327,9 +327,11 @@ describe("StepReferences", () => {
     let count = 0;
     for (const [file, text] of SPEC_FILES) {
       const refs = [
-        ...[...text.matchAll(/\b[Ss]teps? (\d(?:\.\d)?(?:-\d(?:\.\d)?)?)\b/g)].map((m) =>
-          m[1].split("-"),
-        ),
+        // Extended by /ship pre-landing review: lists joined by "and", "or" or commas
+        // ("step 6.2 and 6.3") are checked too.
+        ...[
+          ...text.matchAll(/\b[Ss]teps? (\d(?:\.\d)?(?:(?:-|, ?| and | or )\d(?:\.\d)?)*)\b/g),
+        ].map((m) => m[1].split(/-|, ?| and | or /)),
         ...[...text.matchAll(/\((\d\.\d(?:-\d\.\d)?(?:, ?\d(?:\.\d)?)*)\)/g)].map((m) =>
           m[1].split(/[,-]/),
         ),
@@ -488,6 +490,17 @@ describe("PrivateDataIgnored", () => {
       ),
       "skills/research-candidates/ballot.ledger",
       "skills/research-candidates/ballot-view.md",
+      // Extended by /ship pre-landing review.
+      // Value: protects=every script in the SKILL.md Scripts table, and test fixtures named like
+      //   data files, can be committed; fails_when=a generic rule (coverage) or an unanchored data
+      //   rule swallows skills/*/scripts/<name> or a fixture; why_new=the probes skipped scripts/
+      //   and fixtures; seam=none
+      ...tableRows(SKILL, "## Scripts").map(
+        (row) => `skills/research-candidates/scripts/${row[0].replaceAll("`", "")}`,
+      ),
+      ...["ballot.yaml", "private.yaml", "tiers.yaml", "addresses.yaml", "archives.tsv"].map(
+        (file) => `skills/research-candidates/tests/fixtures/${file}`,
+      ),
     ];
     const result = spawnSync(
       "git",
@@ -609,7 +622,8 @@ describe("BallotExample", () => {
     const ids = [...BALLOT.matchAll(/^ +-? *id: (\S+)/gm)].map((m) => m[1]);
     assert.ok(ids.length >= 5, `only ${ids.length} ids in the ballot.yaml example`);
     for (const id of ids) assert.match(id, pattern, `example id ${id} fails the Ids pattern`);
-    for (const reserved of ["_race", "_ballot", "Jane", "../x", "-a"]) {
+    // "--" joins a contest id and a section in page anchors, so ids never hold it.
+    for (const reserved of ["_race", "_ballot", "Jane", "../x", "-a", "a--b", "a-"]) {
       assert.doesNotMatch(reserved, pattern, `Ids pattern accepts ${reserved}`);
     }
   });
@@ -882,4 +896,106 @@ describe("PageChips", () => {
       }
     });
   }
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the _ballot roles ballot-view.md lists and step 2 saves are the snapshot-format.md
+//   role enum; fails_when=a role is added to the enum but not to the ballot view or step 2;
+//   why_new=SnapshotRoles checks only `role: x` uses in ballot-format.md; seam=none;
+//   no_claim=that ballot-check writes ballot-view.md (no scripts exist yet)
+describe("BallotRoles", () => {
+  it("the ballot view and step 2 cover every snapshot role", () => {
+    const declared = read("snapshot-format.md").match(/^role: \w+ +# (.+)$/m);
+    assert.ok(declared, "snapshot-format.md no longer declares the role enum");
+    const roles = declared[1].split("|").map((role) => role.trim());
+    const view = read("ballot-format.md").match(/whose role is ([^.]+?), the only `_ballot` files/);
+    assert.ok(view, "ballot-format.md no longer lists the ballot-view roles");
+    const listed = [...view[1].matchAll(/`(\w+)`/g)].map((m) => m[1]);
+    assert.deepStrictEqual(
+      ["sample_ballot", ...listed].sort(),
+      [...roles].sort(),
+      "ballot-view roles plus sample_ballot differ from the snapshot role enum",
+    );
+    const step2 = between(SKILL, "### 2. ", "\n### ");
+    const saved = [...step2.matchAll(/`(?:role: )?([a-z]+(?:_[a-z]+)*)`[,)]/g)].map((m) => m[1]);
+    assert.deepStrictEqual(
+      [...new Set(saved)].sort(),
+      [...roles].sort(),
+      "SKILL.md step 2 roles differ from the snapshot role enum",
+    );
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the section-state literals sections.md and the article example use are the
+//   states article-format.md defines; fails_when=a state is reworded in one file only;
+//   why_new=Exemptions reads the sections.md heading, not the state literal coverage matches;
+//   seam=none; no_claim=that coverage enforces the states (no scripts exist yet)
+describe("SectionStates", () => {
+  it("every section state named in the spec is an article-format.md state", () => {
+    const ARTICLE = read("article-format.md");
+    const states = new Set(
+      [...between(ARTICLE, "## Section states").matchAll(/^- `([^`]+)`:/gm)].map((m) => m[1]),
+    );
+    assert.ok(states.size >= 2, `only ${states.size} section states parsed`);
+    const exempt = SECTIONS.match(/in the state `([^`]+)`/);
+    assert.ok(exempt, "sections.md no longer names the exemption state");
+    assert.ok(states.has(exempt[1]), `sections.md state "${exempt[1]}" is not defined`);
+    const example = ARTICLE.match(/## Structure\n\n```markdown\n([\s\S]*?)```/);
+    assert.ok(example, "article-format.md has no structure example");
+    const bare = example[1].split("\n").filter((line) => /^[A-Z]/.test(line));
+    assert.ok(bare.length > 0, "article-format.md example shows no section state");
+    for (const line of bare) assert.ok(states.has(line), `example state "${line}" is not defined`);
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=page.md gives a source label for every plain claim tier, and the wireframe
+//   badges are page.md labels; fails_when=a plain tier is added, or a label the wireframe shows
+//   is renamed in one file only (News and Analysis have no wireframe badge);
+//   why_new=no test reads the source labels; seam=none; no_claim=rendered labels (no renderer yet)
+describe("SourceLabels", () => {
+  it("every plain claim tier has a page label, and the wireframe uses only page labels", () => {
+    const para = read("page.md").match(/\*\*Source labels\.\*\*([^\n]+)/);
+    assert.ok(para, "page.md no longer gives the source labels");
+    const mapped = [...para[1].matchAll(/"([^"]+)" \((T\d)\b/g)];
+    const plain = between(TIERS, "## Claim tags")
+      .split("\n")
+      .find((line) => line.startsWith("| `T1`"));
+    assert.ok(plain, "source-tiers.md has no plain claim tag row");
+    const plainTiers = [...cells(plain)[0].matchAll(/`(T\d)`/g)].map((m) => m[1]);
+    assert.deepStrictEqual(
+      mapped.map((m) => m[2]).sort(),
+      plainTiers.sort(),
+      "page.md source labels do not cover exactly the plain claim tiers",
+    );
+    const labels = new Set([...para[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]));
+    const badges = [
+      ...read("page-wireframe.html").matchAll(/<span class="badge">([^<]+)<\/span>/g),
+    ].map((m) => m[1].replaceAll("&#39;", "'"));
+    assert.ok(badges.length > 0, "the wireframe shows no source labels");
+    for (const badge of badges) {
+      assert.ok(labels.has(badge), `wireframe label "${badge}" is not a page.md source label`);
+    }
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the excerpt length bounds in the claim rules and the excerpt-length code agree,
+//   and the page's quote cut falls inside them; fails_when=one bound changes without the other;
+//   why_new=FailureCodes checks code names only; seam=none; no_claim=check enforces the bounds
+describe("ExcerptLength", () => {
+  it("the excerpt bounds agree across the claim rules, failure code and page cut", () => {
+    const ARTICLE = read("article-format.md");
+    const rule = ARTICLE.match(/The excerpt is (\d+) to (\d+) characters/);
+    assert.ok(rule, "article-format.md no longer states the excerpt bounds");
+    const code = ARTICLE.match(/`excerpt-length` \| The excerpt is under (\d+) or over (\d+)/);
+    assert.ok(code, "the excerpt-length row no longer states its bounds");
+    assert.deepStrictEqual(code.slice(1), rule.slice(1), "excerpt-length bounds differ");
+    const cut = read("page.md").match(/An excerpt over (\d+) characters shows its first ~(\d+)/);
+    assert.ok(cut, "page.md no longer states the excerpt cut");
+    assert.strictEqual(cut[1], cut[2], "page.md excerpt cut threshold and length differ");
+    const [min, max, at] = [rule[1], rule[2], cut[1]].map(Number);
+    assert.ok(min < at && at < max, `page cut ${at} is outside the excerpt bounds ${min}-${max}`);
+  });
 });
