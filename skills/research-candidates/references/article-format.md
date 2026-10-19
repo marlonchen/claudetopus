@@ -49,7 +49,7 @@ Each figure left in the claim must match a figure in that claim's own excerpt, n
 
 ## Failure codes
 
-`check` and `coverage` report each failure as a location (article path and line, plus the claim key when there is one) and one code from this list. The main session passes the compile agent only these two (Rule 7).
+`check`, `coverage` and `publish` report each failure as a location (article path and line, plus the claim key when there is one) and one code from this list. The main session passes the compile agent only these two (Rule 7).
 
 | Code | Meaning |
 | --- | --- |
@@ -62,6 +62,9 @@ Each figure left in the claim must match a figure in that claim's own excerpt, n
 | `ballot-excerpt` | A `_ballot` excerpt falls outside a listed title or candidate entry |
 | `title-in-excerpt` | An excerpt contains the printed title of a contest with a `display_title` |
 | `comment-marker` | A claim or excerpt contains `<!--` or `-->` |
+| `private-match` | Reported by `publish`: a claim or excerpt matches the privacy scan (SKILL.md step 6.3) |
+| `claim-format` | A claim line is malformed, or its link points at a missing snapshot or one outside `sources/` |
+| `block-missing` | A candidate, official or measure block is missing, out of ballot order, or under the wrong `#` or `##` heading |
 | `section-missing` | A section is missing, out of order or duplicated |
 | `section-state` | A section has no state, more than one, or a state it may not use |
 

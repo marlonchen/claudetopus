@@ -76,7 +76,7 @@ Check Rule 8 first. If `publish.yaml` does not exist yet, ask the researcher to 
 
 ### 2. Find the ballot
 
-Look up the address's districts to identify the county and the contests to expect: `fetch-snapshot --geocode` sends the address to the US Census Geocoder, prints the county and the congressional and state legislative districts, and saves nothing. Then point the researcher to the county's official sample ballot, and save it with `fetch-snapshot --ballot` under `sources/_ballot/` as `role: sample_ballot`, plus, when the county or state publishes them, the official candidate list (`candidate_list`), the voter pamphlet (`pamphlet`, which also holds a measure's official text, fiscal note and arguments) and the certified write-in list (`write_in_list`). Step 2 is the only step that saves `_ballot` snapshots. Choose a `<ballot-id>`: an opaque label such as `ballot-a`, never built from the address, county or precinct. Write it into `addresses.yaml`.
+Look up the address's districts to identify the county and the contests to expect: `fetch-snapshot --geocode` sends the address to the US Census Geocoder, prints the county and the congressional and state legislative districts, and saves nothing. Then point the researcher to the county's official sample ballot; the researcher saves it with `fetch-snapshot --ballot` (or `--ballot --file`) under `sources/_ballot/` as `role: sample_ballot`, plus, when the county or state publishes them, the official candidate list (`candidate_list`), the voter pamphlet (`pamphlet`, which also holds a measure's official text, fiscal note and arguments) and the certified write-in list (`write_in_list`). Step 2 is the only step that saves `_ballot` snapshots. Choose a `<ballot-id>`: an opaque label such as `ballot-a`, never built from the address, county or precinct. Write it into `addresses.yaml`.
 
 ### 3. Confirm the ballot
 
@@ -94,7 +94,7 @@ Trigger: "research `<contest>`". Work top of ballot first.
 
 ### 5. Review
 
-The researcher clears `review/<contest>.md` by marking items `[x]`. A changed claim is edited in the article, then steps 4.4-4.5 are rerun; it comes back as a new unchecked item. A contest is `ready` as defined in [review-list.md](references/review-list.md): `check` and `coverage` pass, the review list has no unchecked items, and every claim key is accepted. After marking, the researcher commits `review/` and `tiers.yaml` in the data repo; the model never does.
+The researcher clears `review/<contest>.md` by marking items `[x]`. A changed claim is edited in the article, then steps 4.4-4.5 are rerun; it comes back as a new unchecked item. A contest is `ready` as defined in [review-list.md](references/review-list.md): `check` and `coverage` pass, the review list has no unchecked items, and every claim key is accepted. After marking, run `review-list` so the marked keys are appended to `.accepted`; then the researcher commits `review/` and `tiers.yaml` in the data repo. The model never commits.
 
 ### 6. Publish
 
@@ -122,7 +122,7 @@ branch: main
    - the printed `title` of any contest that has a `display_title`;
    - `<script`, any `src` or `href` that is external but not a receipt link, or a key parameter or key value as defined in [snapshot-format.md](references/snapshot-format.md).
 
-   The digit-run and ZIP checks skip only the page's own generated dates. A match inside a contest's claims or excerpts drops that contest to "Not yet covered" and reports its contest and claim key to the researcher; the compile agent then rewords or drops the claim (Rule 7) and steps 4.4-4.5 are rerun. Any other match refuses the whole page.
+   The digit-run and ZIP checks skip only the page's own generated dates. A match inside a contest's claims or excerpts drops that contest to "Not yet covered" and reports it as `private-match` with its article line and claim key ([article-format.md](references/article-format.md)); the compile agent then rewords or drops the claim (Rule 7) and steps 4.4-4.5 are rerun. Any other match refuses the whole page.
 4. Refuse if `pages_dir` is the data repo or shares any commit with it, if any fetch or push URL of its `origin` is not `pages_repo`, if it is not on `branch`, or if its working tree is not clean. The Pages repo has its own history and never holds private data.
 5. Copy only that file to `<slug>/index.html` in `pages_dir`, and stage only that path. Show the diff and the list of contests on the page. Tell the researcher the contest list becomes public and can narrow down where a voter lives, and that the commit's author name and email are public too (use a noreply email in `pages_dir`). Ask before committing with the message `publish <slug>` and pushing with `git push origin HEAD:refs/heads/<branch>`, never a bare `git push`, which may follow `pushRemote` or `pushDefault` to another remote.
 6. Give the researcher the page URL to text to the family members on that ballot.

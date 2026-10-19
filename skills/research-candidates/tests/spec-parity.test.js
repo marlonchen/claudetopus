@@ -28,6 +28,14 @@ const TYPE_TABLES = {
 };
 const TABLES = Object.values(TYPE_TABLES);
 
+// The text from `heading` up to the next `next` heading (default: the next "## ").
+const between = (text, heading, next = "\n## ") => {
+  const start = text.indexOf(heading);
+  assert.ok(start !== -1, `missing "${heading}"`);
+  const end = text.indexOf(next, start + 1);
+  return text.slice(start, end === -1 ? undefined : end);
+};
+
 const cells = (line) =>
   line
     .slice(1, -1)
@@ -38,10 +46,7 @@ const cells = (line) =>
 // Every data row must name a lettered section ("A. On the ballot"), so a
 // mistyped row fails here instead of silently dropping out of every check.
 function sectionTable(heading) {
-  const start = SECTIONS.indexOf(`## ${heading}\n`);
-  assert.ok(start !== -1, `sections.md is missing "## ${heading}"`);
-  const next = SECTIONS.indexOf("\n## ", start + 1);
-  const lines = SECTIONS.slice(start, next === -1 ? undefined : next)
+  const lines = between(SECTIONS, `## ${heading}\n`)
     .split("\n")
     .filter((line) => line.startsWith("|"));
   assert.ok(lines.length > 2, `no table under "## ${heading}"`);
@@ -226,9 +231,7 @@ describe("Tiers", () => {
 
 describe("ClaimTags", () => {
   it("every claim tag used in the spec is defined in source-tiers.md", () => {
-    const start = TIERS.indexOf("## Claim tags");
-    assert.ok(start !== -1, 'source-tiers.md is missing "## Claim tags"');
-    const table = TIERS.slice(start, TIERS.indexOf("\n## ", start + 1));
+    const table = between(TIERS, "## Claim tags");
     const known = new Set();
     for (const line of table.split("\n").filter((l) => l.startsWith("| `"))) {
       const first = cells(line)[0];
@@ -277,8 +280,7 @@ function assertStep(step, where) {
 }
 
 describe("Scripts", () => {
-  const tableStart = SKILL.indexOf("## Scripts");
-  const rows = SKILL.slice(tableStart, SKILL.indexOf("\n## ", tableStart + 1))
+  const rows = between(SKILL, "## Scripts")
     .split("\n")
     .filter((line) => line.startsWith("| `"))
     .map(cells);
@@ -485,10 +487,7 @@ describe("PrivateDataIgnored", () => {
 //   steps only; seam=none
 describe("RuleReferences", () => {
   it("every Rule N cited in the spec exists in SKILL.md", () => {
-    const rulesBlock = SKILL.slice(
-      SKILL.indexOf("## Rules that never bend"),
-      SKILL.indexOf("## Scripts"),
-    );
+    const rulesBlock = between(SKILL, "## Rules that never bend");
     const rules = new Set([...rulesBlock.matchAll(/^(\d+)\. \*\*/gm)].map((m) => m[1]));
     assert.ok(rules.size >= 8, `only ${rules.size} rules parsed`);
     let count = 0;
