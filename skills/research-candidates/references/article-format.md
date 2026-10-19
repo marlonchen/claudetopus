@@ -30,9 +30,22 @@ Section headings come from [sections.md](sections.md), in that order, for every 
 - The tag is inline code, one of the claim tags in [source-tiers.md](source-tiers.md).
 - The link points at exactly one snapshot and is relative to the article.
 - The excerpt is an indented blockquote on its own line, copied verbatim from the body of *that* snapshot. `check` matches each excerpt against the one snapshot its own claim links to, never against other snapshots the article cites. It needs no quote marks, so it may contain any quote character.
-- The excerpt is at least 20 characters. For a short value (a roll-call "Yea", a dollar figure), quote enough of the surrounding line to reach 20, for example the bill number and the vote together.
-- Matching normalizes both sides the same way: collapse whitespace, map curly quotes to straight and en/em dashes to `-`, and join `pdftotext` hyphenated line breaks. Nothing else.
-- Before `check` looks for figures in the claim text, it strips link targets, link text and inline code, so snapshot names and contest ids (`us-house-07`, `fec-totals-2.md`) are never read as claimed figures.
+- The excerpt is 20 to 300 characters. For a short value (a roll-call "Yea", a dollar figure), quote enough of the surrounding line to reach 20, for example the bill number and the vote together. The cap keeps the figure check meaningful and keeps long stretches of a news article off the page.
+
+## Matching
+
+Excerpt matching and the ballot check normalize both sides the same way, and nothing else:
+
+1. Unicode NFKC, which also expands ligatures such as `ﬁ` and turns non-breaking and other Unicode spaces into plain spaces.
+2. Collapse runs of whitespace to one space.
+3. Map curly quotes to straight quotes, and en and em dashes to `-`.
+4. Join `pdftotext` hyphenated line breaks.
+
+## Figures
+
+Before `check` looks for figures in the claim text, it strips link targets, link text and inline code, so snapshot names and contest ids (`us-house-07`, `fec-totals-2.md`) are never read as claimed figures.
+
+Each figure left in the claim must match a figure in that claim's own excerpt, not just any number in the snapshot. Both sides are canonicalized first: drop `$` and thousands commas, read `K`, `M`, `million` and `billion` as multipliers, and read `%` as a percentage. A claimed figure matches when the excerpt's value, rounded half-up to the decimal places the claim shows, equals it: "$1.22 million" matches `receipts: 1220000.55`, and "$1,220,001" matches it too.
 
 ## Section states
 
@@ -40,13 +53,13 @@ Each section is in exactly one state:
 
 - claims (one or more claim lines);
 - `Unknown, no source found`: the checklist was run and nothing usable turned up;
-- `Not part of this office's job`: only where [sections.md](sections.md) says so for the contest's `office_type`.
+- `Not part of this office's job`: only where [sections.md](sections.md) says so.
 
 The one exception is a withdrawn candidate who is still printed: section A only, holding the withdrawal receipt. Certified write-ins come after printed candidates and get every section.
 
 ## Wording rules
 
 - No claim without an excerpt.
-- Positions use the candidate's own words, quoted, labeled "Says:".
+- Positions use the candidate's own words, quoted, labeled "Says:". Sections marked `says-only` in [sections.md](sections.md) allow nothing else.
 - No adjectives about candidates.
-- A derived number (for example "61% from PACs") is allowed only when both inputs are claims in the same section with their own excerpts, and the derived claim shows its formula in inline code (`` `= 1,220,000 / 2,000,000` ``). `check` recomputes it and fails on a mismatch beyond rounding. Otherwise show the raw figures.
+- A derived number (for example "61% from PACs") is allowed only when both inputs are claims in the same section with their own excerpts, and the derived claim shows its formula in inline code (`` `= 1,220,000 / 2,000,000` ``). `check` recomputes it, rounds half-up to the decimal places the claim shows, and fails unless the result equals the claimed value. Otherwise show the raw figures.

@@ -144,3 +144,14 @@ vite.config.ts.timestamp-*
 
 # rumdl lint cache
 .rumdl_cache/
+
+# AI
+.claude/
+.gstack/
+
+# research-candidates data belongs in a private data repo, never here.
+# Defensive ignores in case the skill is run from this public repo by mistake.
+addresses.yaml
+publish.yaml
+ballot.yaml
+unfetchable.md
