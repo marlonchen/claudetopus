@@ -1,0 +1,106 @@
+# Page
+
+The published page: one static HTML file per ballot, rendered by `publish` (SKILL.md step 6) and republished as contests become `ready`. This file is the layout and visual spec. Rendering safety rules (escaping, allowed links, CSP, privacy scan) are in SKILL.md step 6.
+
+Wireframe: [page-wireframe.png](page-wireframe.png) (source: [page-wireframe.html](page-wireframe.html)). It shows five screens: the ballot list, a candidate race, an open receipt with the end of a race, a ballot question, and a race that is not ready yet. The My weights screen is greyed out because it comes later (see Scope order).
+
+## Every screen
+
+- **Trust header.** Under the title, one quiet line: "Made by <researcher's first name> for our family. Not affiliated with any campaign or party. Facts only, every one with its source." Right under it, a collapsed `<details>` titled "How to read this" holds five short lines:
+  1. The quote under each claim is the exact text from the source.
+  2. The four source labels, and what each means.
+  3. "Says:" marks the candidate's own claim about themselves.
+  4. "○ Unknown" means we looked and found nothing.
+  5. Candidates are listed in official ballot order.
+- **Freshness.** "Updated Oct 24, 2026 · 14 of 21 ready" under the title, using the publish time. Each `ready` race shows "Ready since Oct 22". The emailed fallback file carries the same stamp, so "replaces the previous version" can be checked by date.
+- No party colors and no photos.
+
+## Ballot screen
+
+The title, then a two-part banner, "21 contests on your ballot · 14 ready to read". The first number comes from the official sample ballot, and the second counts `ready` contests. Then one line: "Tap a race to compare the candidates".
+
+Contests follow in ballot order under plain group headings (Federal, State, Local & measures). Each contest is a row in a divided list, not a bordered card: the contest name on the left, its status in words on the right, and a chevron. Rows are at least 48px tall. A multi-seat contest shows "Vote for 3" under its name, from `vote_for` ([ballot-format.md](ballot-format.md)).
+
+## Contest states
+
+A contest that is not `ready` shows "Not ready yet" on the ballot list. Its row stays tappable and opens a short note: "Not ready yet. Every candidate gets the same research before anything shows here. Check back; this link stays the same." When no contest is `ready`, the banner reads "21 contests on your ballot · none ready yet", followed by the same note and, if the researcher sets one, the date the first race is expected.
+
+## Race screen
+
+The contest title and the coverage banner ("3 of 3 candidates on the official ballot covered"; for multi-seat contests "6 of 6 candidates covered · Vote for up to 3"). Then a row of chips that jump to each section in [sections.md](sections.md): On the ballot, Background, Record, Money, Positions, Controversies. Under Positions, each issue in the office's fixed list is a sub-heading.
+
+Each section or issue is a heading. Under it, every candidate appears in ballot order as a block:
+
+- name, then party exactly as printed on the official ballot, in muted 14px text ("Cand. A · Democratic"), never abbreviated and never colored; contests with no printed party show none;
+- the claim, with "Says:" on candidate-statement claims;
+- **the verbatim excerpt, shown by default** as a quote, never hidden behind a tap, so the fairness of each summary is plain to every reader. An excerpt over 200 characters shows its first ~200 characters, cut at a word boundary, followed by a `<details>` "… full quote" with the rest;
+- a source line: "Campaign website · Candidate's own words · Source ▸".
+
+The same block works for 2 to 6 candidates and for multi-seat contests.
+
+**Source labels.** The page never shows tier codes. It uses four words: "Official record" (T1 records), "News" (T2), "Analysis" (T3), and "Candidate's own words" (every `s`-tagged claim, which are exactly the "Says:" claims). See [source-tiers.md](source-tiers.md).
+
+**Unknown and out of scope.** "○ Unknown: no source found" sits in that candidate's slot, in italic at full body contrast, so a gap shows up next to rivals who have claims. A section that is "Not part of this office's job" shows once, as a heading line with "(not part of this office's job)" and no per-candidate rows, and it is left out of the chips.
+
+**Withdrawn and write-in candidates.** The banner counts printed, non-withdrawn candidates. A withdrawn candidate stays in ballot position, greyed, labeled "Withdrew (still on printed ballot)", with the withdrawal receipt and no other sections. Certified write-ins come after printed candidates, labeled "Certified write-in", get the full template, and are counted separately ("+1 certified write-in covered"). When the county publishes no write-in list, the race says "Certified write-ins: none published".
+
+**Receipts.** Tapping "Source ▸" opens an inline `<details>` receipt with the source name, the fetch date and the link. There is no bottom sheet, so receipts work without JavaScript. Every receipt carries a fixed line: "The quote above was saved from this page on Oct 19, 2026. If the page has changed, the saved quote is what this summary used." When `archives.tsv` has a Wayback Machine copy of the snapshot, the receipt shows "Saved copy ↗" next to "Original page ↗". `_ballot` receipts link only to the county site's origin and never get a saved copy.
+
+**Moving between races.** Every race has an anchor named for its contest id (for example `#us-house-07`), so a reader can text back a link to one race. Each race ends with "Next on your ballot: Governor →" and "← All races". These are plain anchors. Contest ids are neutral office names, never the ballot id.
+
+## Measure and retention races
+
+The same stack, with one block per section instead of one per candidate.
+
+- **Measures:** What a Yes vote does (official text) · Cost (official fiscal note) · Arguments for · Arguments against · Independent analysis. For and Against are sibling blocks of equal size, each labeled "from the official voter guide", and are never presented as facts. Banner: "Official text and fiscal note saved".
+- **Retention:** the judge's or official's name, then Record · Evaluations · Discipline · Says. Banner: "Official record searched: N sources". A section with no source shows "Unknown, no source found" plus a one-line note that thin records are common for judges.
+
+## Type
+
+Two open-license fonts, Latin subset, embedded as base64 `woff2` in the inline CSS, so the page makes no external requests (about 80-120KB added).
+
+- Atkinson Hyperlegible Next (400, 700) for body and UI. It was designed for low-vision readers, with distinct 1/l/I and 0/O, which matters for dollar figures and vote counts.
+- Source Serif 4 (400, 600) for headings and excerpts, so the source's own words read differently from the summary.
+
+## Tokens
+
+Colors are CSS variables on `:root`, with dark values under `prefers-color-scheme: dark`. Contrast was measured with the WCAG formula.
+
+| Token | Light | Dark | Contrast (light / dark) |
+| --- | --- | --- | --- |
+| `--fg` | `#1b1d1e` | `#e8e6e1` | 16.9 / 14.6 on `--bg` |
+| `--muted` | `#55595c` | `#a9aca8` | 7.1 / 7.9 on `--bg`; 6.4 / 7.1 on `--quote-bg` |
+| `--bg` | `#ffffff` | `#141617` | |
+| `--quote-bg` | `#f2f3f1` | `#1e2122` | `--fg` 15.2 / 13.0 |
+| `--line` | `#d5d8d6` | `#33383a` | dividers only, never text |
+| `--accent` | `#0f5f5c` (teal) | `#5fbfb7` | 7.5 / 8.3; links, focus ring, selected chip |
+| `--visited` | `#5a4a7a` | `#b3a3d6` | 7.8 / 7.9 |
+
+- Type scale: body 17px/1.5; h1 24px Source Serif 600; h2 19px; excerpt 16px/1.45 Source Serif; labels and source lines 14px minimum. No text smaller than 14px.
+- Spacing: 4, 8, 12, 16, 24, 32. 16px side gutter; content max width 640px. Headings get more space above than below (24 above, 8 below).
+- Tap targets: list rows, chips, "Source ▸", and next/back links are at least 44px tall.
+- Links are underlined, and visited links use `--visited`. The focus ring is a 2px `--accent` outline with a 2px offset. `::selection` uses `--accent` at 25% opacity.
+- The accent teal belongs to no US party. Red and blue are never used, even for status.
+
+One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid.
+
+## Accessibility
+
+- `lang="en"` and a `<main>` landmark.
+- Heading levels: h1 is the ballot or contest title, h2 is a section or issue, h3 is a candidate (or section, for measures and retention).
+- The chips are a `<nav aria-label="Topics in this race">`.
+- Each receipt `<summary>` is spoken in full: it shows "Source ▸" but reads "Source for Cand. A on Money", using visually hidden text.
+- Each excerpt is a `<blockquote>`, with the source name in `<cite>`.
+- At 200% text size nothing overlaps and nothing scrolls sideways. Long contest titles and candidate names wrap.
+
+**Publish device check**, before the first publish of each ballot and after any layout change. `publish` prints this list and asks for confirmation:
+
+1. iPhone Safari at the largest text size.
+2. One Android phone in Chrome.
+3. VoiceOver through one full race.
+4. Dark mode on both phones.
+
+## Scope order
+
+1. Ballot and race screens with receipts (the first deliverable).
+2. My weights screen, later: sliders and ratings in localStorage only, with Unknown and out-of-scope sections excluded from scoring, plus a private printable cheat sheet. Built only after the top-of-ballot contests are `ready`.

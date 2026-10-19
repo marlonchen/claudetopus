@@ -51,7 +51,7 @@ All scripts live in `scripts/` in this skill. The neutrality pass (4.5, 5) is a 
   <election>/                           # e.g. 2026-general
     <ballot-id>/                        # opaque label, e.g. ballot-a
       ballot.yaml                       # contests + candidates, publish slug
-      private.yaml                      # private_strings and ignored_lines: text that locates or names the voter
+      private.yaml                      # private_strings (text that locates or names the voter); ignored_lines (boilerplate only)
       unfetchable.md                    # append-only log of sources that could not be saved
       ballot.ledger                     # append-only log of every _ballot snapshot --ballot saved
       ballot-view.md                    # matched sample-ballot spans, written by ballot-check
@@ -114,8 +114,8 @@ branch: main
 
 1. Recompute readiness instead of trusting the review files. Two gates:
    - **Ballot gate**, which refuses the whole publish: `ballot-check` must pass, and `review/` and `tiers.yaml` must have no uncommitted changes, tracked or untracked (`git status --porcelain`), so every acceptance and tier is in a researcher's data-repo commit.
-   - **Contest gate**, which decides each contest separately: a contest is rendered only when it is `ready` ([review-list.md](references/review-list.md)): `check` and `coverage` pass for it, its review file has no unchecked box (unfetchable entries included), and every current claim key is accepted. Any other contest, including one with no article yet, appears as "Not yet covered", never blank or partial. A review file missing next to an existing baseline makes `publish` refuse; run `review-list` to rebuild it ([review-list.md](references/review-list.md)).
-2. Render `site/index.html`. Contest and measure headings come from `ballot.yaml` (`display_title` if set, otherwise `title`), never from article headings. The page is one self-contained file: inline CSS, receipts as `<details>` elements, no external requests, `<meta name="robots" content="noindex, nofollow">`, and `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">`. HTML-escape every value the page interpolates: claims, excerpts, source names, titles, names, parties and dates. Receipt URLs are rebuilt from their parsed scheme, host and path and attribute-escaped. Receipt links allow only `http` and `https` URLs and carry no query string or fragment. A `_ballot` receipt links only to the county site's origin (`https://county.example.gov/`), never the per-ballot path, which can encode the precinct or ballot style.
+   - **Contest gate**, which decides each contest separately: a contest is rendered only when it is `ready` ([review-list.md](references/review-list.md)): `check` and `coverage` pass for it, its review file has no unchecked box (unfetchable entries included), and every current claim key is accepted. Any other contest, including one with no article yet, appears as "Not ready yet" ([page.md](references/page.md)), never blank or partial. A review file missing next to an existing baseline makes `publish` refuse; run `review-list` to rebuild it ([review-list.md](references/review-list.md)).
+2. Render `site/index.html` to [references/page.md](references/page.md). Contest and measure headings come from `ballot.yaml` (`display_title` if set, otherwise `title`), never from article headings. The page is one self-contained file: inline CSS, receipts as `<details>` elements, no external requests, `<meta name="robots" content="noindex, nofollow">`, and `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">`. HTML-escape every value the page interpolates: claims, excerpts, source names, titles, names, parties and dates. Receipt URLs are rebuilt from their parsed scheme, host and path and attribute-escaped. Receipt links allow only `http` and `https` URLs and carry no query string or fragment. A `_ballot` receipt links only to the county site's origin (`https://county.example.gov/`), never the per-ballot path, which can encode the precinct or ballot style.
 3. Privacy scan. Check two forms of the page: the raw HTML, and its text with HTML entities and URL encoding decoded, case folded and whitespace collapsed. Every text match below is a whole-phrase match on word boundaries, never a substring. Refuse if either form contains:
    - the ballot id, or any `private_strings` entry from `private.yaml`;
    - the digit run of a `private_strings` entry on its own, when it has 4 or more digits or stands next to the entry's other words ("Pct 12"). Shorter digit runs alone are too common to scan for;
@@ -131,7 +131,4 @@ branch: main
 
 ## The page
 
-- **Ballot screen:** contests in ballot order, each with its state and an "N of N candidates on the official ballot covered" banner.
-- **Race screen:** candidates side by side in ballot order, one row per section, a tier badge on every cell, a "Says:" label on candidate-statement claims, and the excerpt shown under each claim by default. Tapping opens the receipt: source name, fetch date, link.
-- "Unknown, no source found" and "Not part of this office's job" look different, and a "How to read this" note explains both.
-- No party colors and no photos.
+Layout, states, receipts, type, tokens and accessibility are in [references/page.md](references/page.md), with a wireframe. Render it exactly; the safety rules in step 6.2 and 6.3 apply on top.
