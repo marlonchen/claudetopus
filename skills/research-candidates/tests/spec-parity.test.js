@@ -674,7 +674,13 @@ describe("AllegationWords", () => {
       "i",
     );
     for (const form of forms) assert.match(`was ${form.toUpperCase()} in`, pattern, form);
-    for (const text of ["in charge of", "settled in", "she settles", "the chargers"]) {
+    for (const text of [
+      "in charge of",
+      "settled in",
+      "she settles",
+      "the chargers",
+      "Sue Smith said",
+    ]) {
       assert.doesNotMatch(text, pattern, `allegation list matches "${text}"`);
     }
   });
