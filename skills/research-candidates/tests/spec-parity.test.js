@@ -1140,6 +1140,9 @@ describe("PageAnchors", () => {
     const idPattern = ballotRule("Ids");
     const hrefs = [...html.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
     assert.ok(hrefs.length >= 10, `only ${hrefs.length} wireframe anchor links`);
+    // Contests the wireframe gives section anchors to; a bare race link must name one of them,
+    // so a link left on the old list anchor after a rename still fails.
+    const races = new Set(hrefs.filter((h) => h.includes("--")).map((h) => h.split("--")[0]));
     for (const href of hrefs) {
       if (href === anchor[1]) continue;
       // A race anchor is the bare contest id; a section anchor adds --<section> (page.md).
@@ -1149,6 +1152,9 @@ describe("PageAnchors", () => {
         `wireframe link #${href} is not <contest> or <contest>--<section>`,
       );
       assert.match(contest, idPattern, `wireframe link #${href} has a bad contest id`);
+      if (section === undefined) {
+        assert.ok(races.has(contest), `wireframe link #${href} names no race on the page`);
+      }
     }
   });
 });

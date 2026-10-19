@@ -18,4 +18,20 @@
 
 **Priority:** P3
 
+### Prove a search ran before "Unknown, no source found"
+
+**What:** Have `fetch-snapshot` (or a sibling script) write a structured search log per contest (contest, candidate, checklist item, searched) with no free text, and make `coverage` refuse an `Unknown, no source found` section that has no matching entry.
+
+**Why:** "Unknown" tells voters "we looked and found nothing" (page.md). Today nothing records that the discovery agent actually ran each checklist item, so "never searched", "stopped early" and "a fetched page steered it to skip one candidate" all compile to the same Unknown, and Unknown sections are not review-list items.
+
+**Pros:** An Unknown on the page is backed by a machine-checked record, and an injected page cannot quietly suppress one candidate's research.
+
+**Cons:** A new data file in the Layout, its format, a `coverage` rule and failure code, and spec-parity tests for them.
+
+**Context:** Found in the /ship run 5 pre-landing review (2026-10-19, cycle 2) after the discovery agent's free-text reply was removed as an injection channel; the owner chose to defer it to the scripts build rather than add spec text mid-review.
+
+**Depends on / blocked by:** `fetch-snapshot` and `coverage` being built.
+
+**Priority:** P2
+
 ## Completed
