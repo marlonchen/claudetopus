@@ -9,8 +9,8 @@ Only these items, each as a checkbox with the claim, its excerpt, its source and
 - claims about third-party actions or quotes, meaning the snapshot's `subject` is not the candidate (or retention official) the claim sits under (misattribution risk). Claims citing a `_ballot` snapshot (the official ballot record) and all measure claims are exempt;
 - every claim in a section marked `always reviewed` in [sections.md](sections.md) (controversies, discipline), with its status: allegation, investigation, finding, judgment, or conviction;
 - every `T2i` claim;
-- every claim, in any section, whose text or excerpt contains an allegation word (`alleg`, `accus`, `charg`, `indict`, `convict`, `sued`, `lawsuit`, `investigat`, `arrest`, `sanction`, `disciplin`, `settle`, matched as word stems), so a controversy compiled into the wrong section still reaches a human;
-- every entry in `unfetchable.md` for the contest;
+- every claim, in any section, whose text or excerpt contains an allegation word, so a controversy compiled into the wrong section still reaches a human. Words match whole, case folded, with the listed endings only: `alleg(e|ed|es|ation|ations|edly)`, `accus(e|ed|es|ation|ations)`, `charged`, `indict(ed|ment|ments)`, `convict(ed|ion|ions)`, `sued`, `lawsuit(s)`, `investigat(e|ed|ion|ions|ing)`, `arrest(ed|s)`, `sanction(ed|s)`, `disciplin(e|ed|ary)`, `settlement(s)`, `fraud(ulent)`, `felon(y|ies)`, `misconduct`, `guilty`, `plead(ed)`, `pled`, `complaint(s)`, `probe(s)`, `censur(e|ed)`, `impeach(ed|ment)`, `resign(ed|ation)`. Bare stems such as `charg` or `settle` would also match "in charge of" or "settled in";
+- every entry in `unfetchable.md` for the contest, except `domain not in tiers.yaml` refusals and entries for a URL and subject that a later snapshot saved;
 - every claim whose key is not accepted yet (an edited or added claim, see below);
 - every claim the neutrality pass flags.
 
@@ -23,14 +23,14 @@ All but the last are mechanical, and `review-list` adds them itself, so complete
   > <excerpt>
 ```
 
-The key is a short hash of the candidate id (the retention official's id, or the contest id for a measure), the section heading text as written in [sections.md](sections.md), the claim text, the excerpt and the snapshot path. For an unfetchable entry it is a hash of the URL and subject. For a derived claim, the formula takes the place of the excerpt and the snapshot path is empty. Two candidates with the same claim text get different keys, and swapping only the excerpt or the source changes the key.
+The key is a short hash of the candidate id (the retention official's id, or the contest id for a measure), the section heading text as written in [sections.md](sections.md), the claim text, the excerpt and the snapshot path. For an unfetchable entry it is a hash of the URL and subject. `review-list` reads only the trailing `<!-- id:... -->` comment on an item line, and recomputes each key from the item's fields rather than trusting the comment. For a derived claim, the formula takes the place of the excerpt and the snapshot path is empty. Two candidates with the same claim text get different keys, and swapping only the excerpt or the source changes the key.
 
 ## Accepted keys
 
-A claim key is accepted when its item is marked `[x]` in the review file, or it is in `review/<contest>.baseline`, which the first run writes and nothing rewrites. The review file ends with an `<!-- accepted: ... -->` comment listing the set for reading; `publish` ignores the comment and recomputes the set from those two sources, and refuses if the baseline file changed after its first data-repo commit. The set grows two ways and nothing else:
+A claim key is accepted when it is in `review/<contest>.baseline` or `review/<contest>.accepted`. The first run writes the baseline once. `review-list` appends the key of each item the researcher marked `[x]` to `.accepted`, which only grows, so an accepted item can leave the list without losing its acceptance. The review file ends with an `<!-- accepted: ... -->` comment listing the set for reading; `publish` ignores the comment and recomputes the set from the two files. It refuses if either file lost a line or the baseline changed after its first data-repo commit, unless that change is a researcher's commit with the message `reset review <contest>`. The set grows two ways and nothing else:
 
-- On the first run for a contest, every claim that is not on the list for another reason is accepted as the baseline. A first run means no article has been reviewed for the contest yet; a review file missing next to an existing reviewed article is an error, not a first run, unless the researcher confirms it.
-- On every run, the key of each item marked `[x]` is added.
+- On the first run for a contest, every claim that is not on the list for another reason is accepted as the baseline. A first run means no baseline exists for the contest yet. A missing review file next to an existing baseline is rebuilt from the articles, the baseline and `.accepted`, and is never a first run. To start a contest's review over, the researcher deletes its review file, baseline and `.accepted` in one commit with the message `reset review <contest>`.
+- On every run, the key of each item marked `[x]` is appended to `.accepted`.
 
 Running `review-list` again never accepts anything by itself. A key outside the set stays on the list, unchecked, until the researcher marks it, however many times the script runs. `publish` compares the current articles against the same set.
 

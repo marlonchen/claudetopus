@@ -12,7 +12,17 @@ Every snapshot carries one tier in its front matter ([snapshot-format.md](snapsh
 
 "Statements only" sources set `statements_only: true` in their front matter. T4 sources always do.
 
-The tier is never the model's call. The data repo's `tiers.yaml` maps each source domain to a tier and `statements_only`, and the researcher keeps it. `fetch-snapshot` copies both from it into the snapshot, and refuses a URL whose domain is not listed, logging it to `unfetchable.md` with the reason `domain not in tiers.yaml`.
+The tier is never the model's call. The data repo's `tiers.yaml` maps sources to a tier and `statements_only`, and only the researcher edits it (Rule 7):
+
+```yaml
+- match: county.example.gov              # a host, or a host and path prefix
+  tier: T1
+- match: www.example-paper.com/opinion/  # the longest match wins
+  tier: T4
+  statements_only: true
+```
+
+A host matches exactly or on a dot-label boundary (`www.county.example.gov` matches `county.example.gov`; `evilcounty.example.gov` does not). `fetch-snapshot` checks the requested URL and again after every redirect, records the final URL, and copies the tier and `statements_only` of the longest match into the snapshot. It refuses a URL with no match, and refuses to load a `tiers.yaml` with a T4 or "statements only" entry that lacks `statements_only: true`. A refused domain is logged to `unfetchable.md` with the reason `domain not in tiers.yaml`; those entries never go on the review list (review-list.md).
 
 ## Claim tags
 

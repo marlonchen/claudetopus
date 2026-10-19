@@ -315,7 +315,9 @@ describe("StepReferences", () => {
     let count = 0;
     for (const [file, text] of files) {
       const refs = [
-        ...[...text.matchAll(/\b[Ss]teps? (\d(?:\.\d)?)\b/g)].map((m) => [m[1]]),
+        ...[...text.matchAll(/\b[Ss]teps? (\d(?:\.\d)?(?:-\d(?:\.\d)?)?)\b/g)].map((m) =>
+          m[1].split("-"),
+        ),
         ...[...text.matchAll(/\((\d\.\d(?:-\d\.\d)?(?:, ?\d(?:\.\d)?)*)\)/g)].map((m) =>
           m[1].split(/[,-]/),
         ),
@@ -461,6 +463,20 @@ describe("PrivateDataIgnored", () => {
       assert.match(sources.get(p), /^\.gitignore:/, `${p} is ignored only by ${sources.get(p)}`);
     }
   });
+
+  it("skill source directories are not swallowed by the data ignores", () => {
+    const { spawnSync } = require("node:child_process");
+    const repoRoot = path.join(SKILL_DIR, "..", "..");
+    const probes = ["sources", "articles", "review", "site"].map(
+      (dir) => `skills/research-candidates/${dir}/example.md`,
+    );
+    const result = spawnSync(
+      "git",
+      ["-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", ...probes],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    assert.strictEqual(result.status, 1, `skill source would be ignored: ${result.stdout}`);
+  });
 });
 
 // Added by /ship pre-landing review.
@@ -477,9 +493,11 @@ describe("RuleReferences", () => {
     assert.ok(rules.size >= 8, `only ${rules.size} rules parsed`);
     let count = 0;
     for (const text of SPEC_TEXTS) {
-      for (const [, n] of text.matchAll(/\bRules? (\d+)\b/g)) {
-        count++;
-        assert.ok(rules.has(n), `Rule ${n} is cited but not defined`);
+      for (const [, list] of text.matchAll(/\bRules? (\d+(?:(?:, ?| and | or |-)\d+)*)\b/g)) {
+        for (const n of list.split(/\D+/)) {
+          count++;
+          assert.ok(rules.has(n), `Rule ${n} is cited but not defined`);
+        }
       }
     }
     assert.ok(count >= 4, `only ${count} Rule citations found`);

@@ -47,6 +47,24 @@ Before `check` looks for figures in the claim text, it strips link targets, link
 
 Each figure left in the claim must match a figure in that claim's own excerpt, not just any number in the snapshot. Both sides are canonicalized first: drop `$` and thousands commas, read `K`, `M`, `million` and `billion` as multipliers, and read `%` as a percentage. A claimed figure matches when the excerpt's value, rounded half-up to the decimal places the claim shows, equals it: "$1.22 million" matches `receipts: 1220000.55`, and "$1,220,001" matches it too.
 
+## Failure codes
+
+`check` and `coverage` report each failure as a location (article path and line, plus the claim key when there is one) and one code from this list. The main session passes the compile agent only these two (Rule 7).
+
+| Code | Meaning |
+| --- | --- |
+| `excerpt-not-found` | The excerpt is not in the body of the snapshot the claim links to |
+| `excerpt-length` | The excerpt is under 20 or over 300 characters |
+| `tag-mismatch` | The claim tag does not fit the snapshot's tier or `statements_only` |
+| `says-missing` | A "Says:" claim does not start with `Says:`, or a `says-only` section holds another claim |
+| `figure-missing` | A figure in the claim is not in its excerpt |
+| `derived-mismatch` | A derived number's formula, inputs or result do not check out |
+| `ballot-excerpt` | A `_ballot` excerpt falls outside a listed title or candidate entry |
+| `title-in-excerpt` | An excerpt contains the printed title of a contest with a `display_title` |
+| `comment-marker` | A claim or excerpt contains `<!--` or `-->` |
+| `section-missing` | A section is missing, out of order or duplicated |
+| `section-state` | A section has no state, more than one, or a state it may not use |
+
 ## Section states
 
 Each section is in exactly one state:
@@ -60,6 +78,7 @@ The one exception is a withdrawn candidate who is still printed: the On the ball
 ## Wording rules
 
 - No claim without an excerpt, except a derived number (below).
+- No `<!--` or `-->` in a claim or excerpt, so claim text can never forge a review key.
 - Positions use the candidate's own words, quoted, labeled "Says:". Sections marked `says-only` in [sections.md](sections.md) allow nothing else.
 - No adjectives about candidates.
 - A derived number (for example "61% from PACs") is allowed only when both inputs are claims in the same section with their own excerpts, and the derived claim shows its formula in inline code (`` `= 1,220,000 / 2,000,000` ``). A derived claim is the one claim with no link and no excerpt of its own: its evidence is its inputs. Its tag is the weakest of its inputs' tags (the highest tier number), and `check` verifies that instead of a snapshot's tier. `check` skips the excerpt-figure match for its result, requires each number in the formula to match a figure in a sibling claim, recomputes it, rounds half-up to the decimal places the claim shows, and fails unless the result equals the claimed value. Otherwise show the raw figures.

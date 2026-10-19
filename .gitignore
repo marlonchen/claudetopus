@@ -157,6 +157,7 @@ ballot.yaml
 unfetchable.md
 private.yaml
 tiers.yaml
+/downloads/
 # Per-ballot data lives under <election>/<ballot-id>/ at the data repo root. Ignore it
 # by its inner layout so any election directory name is covered.
 /[0-9][0-9][0-9][0-9]-*/
