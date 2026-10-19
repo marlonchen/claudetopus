@@ -55,11 +55,11 @@ Each section is in exactly one state:
 - `Unknown, no source found`: the checklist was run and nothing usable turned up;
 - `Not part of this office's job`: only where [sections.md](sections.md) says so.
 
-The one exception is a withdrawn candidate who is still printed: section A only, holding the withdrawal receipt. Certified write-ins come after printed candidates and get every section.
+The one exception is a withdrawn candidate who is still printed: the On the ballot section only, holding the withdrawal receipt. Certified write-ins come after printed candidates and get every section.
 
 ## Wording rules
 
 - No claim without an excerpt, except a derived number (below).
 - Positions use the candidate's own words, quoted, labeled "Says:". Sections marked `says-only` in [sections.md](sections.md) allow nothing else.
 - No adjectives about candidates.
-- A derived number (for example "61% from PACs") is allowed only when both inputs are claims in the same section with their own excerpts, and the derived claim shows its formula in inline code (`` `= 1,220,000 / 2,000,000` ``). A derived claim is the one claim with no link and no excerpt of its own: its evidence is its inputs. `check` skips the excerpt-figure match for its result, requires each number in the formula to match a figure in a sibling claim, recomputes it, rounds half-up to the decimal places the claim shows, and fails unless the result equals the claimed value. Otherwise show the raw figures.
+- A derived number (for example "61% from PACs") is allowed only when both inputs are claims in the same section with their own excerpts, and the derived claim shows its formula in inline code (`` `= 1,220,000 / 2,000,000` ``). A derived claim is the one claim with no link and no excerpt of its own: its evidence is its inputs. Its tag is the weakest of its inputs' tags (the highest tier number), and `check` verifies that instead of a snapshot's tier. `check` skips the excerpt-figure match for its result, requires each number in the formula to match a figure in a sibling claim, recomputes it, rounds half-up to the decimal places the claim shows, and fails unless the result equals the claimed value. Otherwise show the raw figures.

@@ -227,3 +227,91 @@ describe("Scripts", () => {
     }
   });
 });
+
+describe("NamedSections", () => {
+  it("the first candidate section is On the ballot, which withdrawn candidates keep", () => {
+    assert.strictEqual(sectionTable("Candidate contests").rows[0][0], "A. On the ballot");
+    for (const file of ["sections.md", "article-format.md"]) {
+      assert.match(read(file), /the On the ballot section only/, `${file} lost the withdrawn rule`);
+    }
+  });
+
+  it("article-format.md example headings are candidate sections", () => {
+    const names = new Set(sectionTable("Candidate contests").rows.map((row) => row[0]));
+    const headings = [...read("article-format.md").matchAll(/^### ([A-Z]\. .+)$/gm)];
+    assert.ok(headings.length > 0, "article-format.md example has no section headings");
+    for (const [, heading] of headings) {
+      assert.ok(names.has(heading), `article-format.md heading "${heading}" is not in sections.md`);
+    }
+  });
+});
+
+describe("ChecklistMapping", () => {
+  it("every discovery checklist item fills some candidate section", () => {
+    const items = [...TIERS.matchAll(/^(\d+)\. \*\*/gm)].map((match) => match[1]);
+    assert.ok(items.length > 0, "no numbered checklist items in source-tiers.md");
+    const table = sectionTable("Candidate contests");
+    const cited = column(table, "Discovery checklist");
+    const used = new Set(table.rows.flatMap((row) => row[cited].match(/\d+/g) || []));
+    for (const item of items) {
+      assert.ok(used.has(item), `checklist item ${item} fills no candidate section`);
+    }
+  });
+});
+
+describe("CandidateStatus", () => {
+  it("statuses named in the spec are in the ballot.yaml status enum", () => {
+    const BALLOT = read("ballot-format.md");
+    const declared = BALLOT.match(/status: \w+ +# (.+)$/m);
+    assert.ok(declared, "ballot-format.md no longer declares the status enum");
+    const statuses = new Set(declared[1].split("|").map((status) => status.trim()));
+    const used = [...BALLOT.matchAll(/`(on_ballot|withdrawn_\w+|certified_\w+)`/g)].map(
+      (m) => m[1],
+    );
+    assert.ok(used.length > 0, "ballot-format.md names no statuses");
+    for (const status of used) {
+      assert.ok(statuses.has(status), `status ${status} is used but not in the enum`);
+    }
+  });
+});
+
+describe("KeyStripping", () => {
+  it("the key-parameter pattern matches every example it names", () => {
+    const SNAPSHOT = read("snapshot-format.md");
+    const declared = SNAPSHOT.match(/matches `\/(.+?)\/(\w*)`/);
+    assert.ok(declared, "snapshot-format.md no longer gives the key-parameter pattern");
+    const pattern = new RegExp(declared[1], declared[2]);
+    const examples = SNAPSHOT.match(/\(`api_key`[^)]*\)/);
+    assert.ok(examples, "snapshot-format.md no longer lists key-parameter examples");
+    const names = [...examples[0].matchAll(/`(\w+)`/g)].map((m) => m[1]);
+    assert.ok(names.length >= 4, "fewer key-parameter examples than expected");
+    for (const name of names) {
+      assert.match(name, pattern, `key parameter ${name} is not matched by the pattern`);
+    }
+  });
+});
+
+describe("PrivateDataIgnored", () => {
+  it("this public repo ignores every private data file the Layout names", () => {
+    const { execFileSync } = require("node:child_process");
+    const repoRoot = path.join(SKILL_DIR, "..", "..");
+    const paths = [
+      "addresses.yaml",
+      "publish.yaml",
+      "2026-general/ballot-a/ballot.yaml",
+      "2026-general/ballot-a/private.yaml",
+      "2026-general/ballot-a/unfetchable.md",
+      "2026-general/ballot-a/sources/_ballot/sample-ballot.md",
+      "2026-general/ballot-a/review/us-house-07.md",
+    ];
+    // check-ignore prints each ignored path and exits 1 only when none are ignored.
+    const out = execFileSync("git", ["check-ignore", "--no-index", ...paths], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    const ignored = new Set(out.split("\n").filter(Boolean));
+    for (const p of paths) {
+      assert.ok(ignored.has(p), `${p} is not ignored; private data could be committed here`);
+    }
+  });
+});
