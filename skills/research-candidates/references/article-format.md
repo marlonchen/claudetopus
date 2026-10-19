@@ -63,6 +63,7 @@ Each figure left in the claim must match a figure in that claim's own excerpt, n
 | `title-in-excerpt` | An excerpt contains the printed title of a contest with a `display_title` |
 | `comment-marker` | A claim or excerpt contains `<!--` or `-->` |
 | `private-match` | Reported by `publish`: a claim or excerpt matches the privacy scan (SKILL.md step 6.3) |
+| `private-source` | Reported by `publish`: a cited snapshot's `source:` name matches the privacy scan |
 | `claim-format` | A claim line is malformed, or its link points at a missing snapshot or one outside `sources/` |
 | `block-missing` | A candidate, official or measure block is missing, out of ballot order, or under the wrong `#` or `##` heading |
 | `section-missing` | A section is missing, out of order or duplicated |
@@ -76,7 +77,7 @@ Each section is in exactly one state:
 - `Unknown, no source found`: the checklist was run and nothing usable turned up;
 - `Not part of this office's job`: only where [sections.md](sections.md) says so.
 
-The one exception is a withdrawn candidate who is still printed: the On the ballot section only, holding the withdrawal receipt. Certified write-ins come after printed candidates and get every section.
+The one exception is a withdrawn candidate who is still printed: the On the ballot section only, holding the withdrawal receipt (a claim citing the `withdrawal_notice` snapshot, [ballot-format.md](ballot-format.md)). Certified write-ins come after printed candidates and get every section.
 
 ## Wording rules
 

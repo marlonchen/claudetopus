@@ -155,6 +155,7 @@ addresses.yaml
 publish.yaml
 ballot.yaml
 unfetchable.md
+archives.tsv
 private.yaml
 tiers.yaml
 /downloads/

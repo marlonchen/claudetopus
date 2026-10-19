@@ -16,6 +16,8 @@ const { describe, it } = require("node:test");
 const SKILL_DIR = path.join(__dirname, "..");
 const REFS_DIR = path.join(SKILL_DIR, "references");
 const read = (file) => fs.readFileSync(path.join(REFS_DIR, file), "utf8");
+// The text files in references/; the wireframe PNG is binary and never read as text.
+const REF_FILES = fs.readdirSync(REFS_DIR).filter((f) => /\.(md|html)$/.test(f));
 const SECTIONS = read("sections.md");
 const REVIEW = read("review-list.md");
 const TIERS = read("source-tiers.md");
@@ -44,6 +46,19 @@ const cells = (line) =>
     .slice(1, -1)
     .split("|")
     .map((cell) => cell.trim());
+// The rows of the table under `heading` whose first cell starts with `prefix`.
+const tableRows = (text, heading, prefix = "| `") =>
+  between(text, heading)
+    .split("\n")
+    .filter((line) => line.startsWith(prefix))
+    .map(cells);
+// The key-parameter pattern snapshot-format.md gives. A function, so a missing pattern fails the
+// test that needs it rather than the whole file.
+const keyParamPattern = () => {
+  const declared = read("snapshot-format.md").match(/matches `\/(.+?)\/(\w*)`/);
+  assert.ok(declared, "snapshot-format.md no longer gives the key-parameter pattern");
+  return new RegExp(declared[1], declared[2]);
+};
 
 // The first table under "## <heading>": its header cells and its data rows.
 // Every data row must name a lettered section ("A. On the ballot"), so a
@@ -126,16 +141,16 @@ describe("ChecklistReferences", () => {
 });
 
 describe("Links", () => {
-  it("every relative .md link in the skill resolves", () => {
-    const files = [
-      "SKILL.md",
-      "README.md",
-      ...fs.readdirSync(REFS_DIR).map((f) => path.join("references", f)),
-    ];
+  // Extended by /ship test coverage audit.
+  // Value: protects=every relative link (.md, .png, .html) in the skill resolves;
+  //   fails_when=the page wireframe or another non-.md file is renamed or moved;
+  //   why_new=the link check read only .md targets; seam=none; no_claim=none beyond protects
+  it("every relative link in the skill resolves", () => {
+    const files = ["SKILL.md", "README.md", ...REF_FILES.map((f) => path.join("references", f))];
     let count = 0;
     for (const file of files) {
       const text = fs.readFileSync(path.join(SKILL_DIR, file), "utf8");
-      for (const [, target] of text.matchAll(/\]\(([^)#<\s]+\.md)(#[^)]*)?\)/g)) {
+      for (const [, target] of text.matchAll(/\]\(([^)#<\s:]+\.[a-z]+)(#[^)]*)?\)/g)) {
         // ../sources/ links are placeholders inside format examples.
         if (target.startsWith("../sources/")) continue;
         count++;
@@ -143,12 +158,12 @@ describe("Links", () => {
         assert.ok(fs.existsSync(resolved), `${file} links to missing ${target}`);
       }
     }
-    assert.ok(count > 0, "no relative .md links found to check");
+    assert.ok(count > 0, "no relative links found to check");
   });
 });
 
 const SKILL = fs.readFileSync(path.join(SKILL_DIR, "SKILL.md"), "utf8");
-const SPEC_TEXTS = [SKILL, ...fs.readdirSync(REFS_DIR).map(read)];
+const SPEC_TEXTS = [SKILL, ...REF_FILES.map(read)];
 
 describe("Exemptions", () => {
   it("the judicial exemption names a real candidate section", () => {
@@ -278,10 +293,7 @@ function assertStep(step, where) {
 }
 
 describe("Scripts", () => {
-  const rows = between(SKILL, "## Scripts")
-    .split("\n")
-    .filter((line) => line.startsWith("| `"))
-    .map(cells);
+  const rows = tableRows(SKILL, "## Scripts");
 
   it("every step in the Used in column exists in the workflow", () => {
     assert.ok(rows.length > 0, "no rows in the SKILL.md Scripts table");
@@ -310,7 +322,7 @@ describe("StepReferences", () => {
   it("every step number cited in the spec prose exists in the workflow", () => {
     const files = [
       ["SKILL.md", SKILL],
-      ...fs.readdirSync(REFS_DIR).map((f) => [path.join("references", f), read(f)]),
+      ...REF_FILES.map((f) => [path.join("references", f), read(f)]),
     ];
     let count = 0;
     for (const [file, text] of files) {
@@ -381,9 +393,7 @@ describe("CandidateStatus", () => {
 describe("KeyStripping", () => {
   it("the key-parameter pattern matches every example it names", () => {
     const SNAPSHOT = read("snapshot-format.md");
-    const declared = SNAPSHOT.match(/matches `\/(.+?)\/(\w*)`/);
-    assert.ok(declared, "snapshot-format.md no longer gives the key-parameter pattern");
-    const pattern = new RegExp(declared[1], declared[2]);
+    const pattern = keyParamPattern();
     const examples = SNAPSHOT.match(/\(`api_key`[^)]*\)/);
     assert.ok(examples, "snapshot-format.md no longer lists key-parameter examples");
     const names = [...examples[0].matchAll(/`(\w+)`/g)].map((m) => m[1]);
@@ -517,26 +527,20 @@ describe("RuleReferences", () => {
 describe("FailureCodes", () => {
   it("every kebab-case code named in the spec is in the failure-code table", () => {
     const table = between(read("article-format.md"), "## Failure codes");
-    const codes = table
-      .split("\n")
-      .filter((line) => line.startsWith("| `"))
-      .map((line) => cells(line)[0].match(/^`([a-z-]+)`$/)?.[1]);
+    const codes = tableRows(read("article-format.md"), "## Failure codes").map(
+      (row) => row[0].match(/^`([a-z-]+)`$/)?.[1],
+    );
     assert.ok(codes.length >= 10, `only ${codes.length} failure codes parsed`);
     assert.ok(codes.every(Boolean), "a failure-code row is not a single backticked code");
     assert.strictEqual(new Set(codes).size, codes.length, "a failure code is listed twice");
     // Other kebab-case tokens the spec uses: script names, Rule markers, example ids and labels.
-    const scripts = between(SKILL, "## Scripts")
-      .split("\n")
-      .filter((line) => line.startsWith("| `"))
-      .map((line) => cells(line)[0].replaceAll("`", ""));
+    const scripts = tableRows(SKILL, "## Scripts").map((row) => row[0].replaceAll("`", ""));
     const ids = [...read("ballot-format.md").matchAll(/^ +-? *id: ([\w-]+)/gm)].map((m) => m[1]);
     const known = new Set([...codes, ...scripts, ...ids, "says-only", "addr-mom", "ballot-a"]);
     let cited = 0;
     const texts = [
       SKILL,
-      ...fs
-        .readdirSync(REFS_DIR)
-        .map((f) => (f === "article-format.md" ? read(f).replace(table, "") : read(f))),
+      ...REF_FILES.map((f) => (f === "article-format.md" ? read(f).replace(table, "") : read(f))),
     ];
     for (const text of texts) {
       for (const [, token] of text.matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g)) {
@@ -552,19 +556,28 @@ describe("FailureCodes", () => {
 // Value: protects=every data-repo file the spec names appears in the SKILL.md Layout tree;
 //   fails_when=a reference adds a data file (a log, a ledger) the Layout and its gitignore
 //   check never see; why_new=PrivateDataIgnored checks only paths the Layout lists; seam=none
+// Extended by /ship test coverage audit.
+// Value: protects=data files with any extension (archives.tsv) are held to the same Layout rule;
+//   fails_when=a data file with an unlisted extension is named in the spec but missing from the
+//   Layout and its ignores; why_new=the token pattern listed extensions; seam=none;
+//   no_claim=none beyond protects
 describe("LayoutComplete", () => {
   it("every data file or directory named in the spec is in the Layout", () => {
     const entries = layoutEntries().map((entry) => `/${entry}`);
     const named = new Set();
-    const pattern =
-      /`((?:<ballot-id>\/)?(?:[\w.<>-]+\/)*[\w.<>-]*(?:\.yaml|\.md|\.html|\.accepted|\.baseline|\.ledger|\/))`/g;
+    // Any extension counts, so a data file with a new one (.json, .csv) is checked by default.
+    const pattern = /`((?:<ballot-id>\/)?(?:[\w.<>-]+\/)*[\w.<>-]*(?:\.[a-z]+|\/))`/g;
     for (const text of SPEC_TEXTS) {
       for (const [, token] of text.matchAll(pattern)) named.add(token.replace("<ballot-id>/", ""));
     }
     // Snapshot and source names are examples or placeholders, <slug>/ is in the Pages repo,
     // and scripts/ is in this skill.
     const data = [...named].filter(
-      (t) => !/<name>|<subject>|<slug>|^fec-totals|^\.\.\/|^scripts\/$/.test(t),
+      // Hosts in tiers.yaml examples and the `official.name` field path are not files.
+      (t) =>
+        !/<name>|<subject>|<slug>|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$/.test(
+          t,
+        ),
     );
     assert.ok(data.length >= 10, `only ${data.length} data paths named in the spec`);
     for (const token of data) {
@@ -686,4 +699,180 @@ describe("TiersYaml", () => {
       }
     }
   });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=every snake_case field or value the spec names is declared in a code
+//   example or enum, and in the format file it links to; fails_when=a reference cites a
+//   ballot.yaml field (vote_for) its linked file does not declare; why_new=no test ties named
+//   fields to their formats; seam=none;
+//   no_claim=that the scripts read the field (no scripts exist yet)
+describe("FieldNames", () => {
+  it("every snake_case field or value named in the spec is declared in an example", () => {
+    const files = [
+      ["SKILL.md", SKILL],
+      ...REF_FILES.filter((f) => f.endsWith(".md")).map((f) => [f, read(f)]),
+    ];
+    const texts = files.map(([, text]) => text);
+    // Declarations per file, so a field cited with a link to its format file must be declared there.
+    const declaredIn = new Map();
+    const declared = new Set();
+    for (const [file, text] of files) {
+      const own = new Set();
+      for (const [, block] of text.matchAll(/```\w*\n([\s\S]*?)```/g)) {
+        for (const [, key] of block.matchAll(/^\s*-?\s*([a-z][a-z_]*):/gm)) own.add(key);
+        for (const [, list] of block.matchAll(/#\s*([a-z_]+(?:\s*\|\s*[a-z_]+)+)/g)) {
+          for (const value of list.split("|")) own.add(value.trim());
+        }
+      }
+      declaredIn.set(file, own);
+      for (const key of own) declared.add(key);
+    }
+    assert.ok(declared.size >= 20, `only ${declared.size} declared fields parsed`);
+    const isKeyParam = keyParamPattern();
+    let count = 0;
+    for (const text of texts) {
+      for (const [, token, linked] of text.matchAll(
+        /`([a-z]+(?:_[a-z]+)+)`(?:[^.\n`]*?\(\[([\w-]+\.md)\]\(\2\)\))?/g,
+      )) {
+        count++;
+        if (isKeyParam.test(token)) continue;
+        assert.ok(
+          declared.has(token),
+          `\`${token}\` is named in the spec but no example declares it`,
+        );
+        if (linked && declaredIn.has(linked)) {
+          assert.ok(
+            declaredIn.get(linked).has(token),
+            `\`${token}\` cites ${linked}, which does not declare it`,
+          );
+        }
+      }
+    }
+    assert.ok(count >= 20, `only ${count} snake_case fields named in the spec`);
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=page.md color tokens equal the wireframe's, and each stated contrast recomputes
+//   by the WCAG formula; fails_when=a token changes in one file only, or a color change leaves a
+//   stale contrast; why_new=no test reads page.md; seam=none; no_claim=rendered page colors
+//   (no renderer exists yet)
+describe("PageTokens", () => {
+  const PAGE = read("page.md");
+  const rows = tableRows(PAGE, "## Tokens", "| `--");
+  const tokens = Object.fromEntries(
+    rows.map((row) => [row[0].replaceAll("`", ""), [row[1], row[2]].map((c) => c.slice(1, 8))]),
+  );
+
+  it("the wireframe uses the page.md token values, light and dark", () => {
+    assert.ok(rows.length >= 7, `only ${rows.length} token rows in page.md`);
+    const html = read("page-wireframe.html");
+    const vars = (block) =>
+      Object.fromEntries(
+        [...block.matchAll(/(--[\w-]+):(#[0-9a-f]{3,6})\b/g)].map(([, name, hex]) => [
+          name,
+          hex.length === 4 ? `#${[...hex.slice(1)].map((h) => h + h).join("")}` : hex,
+        ]),
+      );
+    const light = vars(html.match(/:root\{([^}]*)\}/)?.[1] ?? "");
+    const dark = vars(html.match(/prefers-color-scheme:dark\)\{[^{]*\{([^}]*)\}/)?.[1] ?? "");
+    for (const [name, [lightHex, darkHex]] of Object.entries(tokens)) {
+      assert.strictEqual(light[name], lightHex, `wireframe light ${name} differs from page.md`);
+      assert.strictEqual(dark[name], darkHex, `wireframe dark ${name} differs from page.md`);
+    }
+  });
+
+  it("every stated contrast ratio recomputes with the WCAG formula", () => {
+    const luminance = (hex) => {
+      const [r, g, b] = [1, 3, 5]
+        .map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a, b) => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    let count = 0;
+    for (const row of rows) {
+      const name = row[0].replaceAll("`", "");
+      for (const part of row[3].split(";")) {
+        const m = part.match(/^\s*(?:`(--[\w-]+)` )?(\d+\.\d) \/ (\d+\.\d)(?: on `(--[\w-]+)`)?/);
+        if (!m) continue;
+        const [fg, bg] = m[1] ? [m[1], name] : [name, m[4] ?? "--bg"];
+        assert.ok(tokens[fg] && tokens[bg], `${name}: unknown token in "${part.trim()}"`);
+        [m[2], m[3]].forEach((stated, mode) => {
+          count++;
+          const actual = Math.round(ratio(tokens[fg][mode], tokens[bg][mode]) * 10) / 10;
+          assert.strictEqual(
+            actual.toFixed(1),
+            stated,
+            `${fg} on ${bg} (${mode ? "dark" : "light"}): page.md says ${stated}, WCAG gives ${actual}`,
+          );
+        });
+      }
+    }
+    assert.ok(count >= 12, `only ${count} contrast ratios parsed`);
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the race-screen chips name the candidate sections of sections.md, in order;
+//   fails_when=a candidate section is added, dropped or renamed without the page spec;
+//   why_new=no test reads page.md's chip list; seam=none; no_claim=rendered chips (no renderer yet)
+describe("PageChips", () => {
+  it("the race-screen chips are the candidate sections, in order", () => {
+    const line = read("page.md").match(
+      /chips that jump to each section in \[sections\.md\]\(sections\.md\): ([^.]+)\./,
+    );
+    assert.ok(line, "page.md no longer lists the race-screen chips");
+    const chips = line[1].split(",").map((chip) => chip.trim());
+    assert.ok(chips.every(Boolean), "page.md chip list has an empty entry");
+    const sections = sectionTable("Candidate contests").rows.map((row) => row[0].slice(3));
+    assert.strictEqual(chips.length, sections.length, "chip count differs from candidate sections");
+    chips.forEach((chip, i) => {
+      assert.ok(
+        // A chip is the section name or its first word ("Record" for "Record in public office").
+        chip === sections[i] || chip === sections[i].split(" ")[0],
+        `chip "${chip}" does not name section "${sections[i]}"`,
+      );
+    });
+    // Extended by /ship pre-landing review: the wireframe's race screen shows the same chips.
+    const html = read("page-wireframe.html");
+    const nav = html.match(/One race, by topic[\s\S]*?<nav class="chips"[^>]*>([\s\S]*?)<\/nav>/);
+    assert.ok(nav, "the wireframe has no race-screen chip row");
+    const shown = [...nav[1].matchAll(/<span class="chip">([^<]+)<\/span>/g)].map((m) => m[1]);
+    assert.deepStrictEqual(shown, chips, "wireframe race chips differ from page.md");
+  });
+
+  // Extended by /ship pre-landing review.
+  // Value: protects=the measure and retention stacks in page.md name the sections.md sections, in
+  //   order, and the wireframe measure chips match; fails_when=a page label drifts from
+  //   sections.md (Cost for Fiscal effect); why_new=PageChips read only candidate races;
+  //   seam=none; no_claim=rendered pages (no renderer yet)
+  for (const [heading, label, lead] of [
+    ["Measures", "Measures:", ""],
+    ["Retention contests", "Retention:", "then "],
+  ]) {
+    it(`the ${heading.toLowerCase()} stack names its sections.md sections, in order`, () => {
+      const line = read("page.md")
+        .split("\n")
+        .find((l) => l.startsWith(`- **${label}**`));
+      assert.ok(line, `page.md has no ${label} stack`);
+      const list = line.slice(line.indexOf(lead, label.length + 6) + lead.length).split(". ")[0];
+      const named = list.split("·").map((s) => s.replace(/\(.*?\)/g, "").trim());
+      const sections = sectionTable(heading).rows.map((row) => row[0].slice(3));
+      assert.deepStrictEqual(named, sections, `page.md ${label} stack differs from sections.md`);
+      if (heading === "Measures") {
+        const html = read("page-wireframe.html");
+        const nav = html.match(
+          /A ballot question[\s\S]*?<nav class="chips"[^>]*>([\s\S]*?)<\/nav>/,
+        );
+        assert.ok(nav, "the wireframe has no measure chip row");
+        const shown = [...nav[1].matchAll(/<span class="chip">([^<]+)<\/span>/g)].map((m) => m[1]);
+        assert.deepStrictEqual(shown, sections, "wireframe measure chips differ from sections.md");
+      }
+    });
+  }
 });

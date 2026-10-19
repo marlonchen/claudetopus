@@ -18,25 +18,24 @@ h3{font:700 17px/1.4 var(--body);margin:0}
 .party{font-weight:400}
 a,.link{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 details.how{margin:8px 0;font-size:14px;color:var(--muted)} details.how summary{min-height:44px;display:flex;align-items:center;color:var(--accent);text-decoration:underline}
-.banner{border:1.5px solid var(--fg);border-radius:8px;padding:8px 12px;font-size:15px;margin:8px 0}
+.banner{border:2px solid var(--fg);border-radius:8px;padding:8px 12px;font-size:15px;margin:8px 0}
 .list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
 .list li{display:flex;justify-content:space-between;align-items:center;min-height:48px;border-bottom:1px solid var(--line);gap:8px}
 .list .st{color:var(--muted);font-size:14px;white-space:nowrap}.list .st.ok{color:var(--fg)}
-.chev{color:var(--muted);margin-left:6px}
+.chev{color:var(--muted);margin-left:4px}
 .sub{display:block;color:var(--muted);font-size:14px}
-nav.chips{display:flex;gap:8px;overflow:hidden;margin:8px 0}
-.chip{border:1px solid var(--line);border-radius:22px;padding:0 14px;min-height:44px;display:flex;align-items:center;font-size:14px;white-space:nowrap}
-.chip.on{border-color:var(--accent);color:var(--accent);font-weight:700}
+nav.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.chip{border:1px solid var(--muted);border-radius:22px;padding:0 12px;min-height:44px;display:flex;align-items:center;font-size:14px;white-space:nowrap}
 .cand{border-top:1px solid var(--line);padding:12px 0}
 .says{font-weight:700}
-blockquote{margin:8px 0 4px;padding:8px 12px;border-left:3px solid var(--fg);background:var(--quote-bg);font:16px/1.45 var(--serif)}
+blockquote{margin:8px 0 4px;padding:8px 12px;border-left:3px solid var(--fg);background:var(--quote-bg);font:17px/1.45 var(--serif)}
 blockquote cite{display:block;font:14px var(--body);color:var(--muted);font-style:normal;margin-top:4px}
 .badge{display:inline-block;border:1px solid var(--muted);border-radius:12px;padding:0 8px;font-size:14px;color:var(--muted)}
 .unk{font-style:italic}
 .oos{color:var(--muted);font-size:14px;margin:16px 0 0}
-.next{border-top:1px solid var(--line);margin-top:16px;padding-top:8px;display:flex;justify-content:space-between;font-size:15px;min-height:44px;align-items:center}
+.next{border-top:1px solid var(--line);margin-top:16px;padding-top:8px;display:flex;flex-direction:column;gap:8px;font-size:15px}.next .link{min-height:44px;display:flex;align-items:center}
 .note{background:var(--quote-bg);border-radius:8px;padding:12px;font-size:16px;margin-top:12px}
-.slider{display:flex;justify-content:space-between;font-size:15px;margin:10px 0}.bar{flex:0 0 130px;border-bottom:2px solid var(--muted)}
+.slider{display:flex;justify-content:space-between;font-size:15px;margin:12px 0}.bar{flex:0 0 130px;border-bottom:2px solid var(--muted)}
 </style></head><body>
 
 <!-- 1 · Ballot list (1A, 3A, 4A, 9A, 13A, 15A) -->
@@ -49,18 +48,18 @@ blockquote cite{display:block;font:14px var(--body);color:var(--muted);font-styl
  <div class="meta" style="margin-bottom:4px">Tap a race to compare the candidates.</div>
  <h2>Federal</h2>
  <ul class="list">
-  <li><span>U.S. Senate</span><span class="st ok">Ready<span class="chev">›</span></span></li>
-  <li><span>U.S. House, District 5</span><span class="st ok">Ready<span class="chev">›</span></span></li>
+  <li><span>U.S. Senate</span><span class="st ok">Ready<span class="chev" aria-hidden="true">›</span></span></li>
+  <li><span>U.S. House, District 5</span><span class="st ok">Ready<span class="chev" aria-hidden="true">›</span></span></li>
  </ul>
  <h2>State</h2>
  <ul class="list">
-  <li><span>Governor</span><span class="st ok">Ready<span class="chev">›</span></span></li>
-  <li><span>State Senate, District 26</span><span class="st">Not ready yet<span class="chev">›</span></span></li>
+  <li><span>Governor</span><span class="st ok">Ready<span class="chev" aria-hidden="true">›</span></span></li>
+  <li><span>State Senate, District 26</span><span class="st">Not ready yet<span class="chev" aria-hidden="true">›</span></span></li>
  </ul>
  <h2>Local &amp; measures</h2>
  <ul class="list">
-  <li><span>School Director<span class="sub">Vote for 3</span></span><span class="st">Not ready yet<span class="chev">›</span></span></li>
-  <li><span>Question 1: Open space bond</span><span class="st ok">Ready<span class="chev">›</span></span></li>
+  <li><span>School Director<span class="sub">Vote for 3</span></span><span class="st">Not ready yet<span class="chev" aria-hidden="true">›</span></span></li>
+  <li><span>Question 1: Open space bond</span><span class="st ok">Ready<span class="chev" aria-hidden="true">›</span></span></li>
  </ul>
 </main></div>
 
@@ -68,10 +67,9 @@ blockquote cite{display:block;font:14px var(--body);color:var(--muted);font-styl
 <div><div class="label">2 · One race, by topic</div><main class="phone">
  <a class="link" href="#ballot" style="font-size:15px">← All races</a>
  <h1>U.S. House, District 5</h1>
- <div class="meta">Ready since Oct 22</div>
  <div class="banner">✓ 3 of 3 candidates on the official ballot covered</div>
- <nav class="chips" aria-label="Topics in this race"><span class="chip">Background</span><span class="chip">Record</span><span class="chip">Money</span><span class="chip on">Positions</span></nav>
- <h2>Positions · Economy &amp; taxes</h2>
+ <nav class="chips" aria-label="Topics in this race"><span class="chip">On the ballot</span><span class="chip">Background</span><span class="chip">Record</span><span class="chip">Money</span><span class="chip">Positions</span><span class="chip">Controversies</span></nav>
+ <h2>Positions</h2>
  <div class="cand"><h3>Cand. A <span class="party">· Democratic</span></h3>
   <div><span class="says">Says:</span> would expand the Child Tax Credit.</div>
   <blockquote>“Expanding the Child Tax Credit is my first priority.”<cite>Vote411 questionnaire</cite></blockquote>
@@ -98,17 +96,16 @@ blockquote cite{display:block;font:14px var(--body);color:var(--muted);font-styl
   <div>Total receipts: $890,212.</div>
   <blockquote>“Total receipts: $890,212”<cite>FEC candidate financial summary</cite></blockquote>
   <div class="src"><span class="badge">Official record</span> · <span class="link">Source ▸</span></div></div>
- <div class="next"><span class="link">← All races</span><span class="link">Next on your ballot: U.S. Senate →</span></div>
+ <div class="next"><span class="link">Next on your ballot: U.S. Senate →</span><span class="link">← All races</span></div>
 </main></div>
 
 <!-- 3 · Measure (5A) -->
 <div><div class="label">3 · A ballot question</div><main class="phone">
  <a class="link" href="#ballot" style="font-size:15px">← All races</a>
  <h1>Question 1: Open space bond</h1>
- <div class="meta">Ready since Oct 23</div>
  <div class="banner">✓ Official text and fiscal note saved</div>
- <nav class="chips" aria-label="Topics in this race"><span class="chip on">What it does</span><span class="chip">Cost</span><span class="chip">For</span><span class="chip">Against</span></nav>
- <h2>What a Yes vote does</h2>
+ <nav class="chips" aria-label="Topics in this race"><span class="chip">What it does</span><span class="chip">Fiscal effect</span><span class="chip">Arguments for</span><span class="chip">Arguments against</span><span class="chip">Independent analysis</span></nav>
+ <h2>What it does</h2>
  <blockquote>“…authorize the County to borrow up to $25,000,000 to acquire and preserve open space…”<cite>Official question text</cite></blockquote>
  <div class="src"><span class="badge">Official record</span> · <span class="link">Source ▸</span></div>
  <h2>Arguments for</h2>
@@ -125,7 +122,7 @@ blockquote cite{display:block;font:14px var(--body);color:var(--muted);font-styl
  <h1>School Director</h1>
  <div class="meta">Vote for 3</div>
  <div class="note"><b>Not ready yet.</b> Every candidate gets the same research before anything shows here. Check back; this link stays the same.</div>
- <div class="next"><span class="link">← All races</span><span class="link">Next: Question 1 →</span></div>
+ <div class="next"><span class="link">Next on your ballot: Question 1 →</span><span class="link">← All races</span></div>
 </main></div>
 
 <!-- 5 · My weights: later, scope step 2 -->
