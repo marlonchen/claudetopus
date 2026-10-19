@@ -509,6 +509,28 @@ describe("PrivateDataIgnored", () => {
     );
     assert.strictEqual(result.status, 1, `skill source would be ignored: ${result.stdout}`);
   });
+
+  // Added by /ship pre-landing review.
+  // Value: protects=secrets and build output next to a skill's scripts stay ignored in this
+  //   public repo; fails_when=a scripts/ negation is widened (scripts/**) and re-includes .env
+  //   or node_modules; why_new=the probes above only check what must stay committable; seam=none
+  it("secrets and build output under a skill's scripts/ stay ignored", () => {
+    const { execFileSync } = require("node:child_process");
+    const repoRoot = path.join(SKILL_DIR, "..", "..");
+    const probes = [".env", ".env.local", "node_modules/x.js", "debug.log"].map(
+      (file) => `skills/research-candidates/scripts/${file}`,
+    );
+    const out = execFileSync(
+      "git",
+      ["-c", "core.excludesFile=/dev/null", "check-ignore", "-v", "--no-index", ...probes],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    for (const p of probes) {
+      const line = out.split("\n").find((l) => l.endsWith(`\t${p}`));
+      assert.ok(line, `${p} is not ignored`);
+      assert.doesNotMatch(line, /:!/, `${p} is re-included by a negation: ${line}`);
+    }
+  });
 });
 
 // Added by /ship pre-landing review.

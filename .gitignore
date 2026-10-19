@@ -181,5 +181,6 @@ vite.config.ts.timestamp-*
 !/skills/*/private.yaml
 !/skills/*/unfetchable.md
 !/skills/*/archives.tsv
-# Generic rules above (coverage) must not swallow a skill's scripts.
-!/skills/*/scripts/**
+# The generic coverage rule above must not swallow the skill's `coverage` script. Name the
+# script only: a wider negation would re-include .env files or node_modules under scripts/.
+!/skills/*/scripts/coverage
