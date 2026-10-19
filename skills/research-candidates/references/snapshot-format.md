@@ -35,7 +35,7 @@ supersedes: sample-ballot.md       # optional: the earlier snapshot this one cor
 - `pdf`: `pdftotext -layout` output, except `_ballot` PDFs, which use plain `pdftotext` so that wrapped titles stay in reading order.
 - `api`: the JSON response flattened to one `key: value` line per field (nested keys joined with `.`), with a blank line between records. The page shows these lines as the excerpt.
 
-`public_url` is optional: a public page showing the same record, for a receipt when `url` is an API endpoint or needed its query string. It passes the same tier and privacy checks as `url`, and the page links it instead of `url`.
+`public_url` is optional: a public page showing the same record, for a receipt when `url` is an API endpoint or needed its query string. It comes only from a discovery search result or the researcher (Rule 7), never has a query string or fragment, passes the same tier and privacy checks as `url`, and the page links it instead of `url`. `_ballot` snapshots never carry it.
 
 `fetch-snapshot` refuses a `source:` name that contains a `private_strings` entry or the printed `title` of a contest with a `display_title`, matched as in the publish privacy scan; the name is shown on the page.
 
@@ -49,7 +49,7 @@ Use a short kebab-case name for the source (`fec-totals.md`). Re-fetching writes
 
 ## Saved copies
 
-After saving a snapshot that is not `_ballot`, `fetch-snapshot` asks the Wayback Machine to capture the same cleaned `url` and, on success, appends one line to `<ballot-id>/archives.tsv`: the snapshot path, a tab, and the capture timestamp. Nothing else is sent, and `_ballot` snapshots are never submitted. The page's "Saved copy" link is rebuilt from these two values (SKILL.md step 6.2).
+After saving a snapshot that is not `_ballot`, whose `method` is not `api`, whose cleaned `url` has no query string and that has no `public_url`, `fetch-snapshot` asks the Wayback Machine to capture the same `url` and, on success, appends one line to `<ballot-id>/archives.tsv`: the snapshot path, a tab, and the 14-digit capture timestamp (`YYYYMMDDhhmmss`). Nothing else is sent, and `_ballot` snapshots are never submitted. The page's "Saved copy" link is rebuilt from these two values (SKILL.md step 6.2).
 
 ## Unfetchable log
 

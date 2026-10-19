@@ -38,7 +38,7 @@ contests:
     display_title: Question 1     # optional: page title when the printed title would locate the voter; must differ from title
 ```
 
-Text on the ballot that locates or names the voter goes in a separate file, `<ballot-id>/private.yaml`, so that `ballot.yaml` can be read next to untrusted snapshots (Rule 7). Only scripts read it, never agents: `ballot-check`, `fetch-snapshot` (for its URL refusals) and `publish`:
+Text on the ballot that locates or names the voter goes in a separate file, `<ballot-id>/private.yaml`, so that `ballot.yaml` can be read next to untrusted snapshots (Rule 7). Only scripts read it, never agents: `ballot-check`, `fetch-snapshot` (for its URL and `source:` name refusals) and `publish`; `ballot-check` reads every ballot's `private.yaml` for its `tiers.yaml` check:
 
 ```yaml
 private_strings:
@@ -70,7 +70,7 @@ The page shows `display_title` when it is set and `title` otherwise. The ballot 
 - **Ids:** every contest, candidate and official `id` matches `^[a-z0-9][a-z0-9-]*$`, so an id is always a safe directory name and never collides with `_race` or `_ballot`. Contest ids become page anchors, so `ballot-check` fails a contest id that, with hyphens read as spaces, contains a `private_strings` entry or the printed `title` of a contest with a `display_title`.
 - **Slug:** `slug` must match `^[a-z0-9]{6}$` and no other `ballot.yaml` in the data repo may use it, so a copied `ballot.yaml` can never publish over another ballot's page.
 - **Write-ins:** `certified_write_in` candidates skip the printed-ballot check and must appear verbatim in the `role: write_in_list` snapshot. If the county publishes none, the page says "Certified write-ins: none published".
-- **Withdrawals:** a `withdrawn_still_printed` candidate must also appear verbatim in a `role: withdrawal_notice` snapshot, the county or state notice of the withdrawal, so a mistyped status can never hide a candidate's record. Their On the ballot claim cites that snapshot.
-- **Tiers:** `ballot-check` fails any `tiers.yaml` `match` that contains a `private_strings` entry of any ballot in the data repo, because the discovery agent and its web searches see every `tiers.yaml` host.
+- **Withdrawals:** a `withdrawn_still_printed` candidate must also appear verbatim in a `_ballot` snapshot that records the withdrawal: a `role: withdrawal_notice` snapshot, or a `candidate_list` that marks the candidate withdrawn. A mistyped status can then never hide a candidate's record. Their On the ballot claim cites that snapshot. When the county or state publishes no such record, the candidate stays `on_ballot` and gets every section.
+- **Tiers:** `ballot-check` fails any `tiers.yaml` `match` that contains, matched as in the publish privacy scan, a `private_strings` entry of any ballot in the data repo, or any address, street line, label or ZIP code from `addresses.yaml`, because the discovery agent and its web searches see every `tiers.yaml` host. `fetch-snapshot` runs the same check each time it loads `tiers.yaml`.
 
 Corrections to the sample ballot become a new snapshot with `supersedes` set, plus an edit to `ballot.yaml`. The old snapshot stays. `ballot-check` lists every `supersedes` link and passes only when each one is named in a `confirmed_supersedes:` list the researcher keeps in `ballot.yaml`, so a planted snapshot can never become the authoritative ballot.

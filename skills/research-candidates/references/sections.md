@@ -18,7 +18,7 @@ The Rule column carries two markers that scripts read by name, never by letter:
 | E. Positions | The candidate's own words | 5 | `says-only` |
 | F. Controversies and cases | Allegations, investigations, findings, judgments, convictions, each with its status | 2, 3, 4 | `always reviewed` |
 
-A withdrawn candidate who is still printed gets the On the ballot section only, holding the withdrawal receipt from the `withdrawal_notice` snapshot. Every other candidate, certified write-ins included, gets all six.
+A withdrawn candidate who is still printed gets the On the ballot section only, holding the withdrawal receipt from the `_ballot` snapshot that records the withdrawal. Every other candidate, certified write-ins included, gets all six.
 
 ## Retention contests
 

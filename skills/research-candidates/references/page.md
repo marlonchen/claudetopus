@@ -44,7 +44,7 @@ The same block works for 2 to 6 candidates and for multi-seat contests.
 
 **Withdrawn and write-in candidates.** The banner counts printed, non-withdrawn candidates. A withdrawn candidate stays in ballot position, in `--muted` text (never faded with opacity), labeled "Withdrew (still on printed ballot)", with the withdrawal receipt and no other sections. Certified write-ins come after printed candidates, labeled "Certified write-in", get the full template, and are counted separately ("+1 certified write-in covered"). When the county publishes no write-in list, the race says "Certified write-ins: none published".
 
-**Receipts.** Tapping "Source ▸" opens an inline `<details>` receipt with the source name, the fetch date and the link (the snapshot's `public_url` when it has one). There is no bottom sheet, so receipts work without JavaScript. Every receipt carries a fixed line: "The quote above was saved from this page on Oct 19, 2026. If the page has changed, the saved quote is what this summary used." When `archives.tsv` has a Wayback Machine capture of the snapshot, the receipt shows "Saved copy ↗" next to "Original page ↗", built as SKILL.md step 6.2 says. `_ballot` receipts link only to the county site's origin and never get a saved copy.
+**Receipts.** Tapping "Source ▸" opens an inline `<details>` receipt with the source name, the fetch date and the link (the snapshot's `public_url` when it has one). There is no bottom sheet, so receipts work without JavaScript. Every receipt carries a fixed line: "The quote above was saved from this page on Oct 19, 2026. If the page has changed, the saved quote is what this summary used." When the link is a `public_url` or a county origin rather than the page the quote came from, the line reads instead: "The quote above was saved on Oct 19, 2026 from the official record this link shows." When `archives.tsv` has a Wayback Machine capture of the snapshot, the receipt shows "Saved copy ↗" next to "Original page ↗", built as SKILL.md step 6.2 says. `_ballot` receipts link only to the county site's origin and never get a saved copy. A source with a query string and no `public_url` shows no original-page link.
 
 **Moving between races.** Every race has an anchor named for its contest id (for example `#us-house-07`), so a reader can text back a link to one race. Each race ends with two full-width links, stacked: "Next on your ballot: Governor →", then "← All races". These are plain anchors. Contest ids are neutral office names, never the ballot id, and `ballot-check` keeps private place names out of them ([ballot-format.md](ballot-format.md)).
 
@@ -76,13 +76,13 @@ Colors are CSS variables on `:root`, with dark values under `prefers-color-schem
 | `--accent` | `#0f5f5c` (teal) | `#5fbfb7` | 7.5 / 8.3; links, focus ring |
 | `--visited` | `#5a4a7a` | `#b3a3d6` | 7.8 / 7.9 |
 
-- Type scale: body 17px/1.5; h1 24px Source Serif 600; h2 19px; excerpt 17px/1.45 Source Serif; labels and source lines 14px minimum. No text smaller than 14px.
+- Type scale: body 17px/1.5; h1 24px Source Serif 600; h2 19px; excerpt 17px/1.45 Source Serif; banners, notes and next/back links at body size; labels and source lines 14px minimum. No text smaller than 14px.
 - Spacing: 4, 8, 12, 16, 24, 32. 16px side gutter; content max width 640px. Headings get more space above than below (24 above, 8 below).
 - Tap targets: list rows, chips, every link and every `<summary>` ("Source ▸", "… full quote", "How to read this", next/back links) are at least 44px tall.
-- Links are underlined, and visited links use `--visited`. The focus ring is a 2px `--accent` outline with a 2px offset. `::selection` uses `--accent` at 25% opacity.
+- Links are underlined, except list rows and chips, whose chevron or border marks them as tappable. Visited links use `--visited`. The focus ring is a 2px `--accent` outline with a 2px offset. `::selection` uses `--accent` at 25% opacity.
 - The accent teal belongs to no US party. Red and blue are never used, even for status.
 
-One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid. Each race section sets `content-visibility: auto`, so a long ballot does not lay out every race at once on a slow phone.
+One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid. Each race section sets `content-visibility: auto` with `contain-intrinsic-size: auto 1200px`, so anchor links land in the right place, so a long ballot does not lay out every race at once on a slow phone.
 
 ## Accessibility
 

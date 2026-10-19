@@ -163,7 +163,12 @@ describe("Links", () => {
 });
 
 const SKILL = fs.readFileSync(path.join(SKILL_DIR, "SKILL.md"), "utf8");
-const SPEC_TEXTS = [SKILL, ...REF_FILES.map(read)];
+// Every spec text file as [path from the skill directory, text].
+const SPEC_FILES = [
+  ["SKILL.md", SKILL],
+  ...REF_FILES.map((f) => [path.join("references", f), read(f)]),
+];
+const SPEC_TEXTS = SPEC_FILES.map(([, text]) => text);
 
 describe("Exemptions", () => {
   it("the judicial exemption names a real candidate section", () => {
@@ -286,8 +291,7 @@ function assertStep(step, where) {
   const heading = WORKFLOW.indexOf(`\n### ${major}. `);
   assert.ok(heading !== -1, `${where} refers to step ${step}, which does not exist`);
   if (minor) {
-    const end = WORKFLOW.indexOf("\n### ", heading + 1);
-    const body = WORKFLOW.slice(heading, end === -1 ? undefined : end);
+    const body = between(WORKFLOW, `\n### ${major}. `, "\n### ");
     assert.match(body, new RegExp(`\\n${minor}\\. `), `${where}: no step ${step}`);
   }
 }
@@ -320,12 +324,8 @@ describe("Scripts", () => {
 //   why_new=Scripts checks only the table's Used in column; seam=none
 describe("StepReferences", () => {
   it("every step number cited in the spec prose exists in the workflow", () => {
-    const files = [
-      ["SKILL.md", SKILL],
-      ...REF_FILES.map((f) => [path.join("references", f), read(f)]),
-    ];
     let count = 0;
-    for (const [file, text] of files) {
+    for (const [file, text] of SPEC_FILES) {
       const refs = [
         ...[...text.matchAll(/\b[Ss]teps? (\d(?:\.\d)?(?:-\d(?:\.\d)?)?)\b/g)].map((m) =>
           m[1].split("-"),
@@ -709,10 +709,11 @@ describe("TiersYaml", () => {
 //   no_claim=that the scripts read the field (no scripts exist yet)
 describe("FieldNames", () => {
   it("every snake_case field or value named in the spec is declared in an example", () => {
-    const files = [
-      ["SKILL.md", SKILL],
-      ...REF_FILES.filter((f) => f.endsWith(".md")).map((f) => [f, read(f)]),
-    ];
+    // Keyed by bare file name, the form a citation links to.
+    const files = SPEC_FILES.filter(([file]) => file.endsWith(".md")).map(([file, text]) => [
+      path.basename(file),
+      text,
+    ]);
     const texts = files.map(([, text]) => text);
     // Declarations per file, so a field cited with a link to its format file must be declared there.
     const declaredIn = new Map();
@@ -842,7 +843,7 @@ describe("PageChips", () => {
     const html = read("page-wireframe.html");
     const nav = html.match(/One race, by topic[\s\S]*?<nav class="chips"[^>]*>([\s\S]*?)<\/nav>/);
     assert.ok(nav, "the wireframe has no race-screen chip row");
-    const shown = [...nav[1].matchAll(/<span class="chip">([^<]+)<\/span>/g)].map((m) => m[1]);
+    const shown = [...nav[1].matchAll(/<a class="chip"[^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
     assert.deepStrictEqual(shown, chips, "wireframe race chips differ from page.md");
   });
 
@@ -870,7 +871,7 @@ describe("PageChips", () => {
           /A ballot question[\s\S]*?<nav class="chips"[^>]*>([\s\S]*?)<\/nav>/,
         );
         assert.ok(nav, "the wireframe has no measure chip row");
-        const shown = [...nav[1].matchAll(/<span class="chip">([^<]+)<\/span>/g)].map((m) => m[1]);
+        const shown = [...nav[1].matchAll(/<a class="chip"[^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
         assert.deepStrictEqual(shown, sections, "wireframe measure chips differ from sections.md");
       }
     });
