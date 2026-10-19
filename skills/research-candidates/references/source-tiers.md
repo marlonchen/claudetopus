@@ -12,6 +12,8 @@ Every snapshot carries one tier in its front matter ([snapshot-format.md](snapsh
 
 "Statements only" sources set `statements_only: true` in their front matter. T4 sources always do.
 
+The tier is never the model's call. The data repo's `tiers.yaml` maps each source domain to a tier and `statements_only`, and the researcher keeps it. `fetch-snapshot` copies both from it into the snapshot, and refuses a URL whose domain is not listed, logging it to `unfetchable.md` with the reason `domain not in tiers.yaml`.
+
 ## Claim tags
 
 Each claim carries one tag: the cited snapshot's tier, plus an optional mark.
@@ -20,7 +22,7 @@ Each claim carries one tag: the cited snapshot's tier, plus an optional mark.
 | --- | --- | --- |
 | `T1`, `T2`, `T3` | Plain claim | The tier matches the snapshot; the snapshot is not `statements_only` |
 | `T1s` ... `T4s` | "Says:" claim, the candidate's own words | The tier matches the snapshot; the claim text starts with `Says:` |
-| `T2i` | T2 claim that interprets rather than reports | The snapshot is T2; the claim is on the review list |
+| `T2i` | T2 claim that interprets rather than reports | The snapshot is T2 (`review-list` puts every `T2i` claim on the list) |
 
 A candidate quote reported in a T2 article is `T2s`. The compile step sets the `i` mark; `check` cannot tell interpreting from reporting, so the neutrality pass also flags an unmarked T2 claim that interprets.
 

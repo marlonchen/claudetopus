@@ -20,7 +20,13 @@ const SECTIONS = read("sections.md");
 const REVIEW = read("review-list.md");
 const TIERS = read("source-tiers.md");
 const RULE_MARKERS = ["", "`says-only`", "`always reviewed`"];
-const TABLES = ["Candidate contests", "Retention contests", "Measures"];
+// ballot.yaml contest type -> its section table in sections.md.
+const TYPE_TABLES = {
+  candidate: "Candidate contests",
+  retention: "Retention contests",
+  measure: "Measures",
+};
+const TABLES = Object.values(TYPE_TABLES);
 
 const cells = (line) =>
   line
@@ -155,6 +161,67 @@ describe("Exemptions", () => {
       `sections.md says "all ${stated[1]}" but the candidate table has a different count`,
     );
   });
+
+  // Added by /ship test coverage audit.
+  // Value: protects=the exemption's ballot.yaml field and value are the ones ballot-format.md
+  //   declares; fails_when=office_type or judicial is renamed in one file only;
+  //   why_new=no test reads the field coverage keys the exemption on; seam=none
+  it("the exemption keys on a field ballot-format.md declares", () => {
+    const keyed = SECTIONS.match(/marked `office_type: (\w+)` in `ballot\.yaml`/);
+    assert.ok(keyed, "sections.md exemption no longer names its office_type value");
+    assert.match(
+      read("ballot-format.md"),
+      new RegExp(`^ +office_type: ${keyed[1]}\\b`, "m"),
+      `ballot-format.md has no office_type: ${keyed[1]} in its example`,
+    );
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=every ballot.yaml contest type has a sections.md table and the example uses
+//   only listed types; fails_when=a type is added, renamed or loses its section table;
+//   why_new=nothing else ties the contest types to the section tables; seam=none
+describe("ContestTypes", () => {
+  it("every contest type has a section table, and the example uses only listed types", () => {
+    const BALLOT = read("ballot-format.md");
+    const line = BALLOT.match(/^Contest types: (.+)$/m);
+    assert.ok(line, 'ballot-format.md no longer lists "Contest types:"');
+    const listed = [...line[1].matchAll(/`(\w+)`/g)].map((m) => m[1]);
+    assert.deepStrictEqual(
+      [...listed].sort(),
+      Object.keys(TYPE_TABLES).sort(),
+      "ballot-format.md contest types differ from the sections.md tables",
+    );
+    for (const type of listed) sectionTable(TYPE_TABLES[type]);
+    const used = [...BALLOT.matchAll(/^ +type: (\w+)/gm)].map((m) => m[1]);
+    assert.ok(used.length > 0, "ballot-format.md example has no contest types");
+    for (const type of used) {
+      assert.ok(listed.includes(type), `example contest type ${type} is not a listed type`);
+    }
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=the snapshot tier enum equals the source-tiers.md tier table; fails_when=a
+//   tier is added to or dropped from one file only; why_new=ClaimTags checks claim tags, not the
+//   snapshot front-matter tier enum; seam=none
+describe("Tiers", () => {
+  it("the snapshot tier enum matches the source-tiers.md tier table", () => {
+    const declared = read("snapshot-format.md").match(/^tier: \w+ +# ([^,]+)/m);
+    assert.ok(declared, "snapshot-format.md no longer declares the tier enum");
+    const enumTiers = declared[1].split("|").map((tier) => tier.trim());
+    const start = TIERS.indexOf("| Tier |");
+    assert.ok(start !== -1, "source-tiers.md is missing the tier table");
+    const tableTiers = TIERS.slice(start, TIERS.indexOf("\n\n", start))
+      .split("\n")
+      .filter((l) => /^\| T\d/.test(l))
+      .map((l) => cells(l)[0].match(/^T\d/)[0]);
+    assert.deepStrictEqual(
+      [...new Set(tableTiers)].sort(),
+      [...enumTiers].sort(),
+      "snapshot-format.md tier enum differs from the source-tiers.md tier table",
+    );
+  });
 });
 
 describe("ClaimTags", () => {
@@ -194,9 +261,23 @@ describe("SnapshotRoles", () => {
   });
 });
 
+const WORKFLOW = SKILL.slice(SKILL.indexOf("## Workflow"));
+
+// Assert that workflow step "N" (a "### N. " heading) or "N.M" (item "M. " in
+// that step's body) exists in SKILL.md.
+function assertStep(step, where) {
+  const [major, minor] = step.split(".");
+  const heading = WORKFLOW.indexOf(`\n### ${major}. `);
+  assert.ok(heading !== -1, `${where} refers to step ${step}, which does not exist`);
+  if (minor) {
+    const end = WORKFLOW.indexOf("\n### ", heading + 1);
+    const body = WORKFLOW.slice(heading, end === -1 ? undefined : end);
+    assert.match(body, new RegExp(`\\n${minor}\\. `), `${where}: no step ${step}`);
+  }
+}
+
 describe("Scripts", () => {
   const tableStart = SKILL.indexOf("## Scripts");
-  const workflow = SKILL.slice(SKILL.indexOf("## Workflow"));
   const rows = SKILL.slice(tableStart, SKILL.indexOf("\n## ", tableStart + 1))
     .split("\n")
     .filter((line) => line.startsWith("| `"))
@@ -209,22 +290,42 @@ describe("Scripts", () => {
         .at(-1)
         .split(",")
         .map((s) => s.trim())) {
-        const [major, minor] = step.split(".");
-        const heading = workflow.indexOf(`\n### ${major}. `);
-        assert.ok(heading !== -1, `${row[0]} is used in step ${step}, which does not exist`);
-        if (minor) {
-          const end = workflow.indexOf("\n### ", heading + 1);
-          const body = workflow.slice(heading, end === -1 ? undefined : end);
-          assert.match(body, new RegExp(`\\n${minor}\\. `), `${row[0]}: no step ${step}`);
-        }
+        assertStep(step, `${row[0]} (Scripts table)`);
       }
     }
   });
 
   it("every script in the table is named in the workflow", () => {
     for (const row of rows) {
-      assert.ok(workflow.includes(row[0]), `${row[0]} is in the Scripts table but no step uses it`);
+      assert.ok(WORKFLOW.includes(row[0]), `${row[0]} is in the Scripts table but no step uses it`);
     }
+  });
+});
+
+// Added by /ship test coverage audit.
+// Value: protects=prose step refs (step 6.3, (4.1-4.2), (4.5, 5)) name real workflow steps;
+//   fails_when=a workflow or publish step is renumbered and prose refs are missed;
+//   why_new=Scripts checks only the table's Used in column; seam=none
+describe("StepReferences", () => {
+  it("every step number cited in the spec prose exists in the workflow", () => {
+    const files = [
+      ["SKILL.md", SKILL],
+      ...fs.readdirSync(REFS_DIR).map((f) => [path.join("references", f), read(f)]),
+    ];
+    let count = 0;
+    for (const [file, text] of files) {
+      const refs = [
+        ...[...text.matchAll(/\b[Ss]teps? (\d(?:\.\d)?)\b/g)].map((m) => [m[1]]),
+        ...[...text.matchAll(/\((\d\.\d(?:-\d\.\d)?(?:, ?\d(?:\.\d)?)*)\)/g)].map((m) =>
+          m[1].split(/[,-]/),
+        ),
+      ];
+      for (const step of refs.flat().map((s) => s.trim())) {
+        count++;
+        assertStep(step, file);
+      }
+    }
+    assert.ok(count >= 10, `only ${count} step references found; the patterns may have drifted`);
   });
 });
 
@@ -288,6 +389,10 @@ describe("KeyStripping", () => {
     for (const name of names) {
       assert.match(name, pattern, `key parameter ${name} is not matched by the pattern`);
     }
+    // Ordinary parameters must survive, so an over-broad pattern fails too.
+    for (const name of ["keyword", "monkey", "q", "page", "district", "signup"]) {
+      assert.doesNotMatch(name, pattern, `ordinary parameter ${name} would be stripped`);
+    }
   });
 });
 
@@ -295,23 +400,88 @@ describe("PrivateDataIgnored", () => {
   it("this public repo ignores every private data file the Layout names", () => {
     const { execFileSync } = require("node:child_process");
     const repoRoot = path.join(SKILL_DIR, "..", "..");
-    const paths = [
-      "addresses.yaml",
-      "publish.yaml",
-      "2026-general/ballot-a/ballot.yaml",
-      "2026-general/ballot-a/private.yaml",
-      "2026-general/ballot-a/unfetchable.md",
-      "2026-general/ballot-a/sources/_ballot/sample-ballot.md",
-      "2026-general/ballot-a/review/us-house-07.md",
-    ];
-    // check-ignore prints each ignored path and exits 1 only when none are ignored.
-    const out = execFileSync("git", ["check-ignore", "--no-index", ...paths], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    });
-    const ignored = new Set(out.split("\n").filter(Boolean));
-    for (const p of paths) {
-      assert.ok(ignored.has(p), `${p} is not ignored; private data could be committed here`);
+    // Extended by /ship test coverage audit.
+    // Value: protects=every file the SKILL.md Layout names is gitignored here;
+    //   fails_when=Layout gains a private file the .gitignore misses; why_new=the path list
+    //   was hand-copied, so a new Layout entry went unchecked; seam=none
+    const block = SKILL.slice(SKILL.indexOf("## Layout")).match(/```text\n([\s\S]*?)```/);
+    assert.ok(block, "SKILL.md Layout has no text block");
+    const fill = {
+      "<project root>/": "",
+      "<election>": "2026-general",
+      "<ballot-id>": "ballot-a",
+      "<contest>": "us-house-07",
+      "<candidate>": "jane-example",
+    };
+    const entries = [];
+    const stack = [];
+    for (const line of block[1].split("\n").filter((l) => l.trim())) {
+      const indent = line.length - line.trimStart().length;
+      let entry = line.trim().replace(/\s+#.*$/, "");
+      for (const [from, to] of Object.entries(fill)) entry = entry.replaceAll(from, to);
+      while (stack.length && stack.at(-1).indent >= indent) stack.pop();
+      const full = (stack.at(-1)?.path ?? "") + entry;
+      if (full.endsWith("/")) stack.push({ indent, path: full });
+      entries.push(full);
     }
+    // Leaves only: files, plus a file inside each directory with no listed children.
+    const paths = entries
+      .filter((p) => p !== "" && !entries.some((q) => q !== p && q.startsWith(p)))
+      .map((p) => (p.endsWith("/") ? `${p}example.md` : p));
+    assert.ok(paths.length >= 10, `only ${paths.length} Layout paths parsed`);
+    for (const p of paths) assert.doesNotMatch(p, /[<>]/, `unfilled placeholder in ${p}`);
+    // check-ignore prints each ignored path and exits 1 only when none are ignored.
+    // Any <election> name must be covered, not only the YYYY-kind example.
+    const all = [
+      ...paths,
+      ...paths
+        .filter((p) => p.startsWith("2026-general/"))
+        .map((p) => p.replace("2026-general/", "general-2026/")),
+    ];
+    // Only this repo's .gitignore counts: a developer's global excludes must not make it pass.
+    const out = execFileSync(
+      "git",
+      ["-c", "core.excludesFile=/dev/null", "check-ignore", "-v", "--no-index", ...all],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+      },
+    );
+    const sources = new Map(
+      out
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [source, file] = line.split("\t");
+          return [file, source];
+        }),
+    );
+    for (const p of all) {
+      assert.ok(sources.has(p), `${p} is not ignored; private data could be committed here`);
+      assert.match(sources.get(p), /^\.gitignore:/, `${p} is ignored only by ${sources.get(p)}`);
+    }
+  });
+});
+
+// Added by /ship pre-landing review.
+// Value: protects=every "Rule N" cited in the spec names a real numbered rule; fails_when=a
+//   rule is renumbered or inserted and citations are missed; why_new=StepReferences checks
+//   steps only; seam=none
+describe("RuleReferences", () => {
+  it("every Rule N cited in the spec exists in SKILL.md", () => {
+    const rulesBlock = SKILL.slice(
+      SKILL.indexOf("## Rules that never bend"),
+      SKILL.indexOf("## Scripts"),
+    );
+    const rules = new Set([...rulesBlock.matchAll(/^(\d+)\. \*\*/gm)].map((m) => m[1]));
+    assert.ok(rules.size >= 8, `only ${rules.size} rules parsed`);
+    let count = 0;
+    for (const text of SPEC_TEXTS) {
+      for (const [, n] of text.matchAll(/\bRules? (\d+)\b/g)) {
+        count++;
+        assert.ok(rules.has(n), `Rule ${n} is cited but not defined`);
+      }
+    }
+    assert.ok(count >= 4, `only ${count} Rule citations found`);
   });
 });

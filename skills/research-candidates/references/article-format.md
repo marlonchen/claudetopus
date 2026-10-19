@@ -5,7 +5,7 @@ One article per contest, at `<ballot-id>/articles/<contest>.md`. The format is b
 ## Structure
 
 ```markdown
-# <contest title, as in ballot.yaml>
+# <contest id, as in ballot.yaml>
 
 ## <candidate name, exactly as printed>
 
@@ -18,7 +18,7 @@ One article per contest, at `<ballot-id>/articles/<contest>.md`. The format is b
 Unknown, no source found
 ```
 
-Section headings come from [sections.md](sections.md), in that order, for every candidate in ballot order. Retention contests have one `##` block for the judge or official, and measures one `##` block titled with the measure. There is no separate source list: the set of snapshots an article cites is the set of its claim links.
+Section headings come from [sections.md](sections.md), in that order, for every candidate in ballot order. Retention contests have one `##` block for the judge or official, and measures one `##` block titled with the contest id, never the printed title. The page takes every contest and measure heading from `ballot.yaml` (step 6.2). There is no separate source list: the set of snapshots an article cites is the set of its claim links.
 
 ## Claim lines
 

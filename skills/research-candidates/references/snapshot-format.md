@@ -8,8 +8,8 @@ source: FEC candidate totals       # name shown on the page receipt
 url: https://api.open.fec.gov/v1/candidate/H0XX00000/totals/   # what was fetched, cleaned (see below)
 fetched: 2026-10-12                # fetch date shown on the receipt
 method: api                        # html | pdf | api
-tier: T1                           # T1 | T2 | T3 | T4, see source-tiers.md
-statements_only: false             # true: claims citing it must be "Says:" claims
+tier: T1                           # T1 | T2 | T3 | T4, from tiers.yaml (source-tiers.md)
+statements_only: false             # from tiers.yaml; true: claims citing it must be "Says:" claims
 subject: jane-example              # candidate id, retention official id, _race, or _ballot
 ---
 <body>
@@ -25,6 +25,8 @@ supersedes: sample-ballot.md       # optional: the earlier snapshot this one cor
 ## Cleaning the URL
 
 `fetch-snapshot` removes API keys from every URL it records, in snapshots and in the unfetchable log alike. A key parameter is any query parameter whose name matches `/^(api[_-]?key|key|token|access[_-]?token|secret|sig(nature)?)$/i` (`api_key`, OpenStates' `apikey`, `apiKey`, `access_token`). Key values are the values of the API-key environment variables the scripts read (`OPENFEC_API_KEY`, `OPENSTATES_API_KEY`); `fetch-snapshot` and the publish privacy scan both refuse any URL or page that contains one. For `_ballot` snapshots it also drops the whole query string and fragment, because county lookups often carry the address, precinct or voter id there.
+
+`--ballot` mode, used only in step 2, takes a researcher-typed county or state URL that may carry the address in its query, saves it as a `_ballot` snapshot, and records it with the query and fragment dropped. If the address, ZIP or a `private_strings` entry is in the URL's path instead, it refuses; the researcher downloads the file and saves it with `fetch-snapshot --ballot --file <path>`, giving the county page's origin as the URL.
 
 ## Body
 
