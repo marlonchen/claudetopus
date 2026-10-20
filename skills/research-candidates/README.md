@@ -2,7 +2,7 @@
 
 Candidate research skill for Claude Code. For each voter address it builds a ballot guide where every claim is backed by a verbatim excerpt from a saved source, then publishes one static, phone-friendly page per ballot.
 
-See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place; none of the scripts in SKILL.md's script table are built yet.
+See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place; none of the scripts in SKILL.md's script table are built yet, and the fonts directory [page.md](references/page.md) embeds from is not bundled yet.
 
 This directory is the skill's *source*. The research data it works on (addresses, ballots, snapshots, review lists, articles) belongs in a separate **private** repo and must never be committed here: this repo is public.
 

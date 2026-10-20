@@ -147,6 +147,7 @@ fix: handle missing raw.config
   workflows/ci.yml   # runs lint + test on pull requests and pushes to main
 skills/
   mywiki/            # the skill: SKILL.md, references, scripts, tests
+  research-candidates/  # scaffold: SKILL.md, references, tests; no scripts yet
 biome.jsonc          # JavaScript lint + format config
 .rumdl.toml          # Markdown lint config
 .yamlfmt             # YAML lint + format config
