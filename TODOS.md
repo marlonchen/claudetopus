@@ -41,7 +41,7 @@
 
 **What:** Before every privacy comparison (publish scan, `fetch-snapshot` URL and `source:` refusals, `ballot-check` `private_strings`), apply NFKC and strip `\p{Default_Ignorable_Code_Point}` (soft hyphen, zero-width characters, word joiner, BOM), and consider folding confusables. Apply the same to excerpt matching in `check`.
 
-**Why:** "Spring&shy;field Township" or fullwidth letters pass the whole-phrase match (SKILL.md:121) and the NFKC-only excerpt check (article-format.md:39), yet a browser shows the locating string, and a push keeps it in public history.
+**Why:** "Spring&shy;field Township" or fullwidth letters pass the whole-phrase match (SKILL.md:122) and the NFKC-only excerpt check (article-format.md:39), yet a browser shows the locating string, and a push keeps it in public history.
 
 **Context:** Step 11 adversarial finding 1, /ship run 5, rated the most exploitable. Deferred by the owner (D8).
 
@@ -66,14 +66,14 @@
 **What:** Requirements for the scripts, each to become a test:
 
 - [ ] `claim-format` allows exactly one inline code span (the trailing tag) and one link (the trailing snapshot link), so no figure hides in link text or code (article-format.md:46, 66).
-- [ ] Join pdftotext hyphenated line breaks before collapsing whitespace, and accept an excerpt that matches either the joined or the unjoined form (article-format.md:40-43; `ballot-check` normalizes per line, ballot-format.md:64).
+- [ ] Join pdftotext hyphenated line breaks before collapsing whitespace, and accept an excerpt that matches either the joined or the unjoined form (article-format.md:40-43; `ballot-check` normalizes per line, ballot-format.md:67).
 - [ ] Refuse an excerpt that crosses a blank-line record boundary in an `api` snapshot (snapshot-format.md:36).
-- [ ] `publish` recomputes every mechanical review item key, unfetchable entries included, and requires each to be accepted (review-list.md:48, SKILL.md:117).
+- [ ] `publish` recomputes every mechanical review item key, unfetchable entries included, and requires each to be accepted (review-list.md:48, SKILL.md:118).
 - [ ] Settle the first-run baseline wording (review-list.md:14 vs 32), and carry a mark only when the comment's key is in the key set computed from the current article (review-list.md:26).
-- [ ] The ballot gate requires `git ls-files --error-unmatch` for `review/` and `tiers.yaml` files and uses `git status --porcelain --ignored`, so a data-repo ignore rule cannot fake "committed" (SKILL.md:118).
-- [ ] Lock `pages_dir`, commit with `git commit -- <slug>/index.html`, and copy and re-hash the exact bytes that were scanned (SKILL.md:131).
+- [ ] The ballot gate requires `git ls-files --error-unmatch` for `review/` and `tiers.yaml` files and uses `git status --porcelain --ignored`, so a data-repo ignore rule cannot fake "committed" (SKILL.md:119).
+- [ ] Lock `pages_dir`, commit with `git commit -- <slug>/index.html`, and copy and re-hash the exact bytes that were scanned (SKILL.md:132).
 - [ ] Specify `tiers.yaml` matching: WHATWG URL parse, normalized path, prefix match on segment boundaries, normalized host, and the stricter tier across every redirect hop (source-tiers.md:20, 25).
-- [ ] Decide what a privacy match outside a claim or source name does (for example a ZIP in a receipt URL path) instead of refusing the whole page, and add a "source withheld" state so dropping a claim does not force "Unknown, no source found" (SKILL.md:129). Needs an owner decision.
+- [ ] Decide what a privacy match outside a claim or source name does (for example a ZIP in a receipt URL path) instead of refusing the whole page, and add a "source withheld" state so dropping a claim does not force "Unknown, no source found" (SKILL.md:130). Needs an owner decision.
 - [ ] Decide how much first-run baseline acceptance can rest on the neutrality pass, whose input is untrusted excerpts (review-list.md:32). Needs an owner decision.
 - [ ] Decide how "the model never sees an address" is enforced when the main session has Bash and deny rules match by prefix (SKILL.md:20). Needs an owner decision.
 
@@ -84,18 +84,6 @@
 **Effort:** L
 **Priority:** P2
 **Depends on:** The scripts they name.
-
-### PageAnchors race set should come from the page, not the chips
-
-**What:** In `tests/spec-parity.test.js` PageAnchors, build the set of valid bare race anchors from the race anchors the wireframe defines (or `exampleIds()`), not only from contests that have chip links, while keeping a stale `#ballot` after a list-anchor rename failing.
-
-**Why:** A correct future link such as `#governor` (page.md:51 says every race has an anchor) would fail with "names no race on the page".
-
-**Context:** Cycle 3 testing finding, /ship run 5. It fires on no current wireframe link. Deferred by the owner (D7).
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None.
 
 ### Prove a search ran before "Unknown, no source found"
 
@@ -130,3 +118,17 @@
 **Priority:** P3
 
 ## Completed
+
+### PageAnchors race set should come from the page, not the chips
+
+**What:** In `tests/spec-parity.test.js` PageAnchors, build the set of valid bare race anchors from the race anchors the wireframe defines (or `exampleIds()`), not only from contests that have chip links, while keeping a stale `#ballot` after a list-anchor rename failing.
+
+**Why:** A correct future link such as `#governor` (page.md:51 says every race has an anchor) would fail with "names no race on the page".
+
+**Context:** Cycle 3 testing finding, /ship run 5. It fires on no current wireframe link. Deferred by the owner (D7).
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None.
+**Completed:** run 7 /ship (2026-10-22): PageAnchors takes races from the wireframe's `<section id>` containers, and WireframeStructure fails any link that lands on no id.
+
