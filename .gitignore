@@ -184,3 +184,8 @@ vite.config.ts.timestamp-*
 # The generic coverage rule above must not swallow the skill's `coverage` script. Name the
 # script only: a wider negation would re-include .env files or node_modules under scripts/.
 !/skills/*/scripts/coverage
+# Nor may it, or the .claude/ rule, swallow test fixtures that model a data repo.
+!/skills/*/tests/**/coverage
+!/skills/*/tests/**/.claude/
+# But never per-user Claude Code settings, which can hold personal allowlists and env values.
+/skills/*/tests/**/.claude/settings.local.json

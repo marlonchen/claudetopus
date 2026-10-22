@@ -9,6 +9,33 @@ My Claude Code skills.
 | [mywiki](skills/mywiki/README.md) | Personal journal (dated daily entries with carry-forward) plus a Karpathy-style LLM wiki: ingest sources, compile durable articles, query with citations, lint for source fidelity. |
 | [research-candidates](skills/research-candidates/README.md) | Cited, equal-depth candidate research for a voter's ballot: every claim backed by a verbatim excerpt from a saved source, reviewed, then published as one phone-friendly page per ballot. Scaffold. |
 
+## Install a skill
+
+Each skill is self-contained and installs into the repo it works on. Both skills here run in a
+repo that holds private data (a journal, research data), so mywiki and research-candidates install
+only with `gh`, pinned to a commit you have read; never use unpinned `npx`, which runs whatever
+version of that package is newest inside the repo. From inside that repo:
+
+```bash
+gh skill install marlonchen/claudetopus <skill> --agent claude-code --pin <commit>
+```
+
+This installs at project scope (the current repo's `.claude/skills/`). Check the skill's README
+first for its own limits.
+
+Upgrades differ too: never run `gh skill update --all` in a repo that holds private data. To
+upgrade a pinned skill, read the diff, delete its `.claude/skills/<skill>` directory so files
+the new commit removed do not linger, and install again at the new `--pin`.
+
+`gh skill` is in preview, so its flags may change.
+
+While developing a skill here, install from this checkout into a throwaway repo (never one that
+holds private data) and re-run after each change, deleting the installed directory first:
+
+```bash
+gh skill install ~/src/github/<user>/claudetopus <skill> --from-local --force --agent claude-code
+```
+
 ## Development setup
 
 There is no `package.json` and no `node_modules` here. Every tool is either a Node
