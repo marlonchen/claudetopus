@@ -39,11 +39,15 @@
 
 ### Finish Unicode normalization for privacy matching
 
-**What:** SKILL.md step 6.3 now applies NFKC, strips default-ignorable characters and folds every Unicode dash in the publish scan, and `fetch-snapshot` and `ballot-check` match `private_strings` the same way (run 10). Still open: strip `\p{Default_Ignorable_Code_Point}` in excerpt matching in `check` (article-format.md:37), and decide whether to fold confusables (Cyrillic or Greek look-alike letters) in all of them.
+**What:** SKILL.md step 6.3 now checks four variants of the decoded forms (default-ignorable characters removed or read as spaces, NFKC applied or not) and refuses on a match in any, with dashes folded by Unicode category; `fetch-snapshot` and `ballot-check` match `private_strings` the same way (run 10). Still open:
+- strip `\p{Default_Ignorable_Code_Point}` in excerpt matching in `check` (article-format.md:37);
+- decide whether to fold confusables (Cyrillic or Greek look-alike letters) everywhere;
+- excerpt matching joins `pdftotext` hyphenated line breaks and the scan does not, so if `check` joins after collapsing whitespace, `Spring- field Township` passes `check` and the scan reads it as `spring field township`; define the join so it cannot, or add it to the scan;
+- `ballot-check` refuses a `private_strings`, address or label entry with no letters or digits left after normalization, since an empty entry would match every page or none.
 
 **Why:** A confusable spelling of a private place name passes every whole-phrase match, yet a browser shows the locating string, and a push keeps it in public history.
 
-**Context:** Step 11 adversarial finding 1, /ship run 5, deferred by the owner (D8). NFKC, ignorable stripping and dash folding in the scan were fixed in /ship run 10 (D2) after four review specialists found the ligature leak.
+**Context:** Step 11 adversarial finding 1, /ship run 5, deferred by the owner (D8). /ship run 10 added NFKC after four review specialists found the ligature leak (D2), then the refuse-on-any-variant rule when the single NFKC pipeline turned `Township¹` into `township1` (D4).
 
 **Effort:** S
 **Priority:** P1

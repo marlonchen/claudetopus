@@ -2499,29 +2499,32 @@ describe("PrivateLineParts", () => {
   });
 
   // Extended by /ship pre-landing review (run 10).
-  // Value: protects=the scan makes every character fold excerpt matching makes, so an excerpt that
-  //   passes `check` with a ligature or Unicode hyphen cannot hide a private place name;
-  //   fails_when=the scan drops NFKC, ignorable stripping or the wider dash fold, or excerpt
-  //   matching gains a fold the scan lacks; why_new=the test pinned only the quote and dash fold
-  //   and missed NFKC; seam=none; no_claim=publish (not built yet; spec text only)
-  it("the privacy scan makes every character fold excerpt matching makes", () => {
+  // Value: protects=the scan checks NFKC and ignorable variants and refuses on any, so a ligature,
+  //   filler or superscript next to a private place name cannot hide it, and excerpt matching's
+  //   folds stay a subset of the scan's; fails_when=a variant or the refuse-on-any rule is
+  //   dropped, the dash fold narrows to a list, or the excerpt fold list changes without the
+  //   scan; why_new=the test pinned only the quote and dash fold and missed NFKC; seam=none;
+  //   no_claim=publish (not built yet; spec text only)
+  it("the privacy scan checks every normalization variant and refuses on any", () => {
     const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
-    const matching = between(ARTICLE, "## Matching");
-    assert.match(matching, /1\. Unicode NFKC/, "excerpt matching no longer applies NFKC");
-    assert.match(
-      matching,
-      /Map curly quotes to straight quotes, and en and em dashes to `-`\./,
-      "excerpt matching no longer folds the same characters",
+    const steps = between(ARTICLE, "## Matching").match(/^\d+\. .*/gm);
+    assert.deepStrictEqual(
+      steps.map((step) => step.split(/[,.]/)[1].trim()),
+      [
+        "Unicode NFKC",
+        "Collapse runs of whitespace to one space",
+        "Map curly quotes to straight quotes",
+        "Join `pdftotext` hyphenated line breaks",
+      ],
+      "excerpt matching's folds changed; update the scan variants to match",
     );
-    assert.match(scan, /Unicode NFKC applied/, "the scan skips NFKC, so ligatures escape it");
     assert.match(
       scan,
-      /default-ignorable characters such as soft hyphens and zero-width spaces removed/,
+      /curly quotes mapped to straight quotes and every dash to `-` \(Unicode category Pd plus the minus sign U\+2212/,
     );
     assert.match(
       scan,
-      /curly quotes mapped to straight quotes and every Unicode dash or hyphen \(en and em dashes, U\+2010 to U\+2012, the minus sign U\+2212\) to `-`/,
+      /default-ignorable characters \([^)]*\) either removed or read as spaces, and then Unicode NFKC either applied or not\. A match in any variant refuses\./,
     );
-    assert.match(scan, /covers every character fold excerpt matching makes/);
   });
 });
