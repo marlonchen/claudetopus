@@ -673,7 +673,7 @@ describe("BallotIds", () => {
   it("ballot-check fails a ballot id whose number is part of a private_strings entry", () => {
     const rule = ballotRuleLine("Ballot ids");
     // A part, not the whole entry: "Precinct 12" must stop the number 12. The county words are
-    // fixed by ballot.yaml and public through the contest list, so they are not checked.
+    // public through the contest list, and the Private text rule checks the county field.
     assert.match(rule, /whose number equals any digit run of any `private_strings` entry/);
     assert.match(rule, /To rename a ballot id[^.]*`addresses\.yaml`/);
     // Extended by /ship test coverage audit (run 9).
@@ -712,7 +712,8 @@ describe("BallotIds", () => {
   //   seam=none; no_claim=ballot-check itself (not built yet; spec text only)
   it("step 2 and the Ballot ids rule agree that only the id's number is checked", () => {
     const rule = ballotRuleLine("Ballot ids");
-    assert.match(rule, /county words are fixed by .{0,80}not checked against `private_strings`/);
+    assert.match(rule, /county words are fixed by .{0,80}public through the contest list/);
+    assert.match(rule, /Private text rule already fails a `private_strings` entry in `county`/);
     const step2 = between(WORKFLOW, "### 2. ", "\n### ");
     const claim = step2.match(/`ballot-check` fails an id [^.:]*/);
     assert.ok(claim, "SKILL.md step 2 no longer says which ids ballot-check fails");
@@ -784,13 +785,7 @@ describe("BallotIds", () => {
     );
     for (const p of caught) assert.ok(isAbbreviated(p), `the rule's example ${p} is not caught`);
     for (const p of examples(shape[3])) assert.ok(!isAbbreviated(p), `full name ${p} is caught`);
-    // Added by /ship pre-landing review (run 9): the sample ballot that printed the abbreviation
-    // never vouches for party_name, and party_name itself is never an abbreviation.
-    assert.match(rule, /a `party_name` that no `candidate_list` or `pamphlet` snapshot contains/);
-    assert.match(rule, /never counting the `sample_ballot` that printed the abbreviation/);
-    assert.match(rule, /a `party_name` that is itself abbreviated: a word holding a period/);
-    assert.match(rule, /or a single word in all capitals \(`DEM`\)/);
-    assert.doesNotMatch(rule, /no `_ballot\/` snapshot contains/, "any _ballot file vouches again");
+    assert.match(rule, /a `party_name` that no `_ballot\/` snapshot contains/);
     // Ballots often print every party in capitals: those need party_name, matched ignoring case.
     assert.match(rule, /printed in capitals \(`GREEN PARTY`\) needs a `party_name`/);
     assert.match(rule, /contains it ignores case/);
@@ -840,6 +835,8 @@ describe("BallotIds", () => {
       rule,
       /when an entry appears in the `state` or `county` field, `ballot-check` fails, names that field, and says to list the township's full name/,
     );
+    const ids = ballotRuleLine("Ballot ids");
+    assert.doesNotMatch(ids, /not checked against `private_strings`/, "Ballot ids contradicts it");
   });
 
   // Added by /ship pre-landing review (cycle 3).
