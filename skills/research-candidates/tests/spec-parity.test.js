@@ -2468,3 +2468,46 @@ describe("FigureExamples", () => {
     assert.ok(figureMatches("$2 billion", "1.5 billion") && figureMatches("3M", "2,500,000"));
   });
 });
+
+// Added by /ship pre-landing review (run 9, adversarial findings 1 and 2).
+// Value: protects=a private line is accounted for by its parts, each listed as its own entry,
+//   and the privacy scan folds curly quotes and dashes as excerpt matching does, so a place
+//   name never escapes the whole-phrase match; fails_when=the accounting rule again needs the
+//   whole line as one entry, or the scan stops folding quotes or dashes; why_new=no test read
+//   either rule; seam=none; no_claim=ballot-check and publish (not built yet; spec text only)
+describe("PrivateLineParts", () => {
+  it("a private header line is accounted for by listing each part as its own entry", () => {
+    const rule = ballotRuleLine("Official to listed");
+    assert.doesNotMatch(rule, /is exactly a `private_strings` entry/, "whole-line entries return");
+    assert.match(
+      rule,
+      /made up wholly of `private_strings` entries joined by spaces or punctuation/,
+    );
+    const example = rule.match(
+      /a header line such as "([^"]+)" is accounted for by listing `([^`]+)` and `([^`]+)`/,
+    );
+    assert.ok(example, "the rule lost its split-line example");
+    assert.strictEqual(
+      `${example[2]} ${example[3]}`,
+      example[1],
+      "the parts do not make up the line",
+    );
+    for (const part of example.slice(2)) {
+      assert.ok(BALLOT.includes(`  - ${part} `), `${part} is not in the private_strings example`);
+    }
+    assert.match(rule, /The publish scan matches each entry whole, never a part of one/);
+  });
+
+  it("the privacy scan folds curly quotes and dashes the way excerpt matching does", () => {
+    const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
+    assert.match(
+      scan,
+      /curly quotes mapped to straight quotes and en and em dashes to `-` \(as excerpt matching does/,
+    );
+    assert.match(
+      read("article-format.md"),
+      /Map curly quotes to straight quotes, and en and em dashes to `-`\./,
+      "excerpt matching no longer folds the same characters",
+    );
+  });
+});

@@ -85,6 +85,27 @@
 **Priority:** P2
 **Depends on:** The scripts they name.
 
+### Scripts build checklist from the run 9 adversarial review
+
+**What:** Requirements for the scripts build, each with its spec line:
+- **Snapshot writes:** `fetch-snapshot` picks a numeric suffix (snapshot-format.md:48) with exclusive create (O_CREAT|O_EXCL, retry the next suffix) through a temp file, writes the `ballot.ledger` line before the rename, and `ballot-check` defines what a ledger line with no file means. Parallel fetches can otherwise take the same name.
+- **Review acceptance:** a session with Bash can append to `.accepted` and commit `reset review <contest>` as the researcher (review-list.md:30, SKILL.md:100/119). Require signed commits from a key the session cannot use, or deny `git commit` and writes to `review/` in the data repo's settings.
+- **Party names:** decide which sources may vouch for `party_name` (ballot-format.md:74). The sample ballot can vouch for `DEM` as its own full name; a stricter rule must still let all-caps ballots with no pamphlet pass, and must accept hyphenated full names (Democratic-Farmer-Labor) while catching `DFL Party`.
+- **Allegation words:** add fined, violat(e|ed|ion|ions), reprimand(ed), admonish(ed|ment), suspen(ded|sion), disbar(red|ment), scandal, plead(s|ed), DUI, penalt(y|ies) to review-list.md:12 and the AllegationWords test.
+- **Unfetchable after redirect:** record `requested_url` in snapshot front matter and clear an `unfetchable.md` entry on either URL (review-list.md:13, source-tiers.md:25).
+- **Shared-history check:** SKILL.md:131 "shares any commit with it" compares root commits (`git rev-list --max-parents=0 HEAD` in each repo) and never fetches one repo into the other.
+- **Referrer:** add `<meta name="referrer" content="no-referrer">` and `rel="noreferrer noopener"` on receipt links (SKILL.md:121).
+- **Slug overwrite:** refuse when `<slug>/index.html` exists in `pages_dir` but this ballot has no publish record (ballot-format.md:77, SKILL.md:132).
+- **Review keys:** at least 64-bit hashes (review-list.md:21-26). Label Wayback links "Archive copy (captured separately)", since a capture can differ from the snapshot (snapshot-format.md:52).
+
+**Why:** Prose cannot enforce file locking, commit provenance or hash width; each item becomes a script behavior and a test.
+
+**Context:** Step 11 Claude adversarial pass, /ship run 9 (Codex unavailable: model_unusable). The owner fixed findings 1 and 2 (whole-line private entries, quote and dash folding) and deferred these (D8). The party_name item comes from review cycle 2 (D6).
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** `fetch-snapshot`, `ballot-check`, `review-list` and `publish`.
+
 ### Prove a search ran before "Unknown, no source found"
 
 **What:** Have `fetch-snapshot` (or a sibling script) write a structured search log per contest (contest, candidate, checklist item, searched) with no free text, and make `coverage` refuse an `Unknown, no source found` section that has no matching entry.
