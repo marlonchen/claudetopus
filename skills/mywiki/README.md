@@ -110,6 +110,7 @@ scripts/
   check_evidence.js             # wiki lint: source-fidelity checker (report-only)
 tests/
   check_evidence.test.js
+  readme-install.test.js        # asserts the install commands are pinned gh installs of mywiki and #heading links land
   template-parity.test.js       # asserts the two day templates stay identical apart from Reflections
 ```
 
