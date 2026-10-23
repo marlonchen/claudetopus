@@ -43,7 +43,12 @@
 - strip `\p{Default_Ignorable_Code_Point}` in excerpt matching in `check` (article-format.md:37);
 - decide whether to fold confusables (Cyrillic or Greek look-alike letters) everywhere;
 - excerpt matching joins `pdftotext` hyphenated line breaks and the scan does not, so if `check` joins after collapsing whitespace, `Spring- field Township` passes `check` and the scan reads it as `spring field township`; define the join so it cannot, or add it to the scan;
-- `ballot-check` refuses a `private_strings`, address or label entry with no letters or digits left after normalization, since an empty entry would match every page or none.
+- make `ballot-check` refuse a `private_strings`, address or label entry with no letters or digits left after normalization, since an empty entry would match every page or none;
+- fold order: in the NFKC variants, apply the ignorable fold and NFKC first, then the quote, dash and case folds, whitespace collapse and form 3's separators (or NFKC_Casefold), since NFKC run last brings back capitals (`𝐒𝐩𝐫𝐢𝐧𝐠𝐟𝐢𝐞𝐥𝐝` becomes `Springfield`) and creates separators (`／`, `․`) after they were read as spaces; collapse whitespace after the ignorable fold, so `Pat <ZWSP> Voter` still reads as `pat voter`;
+- say that each searched value is normalized the same way as the form and variant it is matched against, ignorable fold and NFKC included, so an entry holding a soft hyphen still matches page text whose soft hyphen the variant removed; add a parity case;
+- decide whether digits NFKC creates (`9410³` becomes `94103`, `①` becomes `1`) count for the ZIP and digit-run checks, and whether reading ZWNJ, ZWJ and soft hyphens as spaces may split ordinary words into a short private entry (`Spring­field Township` matching `Field Township`);
+- a combining mark after the last letter of a private phrase keeps it off a word boundary in every variant; consider an NFD variant with marks dropped;
+- the parity test compares only the text before each excerpt fold step's first comma or period, and `between(ARTICLE, "## Matching")` has no end marker; compare whole step lines up to the next heading, and drop the value card's subset claim while the hyphen-join gap is open.
 
 **Why:** A confusable spelling of a private place name passes every whole-phrase match, yet a browser shows the locating string, and a push keeps it in public history.
 
