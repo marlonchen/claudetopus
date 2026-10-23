@@ -2220,7 +2220,7 @@ describe("ResearcherOnlyModes", () => {
     const row = SKILL.split("\n").find((l) => l.startsWith("| `fetch-snapshot` |"));
     assert.ok(row, "the Scripts table has no fetch-snapshot row");
     const modes = new Set([...row.matchAll(/`(?:--\w+ )?(--\w+)`/g)].map((m) => m[1]));
-    assert.ok(modes.size >= 3, `only ${[...modes]} fetch-snapshot modes found`);
+    assert.ok(modes.size >= 2, `only ${[...modes]} fetch-snapshot modes found`);
     const rejects = SNAPSHOT.match(/The fetch tool given to agents rejects ([^.]+)\./);
     assert.ok(rejects, "snapshot-format.md no longer says what the agents' fetch tool rejects");
     const rejected = new Set([...rejects[1].matchAll(/`(--\w+)`/g)].map((m) => m[1]));
@@ -2526,5 +2526,50 @@ describe("PrivateLineParts", () => {
       scan,
       /default-ignorable characters \([^)]*\) either removed or read as spaces, and then Unicode NFKC either applied or not\. A match in any variant refuses\./,
     );
+  });
+});
+
+// Added for the owner decisions of 2026-10-23 (no address lookups, mechanical baseline,
+//   researcher review of privacy matches outside a claim).
+// Value: protects=the model never looks up an address, the first-run baseline accepts only
+//   claims a script can check, and a privacy match outside a claim reaches the researcher;
+//   fails_when=a lookup mode such as --geocode comes back, the baseline again rests on the
+//   neutrality pass, or the whole-page refusal loses its review path; why_new=these rules are
+//   new; seam=none; no_claim=fetch-snapshot, review-list and publish (not built yet)
+describe("OwnerDecisions", () => {
+  it("no script looks up an address; step 2 hands the researcher links", () => {
+    for (const [file, text] of SPEC_FILES) {
+      assert.doesNotMatch(text, /--geocode|Census Geocoder/, `${file} still looks up an address`);
+    }
+    const rule5 = SKILL.match(/^5\. \*\*Private data stays private\.\*\*[^\n]*/m)[0];
+    assert.match(rule5, /The model never sees an address and never looks one up/);
+    assert.match(rule5, /No script looks up an address/);
+    const step2 = between(SKILL, "### 2. Find the ballot", "\n### ");
+    assert.match(step2, /Never look up the address\. Give the researcher links instead/);
+    assert.match(step2, /never fetch a lookup result/);
+  });
+
+  it("the first-run baseline accepts only claims found whole in their own excerpt", () => {
+    const accepted = between(REVIEW, "## Accepted keys");
+    assert.match(
+      accepted,
+      /accepted as the baseline only when a script can check its wording itself/,
+    );
+    assert.match(accepted, /is found whole in its own excerpt, on word boundaries/);
+    assert.match(accepted, /so its silence accepts nothing/);
+    // The list itself carries the claims the baseline turns away.
+    const list = between(REVIEW, "## What goes on it");
+    assert.match(
+      list,
+      /on the first run, every claim whose text is not found whole in its own excerpt/,
+    );
+  });
+
+  it("a privacy match outside a claim refuses the page and goes to the researcher", () => {
+    assert.match(
+      SKILL,
+      /Any other match \([^)]*\) refuses the whole page and goes to the researcher for review/,
+    );
+    assert.match(SKILL, /This first phase has no override; the final rule is open in TODOS\.md/);
   });
 });
