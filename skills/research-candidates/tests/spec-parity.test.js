@@ -676,6 +676,33 @@ describe("BallotIds", () => {
     // fixed by ballot.yaml and public through the contest list, so they are not checked.
     assert.match(rule, /whose number equals any digit run of any `private_strings` entry/);
     assert.match(rule, /To rename a ballot id[^.]*`addresses\.yaml`/);
+    // Extended by /ship test coverage audit (run 9).
+    // Value: protects=the id's number is checked at ballot-check because 6.3 never scans a short
+    //   digit run alone, and the example id passes its own rule; fails_when=the example id takes
+    //   a private digit run, or 6.3 starts scanning 1-2 digit runs alone; why_new=the rule was
+    //   read alone; seam=none; no_claim=ballot-check and publish (not built yet; spec text only)
+    const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
+    const bullet = scan
+      .split("\n")
+      .find((l) => /^ +- the digit run of a `private_strings`/.test(l));
+    assert.ok(bullet, "6.3 no longer scans a private_strings entry's digit run");
+    const alone = Number(bullet.match(/on its own, when it has (\d+) or more digits/)?.[1]);
+    const idDigits = Number(rule.match(/a 1-(\d) digit number the researcher picks/)?.[1]);
+    assert.ok(alone && idDigits, "6.3 or the Ballot ids rule lost its digit counts");
+    // A private run as short as the id's number is never matched alone by 6.3, so only
+    // ballot-check keeps it out of every agent-visible path.
+    assert.ok(idDigits < alone, "the id's number is now long enough for 6.3 to scan alone");
+    const entries = between(BALLOT, "private_strings:\n", "\nignored_lines:")
+      .split("\n")
+      .map((l) => l.match(/^ +- (.+?)(?:\s+#.*)?$/)?.[1])
+      .filter(Boolean);
+    const runs = new Set(entries.flatMap((e) => e.match(/\d+/g) ?? []));
+    const listed = rule.match(/with `([^`]+)` listed, (\d+) fails/);
+    assert.ok(listed, "the Ballot ids rule lost its worked example");
+    assert.ok(entries.includes(listed[1]), `${listed[1]} is not in the private_strings example`);
+    assert.ok(runs.has(listed[2]), `${listed[2]} is not a digit run of the example entries`);
+    const n = exampleBallotId().split("-").pop();
+    assert.ok(!runs.has(n), `the example id ${exampleBallotId()} fails its own ballot-check`);
   });
 
   // Added by /ship test coverage audit.
@@ -685,11 +712,7 @@ describe("BallotIds", () => {
   //   seam=none; no_claim=ballot-check itself (not built yet; spec text only)
   it("step 2 and the Ballot ids rule agree that only the id's number is checked", () => {
     const rule = ballotRuleLine("Ballot ids");
-    // The id rule checks only the number; the county words are covered by the Private text rule.
-    assert.match(
-      rule,
-      /county words come from .{0,40}`county`, which the Private text rule already/,
-    );
+    assert.match(rule, /county words are fixed by .{0,80}not checked against `private_strings`/);
     const step2 = between(WORKFLOW, "### 2. ", "\n### ");
     const claim = step2.match(/`ballot-check` fails an id [^.:]*/);
     assert.ok(claim, "SKILL.md step 2 no longer says which ids ballot-check fails");
@@ -761,7 +784,13 @@ describe("BallotIds", () => {
     );
     for (const p of caught) assert.ok(isAbbreviated(p), `the rule's example ${p} is not caught`);
     for (const p of examples(shape[3])) assert.ok(!isAbbreviated(p), `full name ${p} is caught`);
-    assert.match(rule, /a `party_name` that no `_ballot\/` snapshot contains/);
+    // Added by /ship pre-landing review (run 9): the sample ballot that printed the abbreviation
+    // never vouches for party_name, and party_name itself is never an abbreviation.
+    assert.match(rule, /a `party_name` that no `candidate_list` or `pamphlet` snapshot contains/);
+    assert.match(rule, /never counting the `sample_ballot` that printed the abbreviation/);
+    assert.match(rule, /a `party_name` that is itself abbreviated: a word holding a period/);
+    assert.match(rule, /or a single word in all capitals \(`DEM`\)/);
+    assert.doesNotMatch(rule, /no `_ballot\/` snapshot contains/, "any _ballot file vouches again");
     // Ballots often print every party in capitals: those need party_name, matched ignoring case.
     assert.match(rule, /printed in capitals \(`GREEN PARTY`\) needs a `party_name`/);
     assert.match(rule, /contains it ignores case/);
@@ -769,7 +798,9 @@ describe("BallotIds", () => {
     assert.ok(example, "the ballot.yaml example has no abbreviated party with a party_name");
     const line = PAGE.split("\n").find((l) => /^- name, then party/.test(l));
     assert.ok(line, "page.md no longer says how the party is shown");
-    assert.match(line, /`party_name` from `ballot\.yaml` when the ballot prints an abbreviation/);
+    // An all-caps full name needs party_name too, so the page shows it whenever it is set.
+    assert.match(line, /`party_name` from `ballot\.yaml` whenever it is set/);
+    assert.match(line, /abbreviated or in all capitals needs one/);
     assert.match(line, /never abbreviated/);
     // Extended by /ship test coverage audit.
     // Value: protects=the wireframe heading shows the full party name over a printed DEM excerpt,
@@ -809,9 +840,6 @@ describe("BallotIds", () => {
       rule,
       /when an entry appears in the `state` or `county` field, `ballot-check` fails, names that field, and says to list the township's full name/,
     );
-    const ids = ballotRuleLine("Ballot ids");
-    assert.doesNotMatch(ids, /not checked against `private_strings`/, "Ballot ids contradicts it");
-    assert.match(ids, /the Private text rule already checks against `private_strings`/);
   });
 
   // Added by /ship pre-landing review (cycle 3).
@@ -822,6 +850,43 @@ describe("BallotIds", () => {
     const rule = between(SKILL, "3. Privacy scan.", "\n4. ");
     assert.match(rule, /1900 to 2099/, "year-shaped digit runs still match alone");
     assert.match(rule, /receipt fetch dates/, "receipt dates may refuse the whole page");
+    // Extended by /ship test coverage audit (run 9).
+    // Value: protects=6.3's alone/next-to-words split, computed from its own numbers, sorts the
+    //   bullet's and ballot-format.md's examples as written; fails_when=the year range, length
+    //   cut-off or ballot-check warning drift from the examples; why_new=only phrases were
+    //   matched; seam=none; no_claim=publish and ballot-check (not built yet; spec text only)
+    const bullet = rule
+      .split("\n")
+      .find((l) => /^ +- the digit run of a `private_strings`/.test(l));
+    const min = Number(bullet.match(/when it has (\d+) or more digits/)?.[1]);
+    const years = bullet.match(
+      /reads as a year \((\d{4}) to (\d{4}), as in a precinct named (\d+)\)/,
+    );
+    assert.ok(min && years, "the digit-run bullet lost its length cut-off or year range");
+    const [, lo, hi, named] = years.map(Number);
+    const isYear = (run) => run.length === 4 && Number(run) >= lo && Number(run) <= hi;
+    // A run matches alone only when long enough and not year-shaped; otherwise only with words.
+    const matchesAlone = (run) => run.length >= min && !isYear(run);
+    assert.ok(!matchesAlone(String(named)), `the bullet's own ${named} would match alone`);
+    assert.ok(matchesAlone("1899") && matchesAlone("2100"), "the year range is open-ended");
+    assert.ok(!matchesAlone("999"), `a ${min - 1}-digit run matches alone`);
+    // 6.3's "Pct 12" needs its words; ballot-format.md's BS-0412 matches on its own.
+    const pairs = bullet.match(/next to the entry's other words \("(\D+) (\d+)"\)/);
+    assert.ok(pairs && !matchesAlone(pairs[2]), "the bullet's next-to-words example matches alone");
+    assert.ok(BALLOT.includes("- BS-0412 "), "the ballot-format.md example lost BS-0412");
+    assert.ok(matchesAlone("0412"), "a 4-digit style code no longer matches alone");
+    assert.match(
+      bullet,
+      /it matches only next to the entry's other words, and `ballot-check` warns when a private digit run has that shape/,
+      "the year carve-out lost its words-only match or its ballot-check warning",
+    );
+    // Added by /ship pre-landing review (run 9): the warning 6.3 promises is a ballot-check rule.
+    const privateText = ballotRuleLine("Private text");
+    assert.match(
+      privateText,
+      /digit run reads as a year \(1900 to 2099[^)]*\), `ballot-check` warns, without quoting the entry/,
+      "6.3 promises a ballot-check warning that ballot-format.md does not define",
+    );
   });
 
   it("fetch-snapshot refuses a URL that contains the ballot id", () => {
@@ -1770,6 +1835,24 @@ describe("InstallCommands", () => {
     assert.match(rule8, /`skills\/research-candidates\/SKILL\.md`/);
     // The root of the fork network, so a fork of a fork is caught too.
     assert.match(rule8, /`\.source\.id \/\/ \.id`/);
+    // Extended by /ship test coverage audit (run 9).
+    // Value: protects=Rule 8 checks every fetch AND push URL of every remote is PRIVATE, an
+    //   unconfirmable remote counts as public, and step 1 runs it first; fails_when=the push-URL
+    //   check or the fail-closed clause is dropped, or step 1 stops checking Rule 8 first;
+    //   why_new=only the source-repo half of Rule 8 was read; seam=none;
+    //   no_claim=the Rule 8 check itself (not built yet; spec text only)
+    assert.match(rule8, /every fetch and push URL of every remote/, "Rule 8 skips push URLs");
+    assert.match(rule8, /`git remote get-url --all <name>`/);
+    assert.match(rule8, /`git remote get-url --push --all <name>`/, "a pushurl can go public");
+    assert.match(rule8, /`gh repo view --json visibility` reports `PRIVATE`/);
+    assert.match(
+      rule8,
+      /cannot be confirmed `PRIVATE` \(not on GitHub, an error, empty output\) counts as public/,
+      "Rule 8 no longer fails closed on an unreadable remote",
+    );
+    assert.match(rule8, /Before any step writes a file/, "Rule 8 runs after a write");
+    const step1 = between(WORKFLOW, "### 1. ", "\n### ");
+    assert.match(step1, /^Check Rule 8 first\./m, "step 1 no longer checks Rule 8 first");
   });
 
   // Added by /ship pre-landing review (run 7).
@@ -2032,5 +2115,359 @@ describe("InstallCommands", () => {
       assert.match(`npx skills add o/r --skill x ${flag}`, USER_SCOPE, `${flag} is not caught`);
     }
     assert.doesNotMatch("gh skill install o/r x --scope project --agent claude-code", USER_SCOPE);
+  });
+});
+
+// Added by /ship test coverage audit (run 9).
+// Value: protects=6.2's receipt link cases, page.md's four receipt lines and the Wayback rule
+//   agree: _ballot gets the county origin and no saved copy, a query or API url gets no link;
+//   fails_when=one file adds a link case, drops one, or lets _ballot or a query url reach
+//   Wayback; why_new=no test read receipt links or Saved copies; seam=none;
+//   no_claim=publish's renderer and fetch-snapshot (not built yet; spec text only)
+describe("ReceiptLinks", () => {
+  it("6.2's link cases, page.md's receipt lines and the Wayback rule agree", () => {
+    const step62 = between(SKILL, "\n2. Before rendering,", "\n3. Privacy scan.");
+    assert.match(
+      step62,
+      /Receipt links allow only `http` and `https` URLs and carry no query string or fragment/,
+    );
+    assert.match(
+      step62,
+      /original-page link is the snapshot's `public_url` when it has one, otherwise its `url`/,
+    );
+    // The two no-link cases, each with page.md's line for it.
+    assert.match(step62, /a `url` with a query string and no `public_url` gets no original-page/);
+    assert.match(step62, /a `method: api` snapshot with no `public_url`/);
+    // The saved copy is rebuilt from the snapshot, never taken from the append-only log.
+    assert.match(
+      step62,
+      /rebuilt as `https:\/\/web\.archive\.org\/web\/<timestamp>\/<url>` from the snapshot's own cleaned `url` and the line's 14-digit timestamp, never copied from `archives\.tsv`/,
+    );
+    // The per-ballot path can encode the precinct or ballot style.
+    assert.match(step62, /A `_ballot` receipt links only to the county site's origin/);
+    assert.match(step62, /never the per-ballot path[^.]*\. It gets no saved-copy link\./);
+
+    // fetch-snapshot asks Wayback only for snapshots whose original-page link is their own url.
+    const saved = between(SNAPSHOT, "## Saved copies");
+    for (const condition of [
+      "that is not `_ballot`",
+      "whose `method` is not `api`",
+      "whose cleaned `url` has no query string",
+      "that has no `public_url`",
+    ]) {
+      assert.ok(
+        saved.includes(condition),
+        `Saved copies no longer requires a snapshot ${condition}`,
+      );
+    }
+    assert.match(saved, /`_ballot` snapshots are never submitted/);
+    const stamp = saved.match(/14-digit capture timestamp \(`([A-Za-z]+)`\)/);
+    assert.ok(stamp, "Saved copies no longer gives the timestamp shape");
+    assert.strictEqual(stamp[1].length, 14, `${stamp[1]} is not 14 digits`);
+
+    // page.md: one receipt line per link case, and its stated count matches.
+    const receipts = PAGE.split("\n").find((l) => l.startsWith("**Receipts.**"));
+    assert.ok(receipts, "page.md has no Receipts paragraph");
+    const cases = {
+      "A `public_url` link": /from the official record this link shows/,
+      "A `_ballot` receipt, whose link is the county origin": /opens the county election site/,
+      "A receipt with no link": /its address can't be shared/,
+      "An API source with no `public_url`": /official data service, which has no page to link/,
+    };
+    for (const [lead, line] of Object.entries(cases)) {
+      const at = receipts.indexOf(`${lead}: "The quote above was saved on`);
+      assert.ok(at >= 0, `page.md has no receipt line for "${lead}"`);
+      assert.match(receipts.slice(at, receipts.indexOf('"', receipts.indexOf('"', at) + 1)), line);
+    }
+    const count = receipts.match(/: "The quote above was saved on/g)?.length ?? 0;
+    assert.strictEqual(count, Object.keys(cases).length, "page.md has an unlisted receipt line");
+    const words = { Three: 3, Four: 4, Five: 5, Six: 6 };
+    const stated = receipts.match(/(\w+) receipts use a different line instead/);
+    assert.ok(stated, "page.md no longer states how many receipts differ");
+    assert.strictEqual(
+      words[stated[1]],
+      count,
+      `page.md says ${stated[1]} receipts, lists ${count}`,
+    );
+    assert.match(receipts, /Which links a receipt gets, if any, is set by SKILL\.md step 6\.2/);
+  });
+});
+
+// Added by /ship test coverage audit (run 9).
+// Value: protects=--show and --ballot never run inside the session (no TTY or CLAUDECODE set),
+//   and the agents' fetch tool rejects every researcher-only fetch-snapshot mode;
+//   fails_when=a refusal condition is dropped, or a mode is added to the Scripts table without
+//   joining the reject list; why_new=no test read Rule 5's terminal guard; seam=none;
+//   no_claim=the scripts and the data repo's settings (not built yet; spec text only)
+describe("ResearcherOnlyModes", () => {
+  it("--show and --ballot refuse in the session, and agents' fetch rejects every mode", () => {
+    const rule5 = SKILL.match(/^5\. \*\*Private data stays private\.\*\*[^\n]*/m);
+    assert.ok(rule5, "SKILL.md has no Rule 5");
+    assert.match(rule5[0], /`--show` and `--ballot` print or prompt with private text/);
+    assert.match(
+      rule5[0],
+      /refuse when stdout is not a terminal or the `CLAUDECODE` environment variable is set/,
+      "the terminal guard lost a condition",
+    );
+    assert.match(rule5[0], /never through the session or its `!` prefix/);
+    assert.match(rule5[0], /settings deny them to every Bash call/);
+    assert.match(rule5[0], /`--show`, which only the researcher runs and the model never does/);
+    // Every other --show in the spec is the researcher's, under Rule 5.
+    for (const [file, text] of SPEC_FILES) {
+      for (const line of text.split("\n").filter((l) => l.includes("--show"))) {
+        if (file === "SKILL.md" && line === rule5[0]) continue;
+        assert.match(line, /researcher[^.]*`[^`]*--show` \(Rule 5\)/, `${file}: --show not Rule 5`);
+      }
+    }
+    // The agents' fetch tool rejects every mode the Scripts table gives fetch-snapshot.
+    const row = SKILL.split("\n").find((l) => l.startsWith("| `fetch-snapshot` |"));
+    assert.ok(row, "the Scripts table has no fetch-snapshot row");
+    const modes = new Set([...row.matchAll(/`(?:--\w+ )?(--\w+)`/g)].map((m) => m[1]));
+    assert.ok(modes.size >= 3, `only ${[...modes]} fetch-snapshot modes found`);
+    const rejects = SNAPSHOT.match(/The fetch tool given to agents rejects ([^.]+)\./);
+    assert.ok(rejects, "snapshot-format.md no longer says what the agents' fetch tool rejects");
+    const rejected = new Set([...rejects[1].matchAll(/`(--\w+)`/g)].map((m) => m[1]));
+    for (const mode of modes) assert.ok(rejected.has(mode), `agents' fetch tool allows ${mode}`);
+    assert.match(
+      SKILL,
+      /the fetch tool given to agents rejects it/,
+      "Rule 7 lost the --ballot ban",
+    );
+  });
+});
+
+// Added by /ship test coverage audit (run 9).
+// Value: protects=every value Rule 7's fetch refusal names is one the 6.3 privacy scan defines a
+//   match for, and the scan keeps its ZIP, address and title items; fails_when=Rule 7 names a
+//   value 6.3 no longer scans, or 6.3 drops an item; why_new=only the ballot-id item and the
+//   year carve-out were read; seam=none; no_claim=fetch-snapshot and publish (not built yet)
+describe("PrivacyScanItems", () => {
+  it("Rule 7's fetch refusal matches only values the 6.3 privacy scan defines", () => {
+    const rule7 = SKILL.match(/^7\. \*\*Sources are data[^\n]*/m)[0];
+    const refusal = rule7.match(/refuses any URL that contains (.+?), matched as in the publish/);
+    assert.ok(refusal, "Rule 7 no longer bases its fetch refusal on the privacy scan");
+    const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
+    const items = scan.split("\n").filter((l) => /^ {3}- /.test(l));
+    assert.ok(items.length >= 6, `only ${items.length} privacy scan items`);
+    // Word boundaries, so "address" never matches inside `addresses.yaml`.
+    for (const value of ["the ballot id", "address", "street line", "ZIP code", "label"]) {
+      const word = new RegExp(`\\b${value}\\b(?!es)`);
+      assert.match(refusal[1], word, `Rule 7 no longer refuses a URL with ${value}`);
+      assert.ok(
+        items.some((i) => word.test(i)),
+        `6.3 does not scan ${value}, so Rule 7's match is undefined`,
+      );
+    }
+    assert.ok(refusal[1].includes("`private_strings` entry"));
+    assert.ok(items.some((i) => i.includes("`private_strings` entry")));
+    // The scan's own items that Rule 7 does not need.
+    assert.ok(items.some((i) => /ZIP code from `addresses\.yaml` as a standalone 5-digit/.test(i)));
+    assert.ok(
+      items.some((i) => /printed `title` of any contest that has a `display_title`/.test(i)),
+    );
+    assert.match(scan, /whole-phrase match on word boundaries, never a substring/);
+    assert.match(scan, /`fetch-snapshot` and `ballot-check` match `private_strings` the same way/);
+  });
+});
+
+// Added by /ship test coverage audit (run 9).
+// Value: protects=a missing review file next to a baseline is never a first run, so no edited
+//   claim is re-baselined; publish refuses it; resets need one exact commit message;
+//   fails_when=SKILL.md and review-list.md disagree on the missing-file case, the baseline
+//   loses its neutrality precondition, or the reset message drifts; why_new=no test read
+//   Accepted keys; seam=none; no_claim=review-list and publish (not built yet)
+describe("ReviewAcceptance", () => {
+  it("a baseline is written once, after the neutrality pass, and never by a rebuild", () => {
+    const accepted = between(REVIEW, "## Accepted keys");
+    assert.match(
+      accepted,
+      /A missing review file next to an existing baseline is rebuilt from the articles, the baseline and `\.accepted`, and is never a first run/,
+    );
+    assert.match(
+      SKILL,
+      /A review file missing next to an existing baseline makes `publish` refuse; run `review-list` to rebuild it/,
+    );
+    assert.match(accepted, /Running `review-list` again never accepts anything by itself/);
+    // The baseline waits for the neutrality file whose first line it reads.
+    const gate = accepted.match(/its `(\w+)` line holds exactly the current article's claim keys/);
+    assert.ok(gate, "the baseline no longer waits for the neutrality pass");
+    assert.ok(
+      REVIEW.includes(`a first line \`<!-- ${gate[1]}: <key> <key> ... -->\``),
+      `the neutrality file has no ${gate[1]} line`,
+    );
+    // Every reset names the same commit message.
+    const resets = [...REVIEW.matchAll(/reset review[^`]*`/g)].map((m) => m[0]);
+    assert.ok(resets.length >= 2, "review-list.md lost a reset rule");
+    for (const r of resets) assert.strictEqual(r, "reset review <contest>`");
+    // ready is defined once, in review-list.md, and publish recomputes it.
+    assert.match(
+      REVIEW,
+      /A contest is `ready` when `check` and `coverage` pass, no box is unchecked \(unfetchable entries included\), and every claim key in the article is accepted/,
+    );
+    assert.match(SKILL, /a contest is rendered only when it is `ready` \(\[review-list\.md\]/);
+    assert.match(
+      accepted,
+      /`publish` ignores the comment and recomputes the set from the two files/,
+    );
+  });
+});
+
+// Added by /ship test coverage audit (run 9).
+// Value: protects=publish stages only <slug>/index.html, commits `publish <slug>`, pushes an
+//   explicit refspec to the origin 6.4 checked, and runs the device check before that;
+//   fails_when=the push becomes bare or loses its refspec, staging widens, or page.md's device
+//   check trigger drifts; why_new=no test read step 6.5; seam=none; no_claim=publish (not built yet)
+describe("PublishPush", () => {
+  const step65 = () => between(SKILL, "\n5. Copy only that file", "\n6. ");
+
+  it("step 6.5 stages one file and pushes HEAD to origin's branch, never a bare push", () => {
+    const step = step65();
+    assert.match(
+      step,
+      /Copy only that file to `<slug>\/index\.html` in `pages_dir`, and stage only that path/,
+    );
+    // The commit message holds only the public slug (Rule 5 keeps ballot ids out of commits).
+    assert.match(step, /committing with the message `publish <slug>`/);
+    assert.match(SKILL.match(/^5\. \*\*Private data[^\n]*/m)?.[0], /ballot ids.*a commit message/);
+    const push = step.match(/pushing with `(git push [^`]+)`/);
+    assert.ok(push, "step 6.5 no longer names its push command");
+    // Remote and full destination ref are explicit, so pushRemote, pushDefault and push.default
+    // cannot redirect it.
+    assert.strictEqual(push[1], "git push origin HEAD:refs/heads/<branch>");
+    assert.match(step, /never a bare `git push`, which may follow `pushRemote` or `pushDefault`/);
+    // The remote it names is the one 6.4 confirmed is pages_repo, on the branch 6.4 checked.
+    assert.match(step64(), /any fetch or push URL of its `origin` is not `pages_repo`/);
+    assert.match(step64(), /if it is not on `branch`/);
+    // No other spec text states another push form.
+    for (const [file, text] of [...SPEC_FILES, ["README.md", README]]) {
+      for (const [cmd] of text.matchAll(/`git push[^`]*`/g)) {
+        assert.ok(
+          cmd === `\`${push[1]}\`` ||
+            (cmd === "`git push`" && text.includes("never a bare `git push`")),
+          `${file} states another push form: ${cmd}`,
+        );
+      }
+    }
+    // Asking comes after the diff is shown (Rule 6).
+    assert.ok(step.indexOf("Show the diff") < step.indexOf("Ask before committing"));
+  });
+
+  it("the device check runs before a slug's first publish and on request, as page.md says", () => {
+    const step = step65();
+    assert.match(
+      step,
+      /Before the first publish of a slug \(no `<slug>\/` folder in `pages_dir` yet\), and whenever the researcher runs `publish --device-check`, print the device check in \[page\.md\]\(references\/page\.md\) and wait for its confirmation/,
+    );
+    // It is asked before the commit, so a failed check leaves nothing to push.
+    assert.ok(step.indexOf("device check") < step.indexOf("Ask before committing"));
+    const check = PAGE.match(/\*\*Publish device check\*\*, ([^\n]+)\n\n((?:\d+\. [^\n]+\n)+)/);
+    assert.ok(check, "page.md has no numbered Publish device check list");
+    assert.match(check[1], /before the first publish of each ballot/);
+    assert.match(check[1], /through `publish --device-check`/);
+    assert.match(
+      check[1],
+      /`publish` prints this list and waits for confirmation \(SKILL\.md step 6\.5\)/,
+    );
+    assert.ok(check[2].trim().split("\n").length >= 3, "the device check list is nearly empty");
+  });
+});
+
+// Added by /ship test coverage audit (run 9).
+// Value: protects=a review key hashes every field the spec says changes it, and the item line
+//   shows the per-claim fields review-list recomputes it from; fails_when=a field (candidate id,
+//   file hash) leaves the key while its re-list promise stays; why_new=no test read Item keys;
+//   seam=none; no_claim=review-list's hash (not built yet; spec text only)
+describe("ReviewItemKeys", () => {
+  it("every promised re-list trigger maps to a field in the key", () => {
+    const keys = between(REVIEW, "## Item keys");
+    const fields = keys.match(/The key is a short hash of (.+?)\. Snapshots are write-once/)?.[1];
+    assert.ok(fields, "review-list.md no longer lists the key's fields");
+    const want = [
+      "the candidate id (the retention official's id, or the contest id for a measure)",
+      "the section heading text as written in [sections.md](sections.md)",
+      "the claim text",
+      "its tag",
+      "the excerpt",
+      "the snapshot path",
+      "a hash of the whole snapshot file",
+    ];
+    for (const f of want) assert.ok(fields.includes(f), `the key no longer hashes ${f}`);
+    // Each change the spec promises re-lists an item is backed by one hashed field.
+    assert.match(keys, /Two candidates with the same claim text get different keys/);
+    const swaps = keys.match(/swapping only (.+?) changes the key/)?.[1];
+    assert.strictEqual(swaps, "the excerpt, the tag, the source or the snapshot's contents");
+    const backs = { excerpt: "the excerpt", tag: "its tag", source: "the snapshot path" };
+    for (const [swap, field] of Object.entries(backs)) {
+      assert.ok(swaps.includes(swap) && fields.includes(field), `${swap} has no key field`);
+    }
+    // The file hash is what makes Rule 3 checkable; every snapshot field it names exists.
+    assert.match(SKILL, /^3\. \*\*Snapshots are write-once\.\*\*/m);
+    assert.match(keys, /Snapshots are write-once \(SKILL\.md Rule 3\); the file hash/);
+    const edited = keys.match(/any later edit to a cited snapshot \(([^)]+)\)/)?.[1];
+    assert.ok(edited, "review-list.md no longer says which snapshot edits re-list a claim");
+    for (const name of ["source", "url", "public_url", "tier"]) {
+      assert.ok(edited.includes(name), `${name} is not named`);
+      assert.match(SNAPSHOT, new RegExp(`^${name}: `, "m"), `snapshots have no ${name} field`);
+    }
+    // The item line carries the claim, tag, link and excerpt the key is recomputed from.
+    const item = keys.match(/```text\n([\s\S]*?)```/)?.[1];
+    assert.match(
+      item,
+      /^- \[ \] <claim text> `(T\d\w*)` \[s\d+\]\(\.\.\/sources\/[^)]*\) <!-- id:[0-9a-f]+ -->\n {2}> <excerpt>\n$/,
+    );
+    assert.ok(TABLE_TIERS.has(item.match(/`(T\d)/)[1]), "the item's tag is not a known tier");
+    assert.match(
+      keys,
+      /recomputes each key from the item's fields rather than trusting the comment/,
+    );
+    // The section heading is hashed as sections.md writes it, the form the article uses.
+    assert.match(SECTIONS, /^\| A\. On the ballot \|/m);
+    assert.match(ARTICLE, /^### A\. On the ballot$/m);
+  });
+});
+
+// The value of a figure, canonicalized as article-format.md's Figures rule says: `$` and
+// thousands commas dropped, K/M/million/billion read as multipliers. Returns a scaled BigInt
+// (digits, decimals shown, power of ten) so half-up rounding stays exact.
+const FIGURE_MULTIPLIERS = { K: 3, M: 6, million: 6, billion: 9 };
+const parseFigure = (text) => {
+  const m = text.replace(/[$,]/g, "").match(/^(\d+)(?:\.(\d+))?\s*(K|M|million|billion)?$/);
+  assert.ok(m, `not a figure: ${text}`);
+  const decimals = (m[2] ?? "").length;
+  return { digits: BigInt(m[1] + (m[2] ?? "")), decimals, power: FIGURE_MULTIPLIERS[m[3]] ?? 0 };
+};
+// Does the excerpt's value, rounded half-up to the decimals the claim shows, equal the claim?
+const figureMatches = (claim, excerpt) => {
+  const c = parseFigure(claim);
+  const e = parseFigure(excerpt);
+  // Excerpt value in the claim's unit, times 10^c.decimals: num / den.
+  const exp = e.power - c.power + c.decimals - e.decimals;
+  const num = exp >= 0 ? e.digits * 10n ** BigInt(exp) : e.digits;
+  const den = exp >= 0 ? 1n : 10n ** BigInt(-exp);
+  return (2n * num + den) / (2n * den) === c.digits;
+};
+
+// Added by /ship test coverage audit (run 9).
+// Value: protects=the Figures rule's worked examples hold under its own half-up rule with
+//   K/M/million/billion multipliers; fails_when=an example or the multiplier list is edited so
+//   the stated match no longer computes; why_new=no test read Figures; seam=none;
+//   no_claim=check's figure parser (not built yet; spec text only)
+describe("FigureExamples", () => {
+  it("the Figures rule's worked examples match under half-up rounding", () => {
+    const rule = between(ARTICLE, "## Figures");
+    assert.match(rule, /drop `\$` and thousands commas/);
+    assert.match(rule, /read `K`, `M`, `million` and `billion` as multipliers/);
+    assert.match(rule, /rounded half-up to the decimal places the claim shows/);
+    const first = rule.match(/"([^"]+)" matches `\w+: ([\d.]+)`, and "([^"]+)" matches it too/);
+    assert.ok(first, "the Figures rule lost its worked examples");
+    const [, claimA, excerpt, claimB] = first;
+    assert.ok(figureMatches(claimA, excerpt), `${claimA} does not match ${excerpt}`);
+    assert.ok(figureMatches(claimB, excerpt), `${claimB} does not match ${excerpt}`);
+    // The helper rejects what the rule rejects, so the passes above are not vacuous.
+    assert.ok(!figureMatches("$1,220,000", excerpt), "half-up should round .55 up");
+    assert.ok(!figureMatches("$1.23 million", excerpt));
+    // Half-up, not half-even, and K is a multiplier: 12450 shows as $12.5K.
+    assert.ok(figureMatches("$12.5K", "12450") && !figureMatches("$12.4K", "12450"));
+    assert.ok(figureMatches("$2 billion", "1.5 billion") && figureMatches("3M", "2,500,000"));
   });
 });

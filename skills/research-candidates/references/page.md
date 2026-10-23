@@ -33,7 +33,7 @@ The contest title and the coverage banner ("3 of 3 candidates on the official ba
 
 Each section is a heading. Under it, every candidate appears in ballot order as a block:
 
-- name, then party in muted 14px text ("Cand. A · Democratic"): `party_name` from `ballot.yaml` when the ballot prints an abbreviation, otherwise `party` exactly as printed, so it is never abbreviated, and never colored. The "On the ballot" excerpt still quotes the sample ballot exactly ("Cand. A DEM"); contests with no printed party show none;
+- name, then party in muted 14px text ("Cand. A · Democratic"): `party_name` from `ballot.yaml` whenever it is set (a printed party that is abbreviated or in all capitals needs one, [ballot-format.md](ballot-format.md)), otherwise `party` exactly as printed, so it is never abbreviated, and never colored. The "On the ballot" excerpt still quotes the sample ballot exactly ("Cand. A DEM"); contests with no printed party show none;
 - the claim, with "Says:" on candidate-statement claims;
 - **the verbatim excerpt, shown by default** as a quote, never hidden behind a tap, so the fairness of each summary is plain to every reader. An excerpt over 200 characters shows its first ~200 characters, cut at a word boundary, followed by a `<details>` "… full quote" with the rest;
 - a source line: "Candidate's own words · Source ▸". The source name is not repeated here; the excerpt's `<cite>` and the receipt carry it.
