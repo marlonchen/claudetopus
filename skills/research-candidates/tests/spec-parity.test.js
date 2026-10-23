@@ -685,7 +685,11 @@ describe("BallotIds", () => {
   //   seam=none; no_claim=ballot-check itself (not built yet; spec text only)
   it("step 2 and the Ballot ids rule agree that only the id's number is checked", () => {
     const rule = ballotRuleLine("Ballot ids");
-    assert.match(rule, /county words are fixed by .{0,80}not checked against `private_strings`/);
+    // The id rule checks only the number; the county words are covered by the Private text rule.
+    assert.match(
+      rule,
+      /county words come from .{0,40}`county`, which the Private text rule already/,
+    );
     const step2 = between(WORKFLOW, "### 2. ", "\n### ");
     const claim = step2.match(/`ballot-check` fails an id [^.:]*/);
     assert.ok(claim, "SKILL.md step 2 no longer says which ids ballot-check fails");
@@ -748,18 +752,19 @@ describe("BallotIds", () => {
     );
     assert.ok(shape, "ballot-format.md no longer says which printed parties need party_name");
     const abbreviatedWord = /^(?:[A-Z]+|\S*[./-]\S*)$/;
-    const abbreviated = {
-      test: (party) => party.split(/\s+/).some((w) => abbreviatedWord.test(w)),
-    };
+    const isAbbreviated = (party) => party.split(/\s+/).some((w) => abbreviatedWord.test(w));
     const examples = (list) => [...list.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
     const caught = [...examples(shape[1]), ...examples(shape[2])];
     assert.ok(
       caught.some((p) => /\s/.test(p)),
       "the rule has no multi-word abbreviation example",
     );
-    for (const p of caught) assert.ok(abbreviated.test(p), `the rule's example ${p} is not caught`);
-    for (const p of examples(shape[3])) assert.ok(!abbreviated.test(p), `full name ${p} is caught`);
+    for (const p of caught) assert.ok(isAbbreviated(p), `the rule's example ${p} is not caught`);
+    for (const p of examples(shape[3])) assert.ok(!isAbbreviated(p), `full name ${p} is caught`);
     assert.match(rule, /a `party_name` that no `_ballot\/` snapshot contains/);
+    // Ballots often print every party in capitals: those need party_name, matched ignoring case.
+    assert.match(rule, /printed in capitals \(`GREEN PARTY`\) needs a `party_name`/);
+    assert.match(rule, /contains it ignores case/);
     const example = BALLOT.match(/^ +party: ([A-Z]{2,5}) .*\n +party_name: \S/m);
     assert.ok(example, "the ballot.yaml example has no abbreviated party with a party_name");
     const line = PAGE.split("\n").find((l) => /^- name, then party/.test(l));
@@ -777,7 +782,7 @@ describe("BallotIds", () => {
     const wire = read("page-wireframe.html");
     const parties = [...wire.matchAll(/<span class="party">· ([^<]+)<\/span>/g)].map((m) => m[1]);
     assert.ok(parties.length > 0, "the wireframe shows no party");
-    for (const p of parties) assert.ok(!abbreviated.test(p), `wireframe party "${p}" abbreviated`);
+    for (const p of parties) assert.ok(!isAbbreviated(p), `wireframe party "${p}" abbreviated`);
     const block = wire.match(
       new RegExp(
         `<h3>${escapeRegExp(name)} <span class="party">· ([^<]+)</span></h3>\\s*<blockquote>“${escapeRegExp(name)} (\\S+)”`,
@@ -804,6 +809,9 @@ describe("BallotIds", () => {
       rule,
       /when an entry appears in the `state` or `county` field, `ballot-check` fails, names that field, and says to list the township's full name/,
     );
+    const ids = ballotRuleLine("Ballot ids");
+    assert.doesNotMatch(ids, /not checked against `private_strings`/, "Ballot ids contradicts it");
+    assert.match(ids, /the Private text rule already checks against `private_strings`/);
   });
 
   // Added by /ship pre-landing review (cycle 3).
@@ -1568,6 +1576,24 @@ describe("WireframeStructure", () => {
       assert.ok(races.has(id), `a ballot-list row links to #${id}, not a race`);
   });
 
+  // Added by /ship pre-landing review (run 8, cycle 3).
+  // Value: protects=the ballot-list banner counts the rows the list draws and the rows marked
+  //   Ready, and page.md's banners agree; fails_when=a row is added or its status changes
+  //   without the banner, or one page.md banner keeps an old count; why_new=PageCopy compares
+  //   page.md and wireframe text only; seam=none; no_claim=counts on a real ballot
+  it("the ballot-list banner counts the list's rows and its Ready rows", () => {
+    const list = html().match(/<main [^>]*id="ballot"[^>]*>([\s\S]*?)<\/main>/);
+    assert.ok(list, "the wireframe has no ballot list");
+    const rows = list[1].match(/<li>/g)?.length ?? 0;
+    const ready = list[1].match(/class="st ok">Ready/g)?.length ?? 0;
+    const banner = list[1].match(/(\d+) contests on your ballot · <b>(\d+) ready to read<\/b>/);
+    assert.ok(banner, "the wireframe list has no contests banner");
+    assert.deepStrictEqual([Number(banner[1]), Number(banner[2])], [rows, ready]);
+    const counts = [...PAGE.matchAll(/"(\d+) contests on your ballot · /g)].map((m) => m[1]);
+    assert.ok(counts.length >= 2, "page.md lost a banner example");
+    for (const n of counts) assert.strictEqual(Number(n), rows, `a page.md banner says ${n}`);
+  });
+
   // Added by /ship pre-landing review (run 8).
   // Value: protects=hidden receipt text reads "Source for <who>, <section> section" for every
   //   section, as page.md says; fails_when=the "on <section>" form returns ("on On the ballot");
@@ -1824,6 +1850,8 @@ describe("InstallCommands", () => {
       /except regular files that are operating-system and editor leftovers \(`\.DS_Store`/,
     );
     assert.match(gate, /nothing under it may be a symlink/, "a skipped leftover may be a symlink");
+    // The uncommitted-changes check comes first, so it must skip the same leftovers.
+    assert.match(gate, /no uncommitted changes, apart from the leftover files named below/);
     assert.match(gate, /any other extra file refuses with its path named/);
     // gh skill install rewrites SKILL.md's front matter, so that file is compared by content.
     assert.match(gate, /front matter/, "SKILL.md can never hash-match after install");

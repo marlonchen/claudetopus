@@ -25,7 +25,7 @@ Contests follow in ballot order as one list, with no group headings (`ballot.yam
 
 ## Contest states
 
-A contest that is not `ready` shows "Not ready yet" on the ballot list. Its row stays tappable and opens a short note: "Not ready yet. Every candidate gets the same research before anything shows here. Check back; this link stays the same." When no contest is `ready`, the banner reads "21 contests on your ballot · none ready yet", followed by the same note.
+A contest that is not `ready` shows "Not ready yet" on the ballot list. Its row stays tappable and opens a short note: "Not ready yet. Every candidate gets the same research before anything shows here. Check back; this link stays the same." When no contest is `ready`, the banner reads "6 contests on your ballot · none ready yet", followed by the same note.
 
 ## Race screen
 
