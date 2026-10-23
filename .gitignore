@@ -144,3 +144,48 @@ vite.config.ts.timestamp-*
 
 # rumdl lint cache
 .rumdl_cache/
+
+# AI
+.claude/
+.gstack/
+
+# research-candidates data belongs in a private data repo, never here.
+# Defensive ignores in case the skill is run from this public repo by mistake.
+# Anchored to where the skill writes them, so same-named files in skill source (test
+# fixtures) are never swallowed.
+/addresses.yaml
+/publish.yaml
+/tiers.yaml
+/downloads/
+/*/*/ballot.yaml
+/*/*/private.yaml
+/*/*/unfetchable.md
+/*/*/archives.tsv
+# Per-ballot data lives under <election>/<ballot-id>/ at the data repo root. Ignore it
+# by its inner layout so any election directory name is covered.
+/[0-9][0-9][0-9][0-9]-*/
+/*/*/sources/
+/*/*/articles/
+/*/*/review/
+/*/*/site/
+/*/*/ballot.ledger
+/*/*/ballot-view.md
+# Skill source in this repo is never data.
+!/skills/*/sources/
+!/skills/*/articles/
+!/skills/*/review/
+!/skills/*/site/
+!/skills/*/ballot.ledger
+!/skills/*/ballot-view.md
+!/skills/*/ballot.yaml
+!/skills/*/private.yaml
+!/skills/*/unfetchable.md
+!/skills/*/archives.tsv
+# The generic coverage rule above must not swallow the skill's `coverage` script. Name the
+# script only: a wider negation would re-include .env files or node_modules under scripts/.
+!/skills/*/scripts/coverage
+# Nor may it, or the .claude/ rule, swallow test fixtures that model a data repo.
+!/skills/*/tests/**/coverage
+!/skills/*/tests/**/.claude/
+# But never per-user Claude Code settings, which can hold personal allowlists and env values.
+/skills/*/tests/**/.claude/settings.local.json

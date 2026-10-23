@@ -30,15 +30,16 @@ For a repo that already holds `YYYY-MM/DD.md` entries (e.g. `~/j`, with entries 
 to 2020). The journal half of the skill picks up the existing format; the wiki half adds
 two new directories beside it and never touches the day files.
 
-Install with your skill-installer CLI, pointing at this directory, or manually:
+Install it at project scope from inside the journal repo, pinned to a commit of this repo you
+have read, since the journal is private:
 
 ```bash
-mkdir -p ~/j/.claude/skills
-ln -s ~/src/github/marlonchen/claudetopus/skills/mywiki ~/j/.claude/skills/mywiki
+cd ~/j
+gh skill install marlonchen/claudetopus mywiki --agent claude-code --pin <commit>
 ```
 
-The symlink is useful when developing this repository because updates here take effect in
-the journal repo immediately, with no separate sync step.
+To upgrade or try local changes before they are pushed, see
+[Install a skill](../../README.md#install-a-skill).
 
 Then, from inside `~/j`, ask Claude Code for "today's journal entry" or "add this to the
 wiki" — see SKILL.md's trigger phrases. The first ingest creates the wiki directories.
@@ -51,7 +52,7 @@ Layout once installed:
 ├── raw.config            (optional — where sources live, and which of them get ingested)
 ├── raw/                  (new — wiki sources, created on first ingest)
 ├── .wiki/                (new — compiled wiki articles, created on first ingest)
-└── .claude/skills/mywiki -> .../claudetopus/skills/mywiki   (this directory, symlinked)
+└── .claude/skills/mywiki   (this directory, installed)
 ```
 
 `raw.config` is optional here and worth adding for one reason: a repo whose root is already
@@ -68,8 +69,8 @@ For a new repo with no journal in it. Nothing is configured; the defaults are th
 setup, and the journal workflow simply never triggers.
 
 ```bash
-mkdir -p ~/w/.claude/skills && git -C ~/w init
-ln -s ~/src/github/marlonchen/claudetopus/skills/mywiki ~/w/.claude/skills/mywiki
+mkdir -p ~/w && git -C ~/w init && cd ~/w
+gh skill install marlonchen/claudetopus mywiki --agent claude-code --pin <commit>
 ```
 
 Then, from inside `~/w`, ask Claude Code to "add this to the wiki" with a URL or a pasted
@@ -84,7 +85,7 @@ Layout after the first ingest:
 │   ├── index.md          (global index — one row per article)
 │   ├── log.md            (append-only operation log)
 │   └── <topic>/          (one level of topic directories, no deeper)
-└── .claude/skills/mywiki -> .../claudetopus/skills/mywiki   (this directory, symlinked)
+└── .claude/skills/mywiki   (this directory, installed)
 ```
 
 The compiled wiki lives in `.wiki/` here too — the same hidden directory as in a journal
@@ -109,6 +110,7 @@ scripts/
   check_evidence.js             # wiki lint: source-fidelity checker (report-only)
 tests/
   check_evidence.test.js
+  readme-install.test.js        # asserts the install commands are pinned gh installs of mywiki and #heading links land
   template-parity.test.js       # asserts the two day templates stay identical apart from Reflections
 ```
 
