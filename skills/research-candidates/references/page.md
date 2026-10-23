@@ -2,7 +2,7 @@
 
 The published page: one static HTML file per ballot, rendered by `publish` (SKILL.md step 6) and republished as contests become `ready`. This file is the layout and visual spec. Rendering safety rules (escaping, allowed links, CSP, privacy scan) are in SKILL.md step 6.
 
-Wireframe: [page-wireframe.png](page-wireframe.png) (source: [page-wireframe.html](page-wireframe.html)). It shows the ballot list; a candidate race in four frames, in page order (its top and first section, its Money section with a receipt open, Positions, and its last section with the links on); a ballot question in two frames; and a race that is not ready yet. Each phone frame is one viewport of the same page. The My weights screen is greyed out because it comes later (see Scope order).
+Wireframe: [page-wireframe.png](page-wireframe.png) (source: [page-wireframe.html](page-wireframe.html)). It shows the ballot list; a candidate race in four frames, in page order (its top and first section, its Money section with a receipt open, Positions, and its last section with the links on); a race that is not ready yet; and a ballot question in two frames, the last race on the ballot. Each phone frame is one viewport of the same page. The My weights screen is greyed out because it comes later (see Scope order).
 
 ## Every screen
 
@@ -94,7 +94,7 @@ Page budget: the whole file, fonts included, should stay under 1MB. `publish` pr
 - `lang="en"` and a `<main>` landmark.
 - Heading levels: h1 is the ballot or contest title, h2 is a section, h3 is a candidate. Measure and retention races have no h3: their sections are h2.
 - The chips are a `<nav aria-label="Topics in this race">`.
-- Each receipt `<summary>` is spoken in full: it shows "Candidate's own words · Source ▸" but reads "Candidate's own words. Source for Cand. A on Money", using visually hidden text.
+- Each receipt `<summary>` is spoken in full: it shows "Candidate's own words · Source ▸" but reads "Candidate's own words. Source for Cand. A, Money section", using visually hidden text, so every section name reads cleanly ("Source for Cand. A, On the ballot section").
 - Each excerpt is a `<blockquote>`, with the source name in `<cite>`.
 - Decorative glyphs (○, ✓, ›, ▸, ▾, ↗, ↑, →, ←, and the source line's "·") sit in `aria-hidden="true"` spans, so screen readers skip them.
 - At 200% text size nothing overlaps and nothing scrolls sideways. Long contest titles and candidate names wrap.

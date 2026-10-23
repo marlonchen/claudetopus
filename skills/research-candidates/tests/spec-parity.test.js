@@ -36,7 +36,7 @@ const snapshotRoles = () => {
 const exampleIds = () => [...BALLOT.matchAll(/^ +-? *id: (\S+)/gm)].map((m) => m[1]);
 // A ballot-check pattern ballot-format.md gives as **<name>:** ... `^...$`.
 const ballotRule = (name) => {
-  const found = BALLOT.match(new RegExp(`\\*\\*${name}:\\*\\*[^\\n]*?\`(\\^[^\`]+\\$)\``));
+  const found = ballotRuleLine(name).match(/`(\^[^`]+\$)`/);
   assert.ok(found, `ballot-format.md no longer gives the ${name} pattern`);
   return new RegExp(found[1]);
 };
@@ -743,10 +743,15 @@ describe("BallotIds", () => {
   //   no_claim=ballot-check itself (not built yet; spec text only)
   it("an abbreviated printed party shows its official full name", () => {
     const rule = ballotRuleLine("Party names");
-    assert.match(
-      rule,
-      /fails a `party` of 1 to 5 letters, with or without a closing period \(`D`, `DEM`, `Dem\.`\), with no `party_name`/,
+    const shape = rule.match(
+      /fails, with no `party_name`, a `party` that is one word written as an abbreviation: all capitals \(([^)]+)\), or holding a period, slash or hyphen \(([^)]+)\)\. A short full name such as `(\w+)` passes/,
     );
+    assert.ok(shape, "ballot-format.md no longer says which printed parties need party_name");
+    const abbreviated = /^(?:[A-Z]+|\S*[./-]\S*)$/;
+    const examples = (list) => [...list.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    for (const p of [...examples(shape[1]), ...examples(shape[2])])
+      assert.match(p, abbreviated, `the rule's example ${p} is not caught as an abbreviation`);
+    assert.doesNotMatch(shape[3], abbreviated, `the rule's full name ${shape[3]} is caught`);
     assert.match(rule, /a `party_name` that no `_ballot\/` snapshot contains/);
     const example = BALLOT.match(/^ +party: ([A-Z]{2,5}) .*\n +party_name: \S/m);
     assert.ok(example, "the ballot.yaml example has no abbreviated party with a party_name");
@@ -754,10 +759,41 @@ describe("BallotIds", () => {
     assert.ok(line, "page.md no longer says how the party is shown");
     assert.match(line, /`party_name` from `ballot\.yaml` when the ballot prints an abbreviation/);
     assert.match(line, /never abbreviated/);
+    // Extended by /ship test coverage audit.
+    // Value: protects=the wireframe heading shows the full party name over a printed DEM excerpt,
+    //   as page.md's example does; fails_when=a wireframe .party span shows an abbreviation, or
+    //   the abbreviated excerpt case is dropped; why_new=only page.md text was read; seam=none;
+    //   no_claim=the rendered page (no renderer yet)
+    const pairing = line.match(/\("(\S+ \S+) · (\w+)"\)[\s\S]*\("\1 ([A-Z]{1,5})"\)/);
+    assert.ok(pairing, "page.md no longer pairs a full party name with a printed abbreviation");
+    const [, name, full, abbr] = pairing;
+    const wire = read("page-wireframe.html");
+    const parties = [...wire.matchAll(/<span class="party">· ([^<]+)<\/span>/g)].map((m) => m[1]);
+    assert.ok(parties.length > 0, "the wireframe shows no party");
+    for (const p of parties)
+      assert.doesNotMatch(p, abbreviated, `wireframe party "${p}" abbreviated`);
+    const block = wire.match(
+      new RegExp(
+        `<h3>${escapeRegExp(name)} <span class="party">· ([^<]+)</span></h3>\\s*<blockquote>“${escapeRegExp(name)} (\\S+)”`,
+      ),
+    );
+    assert.ok(block, `the wireframe has no On the ballot block for ${name}`);
+    assert.strictEqual(block[1], full, `the wireframe heading shows ${block[1]}, not ${full}`);
+    assert.strictEqual(block[2], abbr, "the wireframe excerpt no longer quotes the abbreviation");
   });
 
   it("ballot-check names the field when a private string equals a public field", () => {
     assert.match(BALLOT, /names the field's key/, "a voter who is a candidate fails silently");
+  });
+
+  // Added by /ship pre-landing review (run 8).
+  // Value: protects=a county sharing a private township's name never fails ballot-check with no
+  //   way out; fails_when=the Private text rule drops its state/county exemption; why_new=only the
+  //   ballot id's county words were exempt; seam=none; no_claim=ballot-check (not built yet)
+  it("the Private text rule exempts the public state and county fields", () => {
+    const rule = ballotRuleLine("Private text");
+    assert.match(rule, /outside two places: .*, and the `state` and `county` fields/);
+    assert.match(rule, /list the township's full name/);
   });
 
   // Added by /ship pre-landing review (cycle 3).
@@ -805,6 +841,20 @@ const ballotRuleLine = (name) => {
   assert.ok(found, `ballot-format.md has no ${name} rule`);
   return found[0];
 };
+// SKILL.md's Rule 8, its Ballot gate line and publish step 6.4, failing if one is gone.
+const rule8Line = () => {
+  const found = SKILL.match(/^8\. \*\*Run only in the private data repo\.\*\*[^\n]*/m);
+  assert.ok(found, "SKILL.md has no Rule 8");
+  return found[0];
+};
+const ballotGate = () => {
+  const found = SKILL.match(/\*\*Ballot gate\*\*[^\n]*/);
+  assert.ok(found, "SKILL.md has no ballot gate");
+  return found[0];
+};
+const step64 = () => between(SKILL, "\n4. Before any fetch, refuse if `pages_dir`", "\n5. ");
+// Text escaped for use inside a RegExp (RegExp.escape needs Node 24).
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // The ballot id ballot-format.md derives from state and county, as its Ballot ids rule says.
 const deriveBallotId = (state, county, n) => {
   const words = county
@@ -959,10 +1009,10 @@ describe("LayoutComplete", () => {
     // Snapshot and source names are examples or placeholders, <slug>/ is in the Pages repo,
     // and scripts/ is in this skill.
     const data = [...named].filter(
-      // Hosts in tiers.yaml examples, the `official.name` field path and paths in the skill's
-      // source repo (skills/...) are not data files.
+      // Hosts in tiers.yaml examples, the `official.name` field path, paths in the skill's
+      // source repo (skills/...) and the OS leftover the ballot gate skips are not data files.
       (t) =>
-        !/<name>|<subject>|<slug>|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\//.test(
+        !/<name>|<subject>|<slug>|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$/.test(
           t,
         ),
     );
@@ -1398,7 +1448,7 @@ describe("PageCopy", () => {
   it("the wireframe trust header fills page.md's display_name template", () => {
     const template = PAGE.match(/"Made by <`display_name` from `publish\.yaml`> ([^"]+)"/);
     assert.ok(template, "page.md trust header no longer names display_name");
-    const escaped = template[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escaped = escapeRegExp(template[1]);
     assert.match(wireframeText(), new RegExp(`Made by \\S+ ${escaped}`), "trust header differs");
   });
 });
@@ -1499,6 +1549,33 @@ describe("WireframeStructure", () => {
   //   skips or repeats a race, the list is reordered without its Next links, or the last race
   //   gains a Next link; why_new=link tests only checked that targets exist; seam=none;
   //   no_claim=the rendered page's race order (no renderer yet)
+  // Added by /ship pre-landing review (run 8).
+  // Value: protects=every ballot-list row link opens a drawn race, never the list itself;
+  //   fails_when=a row links to #ballot or to a race with no frame; why_new=WireframeStructure
+  //   only fails a link that lands on no id, and #ballot exists; seam=none; no_claim=the page
+  it("every ballot-list row link opens a drawn race", () => {
+    const source = html();
+    const races = new Set([...source.matchAll(/<section [^>]*id="([^"]+)"/g)].map((m) => m[1]));
+    const list = source.match(/<main [^>]*id="ballot"[^>]*>([\s\S]*?)<\/main>/);
+    assert.ok(list, "the wireframe has no ballot list");
+    const rows = [...list[1].matchAll(/<a class="row" href="#([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(rows.length >= 2, `only ${rows.length} linked rows`);
+    for (const id of rows)
+      assert.ok(races.has(id), `a ballot-list row links to #${id}, not a race`);
+  });
+
+  // Added by /ship pre-landing review (run 8).
+  // Value: protects=hidden receipt text reads "Source for <who>, <section> section" for every
+  //   section, as page.md says; fails_when=the "on <section>" form returns ("on On the ballot");
+  //   why_new=no test read the hidden text; seam=none; no_claim=what a screen reader speaks
+  it("hidden receipt text names the section the way page.md does", () => {
+    assert.match(PAGE, /reads "Candidate's own words\. Source for Cand\. A, Money section"/);
+    const hidden = [...html().matchAll(/<span class="vh"> for ([^<]+)<\/span>/g)].map((m) => m[1]);
+    assert.ok(hidden.length >= 5, `only ${hidden.length} hidden receipt texts`);
+    for (const text of hidden)
+      assert.match(text, /^[^,]+, [^,]+ section$/, `hidden text "${text}"`);
+  });
+
   it("each drawn race's Next link goes to the next drawn race in ballot-list order", () => {
     assert.match(PAGE, /the last race on the ballot has no Next link/);
     const source = html();
@@ -1531,6 +1608,47 @@ describe("WireframeStructure", () => {
       const expected = i + 1 < order.length ? [order[i + 1], "ballot"] : ["ballot"];
       assert.deepStrictEqual(links, expected, `race ${id}'s .next links are ${links}`);
     });
+  });
+
+  // Added by /ship test coverage audit.
+  // Value: protects=page.md's frame list (ballot list, race in four frames, question in two, a
+  //   not-ready race, greyed My weights) matches the wireframe labels; fails_when=a frame is
+  //   added, dropped or reordered in one file only; why_new=no test read the frame labels;
+  //   seam=none; no_claim=the PNG export (binary, not read)
+  it("page.md's frame list matches the wireframe frame labels", () => {
+    const words = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+    const intro = PAGE.match(
+      /It shows (the ballot list); a candidate race in (\w+) frames, in page order \(([^)]+)\); (a race that is not ready yet); and a ballot question in (\w+) frames, the last race on the ballot\./,
+    );
+    assert.ok(intro, "page.md no longer lists the wireframe frames");
+    assert.match(PAGE, /The My weights screen is greyed out because it comes later/);
+    const raceParts = intro[3].split(/, (?:and )?/);
+    const labels = [...html().matchAll(/<div class="label">([^<]+)<\/div>/g)].map((m) => m[1]);
+    const groups = new Map();
+    for (const label of labels) {
+      const n = label.match(/^(\d+)[a-z]? · /);
+      assert.ok(n, `wireframe label "${label}" has no frame number`);
+      groups.set(n[1], [...(groups.get(n[1]) ?? []), label]);
+    }
+    assert.deepStrictEqual(
+      [...groups.values()].map((g) => g.length),
+      [1, words[intro[2]], 1, words[intro[5]], 1],
+      `wireframe frame groups are ${[...groups.keys()]}`,
+    );
+    assert.strictEqual(raceParts.length, words[intro[2]], "the race frame list and count differ");
+    const race = groups.get("2");
+    // Each race frame is named the same way in both files, in the same order.
+    const keys = [/\btop\b|One race/, /Money section/, /Positions/, /last section/];
+    keys.forEach((key, i) => {
+      assert.match(raceParts[i], key, `page.md race frame ${i + 1} is "${raceParts[i]}"`);
+      assert.match(race[i], key, `wireframe race frame ${i + 1} is "${race[i]}"`);
+    });
+    assert.match(race[1], /receipt open/);
+    assert.match(groups.get("1")[0], /Your ballot/);
+    assert.match(groups.get("3")[0], /not ready yet/);
+    assert.match(groups.get("4")[0], /ballot question/);
+    assert.match(groups.get("5")[0], /^5 · My weights · LATER/);
+    assert.match(html(), /<section class="phone later">/, "the My weights frame is not greyed out");
   });
 });
 
@@ -1611,12 +1729,11 @@ describe("InstallCommands", () => {
   //   why_new=copied installs broke Rule 8's "own repo" test; seam=none;
   //   no_claim=the scripts themselves (not built yet; spec text only)
   it("Rule 8 checks for the skill's source repo concretely, not as 'its own repo'", () => {
-    const rule8 = SKILL.match(/^8\. \*\*Run only in the private data repo\.\*\*[^\n]*/m);
-    assert.ok(rule8, "SKILL.md has no Rule 8");
-    assert.doesNotMatch(rule8[0], /is not this skill's own repo/, "Rule 8 still reads ambiguously");
-    assert.match(rule8[0], /`skills\/research-candidates\/SKILL\.md`/);
+    const rule8 = rule8Line();
+    assert.doesNotMatch(rule8, /is not this skill's own repo/, "Rule 8 still reads ambiguously");
+    assert.match(rule8, /`skills\/research-candidates\/SKILL\.md`/);
     // The root of the fork network, so a fork of a fork is caught too.
-    assert.match(rule8[0], /`\.source\.id \/\/ \.id`/);
+    assert.match(rule8, /`\.source\.id \/\/ \.id`/);
   });
 
   // Added by /ship pre-landing review (run 7).
@@ -1633,19 +1750,15 @@ describe("InstallCommands", () => {
       /gh api repos\/marlonchen\/claudetopus/,
       "SKILL.md looks the source repo up by name",
     );
-    const rule8Match = SKILL.match(/^8\. \*\*Run only in the private data repo\.\*\*[^\n]*/m);
-    assert.ok(rule8Match, "SKILL.md has no Rule 8");
-    const rule8 = rule8Match[0];
+    const rule8 = rule8Line();
     const id = rule8.match(/that repo's id, `(\d+)`/);
     assert.ok(id, "Rule 8 does not record the source repo's id");
     assert.match(rule8, new RegExp(`\`gh api repositories/${id[1]}/\\.\\.\\.\``));
     assert.match(rule8, /never a lookup by name/);
-    const gateMatch = SKILL.match(/\*\*Ballot gate\*\*[^\n]*/);
-    assert.ok(gateMatch, "SKILL.md has no ballot gate");
-    const gate = gateMatch[0];
+    const gate = ballotGate();
     assert.match(gate, /by its recorded id \(Rule 8\)/);
     assert.ok(gate.includes(`repositories/${id[1]}/compare/`), "the gate's id differs from Rule 8");
-    const step = between(SKILL, "\n4. Before any fetch, refuse if `pages_dir`", "\n5. ");
+    const step = step64();
     assert.match(step, /the recorded id \(Rule 8\)/, "6.4 does not use Rule 8's id");
     const all = [...SKILL.matchAll(/repositories\/(\d+)/g)].map((m) => m[1]);
     assert.ok(all.length >= 3, `only ${all.length} recorded-id API paths`);
@@ -1654,7 +1767,7 @@ describe("InstallCommands", () => {
   });
 
   it("step 6.4 compares repo ids and the remote's default branch, not names", () => {
-    const step = between(SKILL, "\n4. Before any fetch, refuse if `pages_dir`", "\n5. ");
+    const step = step64();
     assert.match(step, /`\.source\.id \/\/ \.id`/, "6.4 matches the source repo by name");
     // origin/HEAD goes stale; ask the remote, and check the branch that is pushed to.
     assert.match(step, /`git ls-remote --symref origin HEAD`/, "6.4 trusts a stale origin/HEAD");
@@ -1670,7 +1783,7 @@ describe("InstallCommands", () => {
   //   why_new=6.4 fetched from an unchecked origin, and a dropped phrase (index -1) passed the
   //   order check; seam=none; no_claim=publish itself (not built yet; spec text only)
   it("step 6.4 checks origin before one fetch and refuses an unreadable fork root", () => {
-    const step = between(SKILL, "\n4. Before any fetch, refuse if `pages_dir`", "\n5. ");
+    const step = step64();
     assert.strictEqual(step.match(/git fetch origin/g)?.length, 1, "6.4 fetches more than once");
     const fetch = step.indexOf("git fetch origin");
     const origin = step.indexOf("is not `pages_repo`");
@@ -1688,24 +1801,40 @@ describe("InstallCommands", () => {
   });
 
   it("the ballot gate refuses an installed skill that differs from its pinned commit", () => {
-    const gate = SKILL.match(/\*\*Ballot gate\*\*[^\n]*/);
-    assert.ok(gate, "SKILL.md has no ballot gate");
-    assert.match(gate[0], /`\.claude\/skills\/research-candidates`/);
-    assert.match(gate[0], /`skill_commit`/);
+    const gate = ballotGate();
+    assert.match(gate, /`\.claude\/skills\/research-candidates`/);
+    assert.match(gate, /`skill_commit`/);
     // Set equality on disk, ignored files and symlinks included, not only the upstream list.
-    assert.match(gate[0], /every file on disk/, "the gate misses files added after install");
-    assert.match(gate[0], /symlink/, "the gate allows symlinks");
+    assert.match(gate, /every file on disk/, "the gate misses files added after install");
+    assert.match(gate, /symlink/, "the gate allows symlinks");
+    // Run 8 review: a Finder .DS_Store must not refuse election-week publish as if tampered with,
+    // and any other extra file must be named so the researcher can remove it.
+    assert.match(gate, /except operating-system and editor leftovers \(`\.DS_Store`/);
+    assert.match(gate, /any other extra file refuses with its path named/);
     // gh skill install rewrites SKILL.md's front matter, so that file is compared by content.
-    assert.match(gate[0], /front matter/, "SKILL.md can never hash-match after install");
+    assert.match(gate, /front matter/, "SKILL.md can never hash-match after install");
     // gh drops the blank line after the front matter and adds only `metadata` (seen on both a
     // --from-local and a --pin install); any other key, such as allowed-tools, must fail.
-    assert.match(gate[0], /blank lines at its start ignored/, "every real install fails the body");
-    assert.match(gate[0], /once the `metadata` key the install adds is removed/);
-    assert.match(gate[0], /`allowed-tools`, fails/, "added front matter keys pass the gate");
+    assert.match(gate, /blank lines at its start ignored/, "every real install fails the body");
+    assert.match(gate, /once the `metadata` key the install adds is removed/);
+    assert.match(gate, /`allowed-tools`, fails/, "added front matter keys pass the gate");
     // A SHA that exists only in a fork is served by the parent repo's API too.
-    assert.match(gate[0], /reachable from that repo's default branch/, "fork-only commits pass");
+    assert.match(gate, /reachable from that repo's default branch/, "fork-only commits pass");
+    // Extended by /ship test coverage audit.
+    // Value: protects=the gate compares skill_commit against the branch the API names as default;
+    //   fails_when=compare uses a hard-coded branch, or <default> loses its API source;
+    //   why_new=only the jq phrase was checked, so compare/main... passed; seam=none;
+    //   no_claim=that GitHub's compare API returns behind/identical as stated (no network call)
+    const compare = [...gate.matchAll(/compare\/([^.`]+)\.\.\.<skill_commit>/g)].map((m) => m[1]);
+    assert.deepStrictEqual(compare, ["<default>"], `the gate compares against ${compare}`);
+    assert.match(
+      gate,
+      /where `<default>` is `gh api repositories\/\d+ --jq \.default_branch`/,
+      "the gate's <default> no longer comes from the API",
+    );
+    assert.match(gate, /reports `behind` or `identical`/, "the gate accepts a commit ahead of it");
     // The check runs inside publish, so it catches drift, not a hostile edit to publish.
-    assert.match(gate[0], /accidental drift/, "the gate overstates what it can catch");
+    assert.match(gate, /accidental drift/, "the gate overstates what it can catch");
     const rule7 = SKILL.match(/^7\. \*\*Sources are data[\s\S]*?\n8\. /m)[0];
     assert.match(rule7, /never edits a review file, `tiers\.yaml` or `publish\.yaml`/);
     assert.match(between(SKILL, "`publish.yaml` names the Pages target"), /^skill_commit: /m);
@@ -1719,7 +1848,7 @@ describe("InstallCommands", () => {
   it("publish step 6.4 refuses the skill's source repo the README installs from", () => {
     const source = README.match(/gh skill install (\S+) /);
     assert.ok(source, "README.md no longer names the source repo");
-    const step = between(SKILL, "\n4. Before any fetch, refuse if `pages_dir`", "\n5. ");
+    const step = step64();
     assert.ok(step.includes(`\`${source[1]}\``), `step 6.4 does not refuse ${source[1]}`);
     assert.match(
       step,
@@ -1808,6 +1937,43 @@ describe("InstallCommands", () => {
     assert.ok(line, `${local} is not ignored`);
     assert.match(line, /^\.gitignore:/, `${local} is ignored only by ${line}`);
     assert.doesNotMatch(line, /:!/, `${local} is re-included by a negation: ${line}`);
+  });
+
+  // Added by /ship test coverage audit.
+  // Value: protects=README tells the installer to pin a commit on the default branch, as the
+  //   ballot gate requires; fails_when=README drops the default-branch rule or names another
+  //   branch; why_new=only the pin's shape was checked; seam=none;
+  //   no_claim=that main is still the GitHub default branch (no network call)
+  it("README pins a commit on the default branch the ballot gate checks", () => {
+    const install = between(README, "## Install");
+    assert.match(
+      install,
+      /Pin a commit of this repo you have read that is on its default branch \(`main`; publish refuses a commit only on another branch or a fork\)/,
+    );
+    assert.match(SKILL, /`skill_commit` must be reachable from that repo's default branch/);
+  });
+
+  // Added by /ship test coverage audit.
+  // Value: protects=README's upgrade order: delete the old copy, reinstall the new commit, set
+  //   skill_commit to it, commit both; fails_when=a step is dropped or reordered;
+  //   why_new=only "never update --all" was checked; seam=none; no_claim=gh install behaviour
+  it("README upgrades by delete, reinstall, set skill_commit, then commit both", () => {
+    const install = between(README, "## Install");
+    const steps = [
+      "To upgrade, read the diff",
+      "delete `.claude/skills/research-candidates`",
+      "run the install again with the new commit",
+      "set `skill_commit` in `publish.yaml` to it",
+      "commit both",
+    ].map((step) => [step, install.indexOf(step)]);
+    for (const [step, at] of steps) assert.ok(at >= 0, `README upgrade lost "${step}"`);
+    for (let i = 1; i < steps.length; i++) {
+      assert.ok(
+        steps[i - 1][1] < steps[i][1],
+        `"${steps[i][0]}" comes before "${steps[i - 1][0]}"`,
+      );
+    }
+    assert.match(install, /record it as `skill_commit` in `publish\.yaml`/);
   });
 
   it("the pin check takes only a commit, never a branch or tag name", () => {
