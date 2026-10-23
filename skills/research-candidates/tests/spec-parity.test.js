@@ -2498,16 +2498,30 @@ describe("PrivateLineParts", () => {
     assert.match(rule, /The publish scan matches each entry whole, never a part of one/);
   });
 
-  it("the privacy scan folds curly quotes and dashes the way excerpt matching does", () => {
+  // Extended by /ship pre-landing review (run 10).
+  // Value: protects=the scan makes every character fold excerpt matching makes, so an excerpt that
+  //   passes `check` with a ligature or Unicode hyphen cannot hide a private place name;
+  //   fails_when=the scan drops NFKC, ignorable stripping or the wider dash fold, or excerpt
+  //   matching gains a fold the scan lacks; why_new=the test pinned only the quote and dash fold
+  //   and missed NFKC; seam=none; no_claim=publish (not built yet; spec text only)
+  it("the privacy scan makes every character fold excerpt matching makes", () => {
     const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
+    const matching = between(ARTICLE, "## Matching");
+    assert.match(matching, /1\. Unicode NFKC/, "excerpt matching no longer applies NFKC");
     assert.match(
-      scan,
-      /curly quotes mapped to straight quotes and en and em dashes to `-` \(as excerpt matching does/,
-    );
-    assert.match(
-      read("article-format.md"),
+      matching,
       /Map curly quotes to straight quotes, and en and em dashes to `-`\./,
       "excerpt matching no longer folds the same characters",
     );
+    assert.match(scan, /Unicode NFKC applied/, "the scan skips NFKC, so ligatures escape it");
+    assert.match(
+      scan,
+      /default-ignorable characters such as soft hyphens and zero-width spaces removed/,
+    );
+    assert.match(
+      scan,
+      /curly quotes mapped to straight quotes and every Unicode dash or hyphen \(en and em dashes, U\+2010 to U\+2012, the minus sign U\+2212\) to `-`/,
+    );
+    assert.match(scan, /covers every character fold excerpt matching makes/);
   });
 });

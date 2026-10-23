@@ -37,13 +37,13 @@
 **Priority:** P1
 **Depends on:** `fetch-snapshot` and `review-list`.
 
-### Privacy scan must normalize Unicode before matching
+### Finish Unicode normalization for privacy matching
 
-**What:** Before every privacy comparison (publish scan, `fetch-snapshot` URL and `source:` refusals, `ballot-check` `private_strings`), apply NFKC and strip `\p{Default_Ignorable_Code_Point}` (soft hyphen, zero-width characters, word joiner, BOM), and consider folding confusables. Apply the same to excerpt matching in `check`.
+**What:** SKILL.md step 6.3 now applies NFKC, strips default-ignorable characters and folds every Unicode dash in the publish scan, and `fetch-snapshot` and `ballot-check` match `private_strings` the same way (run 10). Still open: strip `\p{Default_Ignorable_Code_Point}` in excerpt matching in `check` (article-format.md:37), and decide whether to fold confusables (Cyrillic or Greek look-alike letters) in all of them.
 
-**Why:** "Spring&shy;field Township" or fullwidth letters pass the whole-phrase match (SKILL.md:122) and the NFKC-only excerpt check (article-format.md:39), yet a browser shows the locating string, and a push keeps it in public history.
+**Why:** A confusable spelling of a private place name passes every whole-phrase match, yet a browser shows the locating string, and a push keeps it in public history.
 
-**Context:** Step 11 adversarial finding 1, /ship run 5, rated the most exploitable. Deferred by the owner (D8).
+**Context:** Step 11 adversarial finding 1, /ship run 5, deferred by the owner (D8). NFKC, ignorable stripping and dash folding in the scan were fixed in /ship run 10 (D2) after four review specialists found the ligature leak.
 
 **Effort:** S
 **Priority:** P1
@@ -105,6 +105,25 @@
 **Effort:** M
 **Priority:** P1
 **Depends on:** `fetch-snapshot`, `ballot-check`, `review-list` and `publish`.
+
+### Line accounting and scan gaps from the run 10 review
+
+**What:** Spec gaps in the line-accounting rule (ballot-format.md:70) and the privacy scan (SKILL.md:122), each to settle before `ballot-check` and `publish` are built:
+- **Whole-line entries:** a line that equals one multi-word entry still counts as "made up wholly of" entries, so pasting "Springfield Township Precinct 12" as one entry passes and leaves the township alone unscanned. Have `ballot-check` warn, by line number and entry index only, when one entry covers a whole line holding a place-type word (Township, Precinct, Ward, Borough, Village, City) or a digit run.
+- **Bare numbers:** a header such as "Springfield Township 12" has no safe setup: `12` as its own entry matches all over the page, the whole line as one entry hides the township, and `ignored_lines` refuses it. Let a line be accounted for by private entries plus bare digit runs, scanning those runs only next to the entry's other words.
+- **Digit-run wording:** "The publish scan matches each entry whole, never a part of one" contradicts the digit-run rule in step 6.3; reword as "apart from its digit run".
+- **Which normalization:** say that accounting by `private_strings` uses the publish-scan matching (case folded, whole phrase, the scan's separator set), as the `ignored_lines` containment check does, so an all-caps header is accounted for by mixed-case entries; define "punctuation" as that separator set.
+- **Hidden contests:** a `private_strings` entry equal to a contest title can account for the title line of a contest missing from both the list and the counts; list such lines with `--show`.
+- **Two-column ballots:** a pdftotext line holding a listed candidate can also hold an unlisted one from the next column; count a candidate line only for its matched span and report what is left over.
+- **Scan separators:** form 3 reads only hyphens, underscores, slashes, dots and plus signs as spaces, so `springfield~township` or `springfield,township` in a receipt URL path survives; read every non-alphanumeric character as a space.
+
+**Why:** Each is a way a private place name reaches the page, or a contest leaves the guide, that prose alone does not stop.
+
+**Context:** /ship run 10 review (security, red-team and Claude adversarial passes; Codex unavailable: model_unusable). Deferred under the owner's land-mode rule (D1): only critical findings in the 8c408a1 layer were fixed.
+
+**Effort:** M
+**Priority:** P1
+**Depends on:** `ballot-check` and `publish`.
 
 ### Prove a search ran before "Unknown, no source found"
 
