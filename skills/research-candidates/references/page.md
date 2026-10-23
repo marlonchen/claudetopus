@@ -2,7 +2,7 @@
 
 The published page: one static HTML file per ballot, rendered by `publish` (SKILL.md step 6) and republished as contests become `ready`. This file is the layout and visual spec. Rendering safety rules (escaping, allowed links, CSP, privacy scan) are in SKILL.md step 6.
 
-Wireframe: [page-wireframe.png](page-wireframe.png) (source: [page-wireframe.html](page-wireframe.html)). It shows the ballot list; a candidate race in four frames, in page order (its top and first section, its Money section with a receipt open, Positions, and its last section with the links on); a race that is not ready yet; and a ballot question in two frames, the last race on the ballot. Each phone frame is one viewport of the same page. The My weights screen is greyed out because it comes later (see Scope order).
+Wireframe: [page-wireframe.png](page-wireframe.png) (source: [page-wireframe.html](page-wireframe.html)). It shows the ballot list; a candidate race in four frames, in page order (its top and first section, its Money section with a receipt open, Positions, and its last section with the links on); a race that is not ready yet; and a ballot question in two frames, the last race on the ballot. Races the wireframe does not draw are plain rows in its list, and its Next links skip them. Each phone frame is one viewport of the same page. The My weights screen is greyed out because it comes later (see Scope order).
 
 ## Every screen
 
@@ -19,7 +19,7 @@ The page is one file. The trust header and freshness line appear in full once, a
 
 ## Ballot screen
 
-The title, then a two-part banner, "21 contests on your ballot · 14 ready to read". The first number comes from the official sample ballot, and the second counts `ready` contests. Then one line: "Tap a race to compare the candidates".
+The title, then a two-part banner, "6 contests on your ballot · 4 ready to read". The first number comes from the official sample ballot, and the second counts `ready` contests. Then one line: "Tap a race to compare the candidates".
 
 Contests follow in ballot order as one list, with no group headings (`ballot.yaml` has no level to group by, and grouping would break ballot order). Each contest is a row in a divided list, not a bordered card: one link that fills the row, holding the contest name on the left, its status in words on the right, and a chevron. Rows are at least 48px tall. A multi-seat contest shows "Vote for 3" under its name, from `vote_for` ([ballot-format.md](ballot-format.md)).
 

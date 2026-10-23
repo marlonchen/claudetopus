@@ -744,14 +744,21 @@ describe("BallotIds", () => {
   it("an abbreviated printed party shows its official full name", () => {
     const rule = ballotRuleLine("Party names");
     const shape = rule.match(
-      /fails, with no `party_name`, a `party` that is one word written as an abbreviation: all capitals \(([^)]+)\), or holding a period, slash or hyphen \(([^)]+)\)\. A short full name such as `(\w+)` passes/,
+      /fails, with no `party_name`, a `party` with any word written as an abbreviation: all capitals \(([^)]+)\), or holding a period, slash or hyphen \(([^)]+)\)\. A full name such as (.+?) passes/,
     );
     assert.ok(shape, "ballot-format.md no longer says which printed parties need party_name");
-    const abbreviated = /^(?:[A-Z]+|\S*[./-]\S*)$/;
+    const abbreviatedWord = /^(?:[A-Z]+|\S*[./-]\S*)$/;
+    const abbreviated = {
+      test: (party) => party.split(/\s+/).some((w) => abbreviatedWord.test(w)),
+    };
     const examples = (list) => [...list.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-    for (const p of [...examples(shape[1]), ...examples(shape[2])])
-      assert.match(p, abbreviated, `the rule's example ${p} is not caught as an abbreviation`);
-    assert.doesNotMatch(shape[3], abbreviated, `the rule's full name ${shape[3]} is caught`);
+    const caught = [...examples(shape[1]), ...examples(shape[2])];
+    assert.ok(
+      caught.some((p) => /\s/.test(p)),
+      "the rule has no multi-word abbreviation example",
+    );
+    for (const p of caught) assert.ok(abbreviated.test(p), `the rule's example ${p} is not caught`);
+    for (const p of examples(shape[3])) assert.ok(!abbreviated.test(p), `full name ${p} is caught`);
     assert.match(rule, /a `party_name` that no `_ballot\/` snapshot contains/);
     const example = BALLOT.match(/^ +party: ([A-Z]{2,5}) .*\n +party_name: \S/m);
     assert.ok(example, "the ballot.yaml example has no abbreviated party with a party_name");
@@ -770,8 +777,7 @@ describe("BallotIds", () => {
     const wire = read("page-wireframe.html");
     const parties = [...wire.matchAll(/<span class="party">· ([^<]+)<\/span>/g)].map((m) => m[1]);
     assert.ok(parties.length > 0, "the wireframe shows no party");
-    for (const p of parties)
-      assert.doesNotMatch(p, abbreviated, `wireframe party "${p}" abbreviated`);
+    for (const p of parties) assert.ok(!abbreviated.test(p), `wireframe party "${p}" abbreviated`);
     const block = wire.match(
       new RegExp(
         `<h3>${escapeRegExp(name)} <span class="party">· ([^<]+)</span></h3>\\s*<blockquote>“${escapeRegExp(name)} (\\S+)”`,
@@ -787,13 +793,17 @@ describe("BallotIds", () => {
   });
 
   // Added by /ship pre-landing review (run 8).
-  // Value: protects=a county sharing a private township's name never fails ballot-check with no
-  //   way out; fails_when=the Private text rule drops its state/county exemption; why_new=only the
-  //   ballot id's county words were exempt; seam=none; no_claim=ballot-check (not built yet)
-  it("the Private text rule exempts the public state and county fields", () => {
+  // Value: protects=a bare township word that is also the county's fails at ballot-check with
+  //   its fix, not at publish; fails_when=state/county become exempt or the fix hint is dropped;
+  //   why_new=only the ballot id's county words were covered; seam=none;
+  //   no_claim=ballot-check (not built yet)
+  it("a private entry inside state or county fails early and says how to fix it", () => {
     const rule = ballotRuleLine("Private text");
-    assert.match(rule, /outside two places: .*, and the `state` and `county` fields/);
-    assert.match(rule, /list the township's full name/);
+    assert.doesNotMatch(rule, /outside two places/, "state and county are exempt again");
+    assert.match(
+      rule,
+      /when an entry appears in the `state` or `county` field, `ballot-check` fails, names that field, and says to list the township's full name/,
+    );
   });
 
   // Added by /ship pre-landing review (cycle 3).
@@ -1429,7 +1439,7 @@ describe("PageCopy", () => {
   for (const phrase of [
     "Not affiliated with any campaign or party. Facts only, every one with its source.",
     "Updated Oct 24, 2026 · Not affiliated with any campaign or party · About this guide ↑",
-    "21 contests on your ballot · 14 ready to read",
+    "6 contests on your ballot · 4 ready to read",
     "Tap a race to compare the candidates",
     "3 of 3 candidates on the official ballot covered",
     "Official text and fiscal note saved",
@@ -1543,12 +1553,6 @@ describe("WireframeStructure", () => {
     assert.match(PAGE, /Links that leave the page use `--visited` once visited/);
   });
 
-  // Added by /ship test coverage audit.
-  // Value: protects=each drawn race's "Next on your ballot" link goes to the next drawn race in
-  //   ballot-list order, and the last race links only back to the list; fails_when=a Next link
-  //   skips or repeats a race, the list is reordered without its Next links, or the last race
-  //   gains a Next link; why_new=link tests only checked that targets exist; seam=none;
-  //   no_claim=the rendered page's race order (no renderer yet)
   // Added by /ship pre-landing review (run 8).
   // Value: protects=every ballot-list row link opens a drawn race, never the list itself;
   //   fails_when=a row links to #ballot or to a race with no frame; why_new=WireframeStructure
@@ -1576,6 +1580,12 @@ describe("WireframeStructure", () => {
       assert.match(text, /^[^,]+, [^,]+ section$/, `hidden text "${text}"`);
   });
 
+  // Added by /ship test coverage audit.
+  // Value: protects=each drawn race's "Next on your ballot" link goes to the next drawn race in
+  //   ballot-list order, and the last race links only back to the list; fails_when=a Next link
+  //   skips or repeats a race, the list is reordered without its Next links, or the last race
+  //   gains a Next link; why_new=link tests only checked that targets exist; seam=none;
+  //   no_claim=the rendered page's race order (no renderer yet)
   it("each drawn race's Next link goes to the next drawn race in ballot-list order", () => {
     assert.match(PAGE, /the last race on the ballot has no Next link/);
     const source = html();
@@ -1809,7 +1819,11 @@ describe("InstallCommands", () => {
     assert.match(gate, /symlink/, "the gate allows symlinks");
     // Run 8 review: a Finder .DS_Store must not refuse election-week publish as if tampered with,
     // and any other extra file must be named so the researcher can remove it.
-    assert.match(gate, /except operating-system and editor leftovers \(`\.DS_Store`/);
+    assert.match(
+      gate,
+      /except regular files that are operating-system and editor leftovers \(`\.DS_Store`/,
+    );
+    assert.match(gate, /nothing under it may be a symlink/, "a skipped leftover may be a symlink");
     assert.match(gate, /any other extra file refuses with its path named/);
     // gh skill install rewrites SKILL.md's front matter, so that file is compared by content.
     assert.match(gate, /front matter/, "SKILL.md can never hash-match after install");
