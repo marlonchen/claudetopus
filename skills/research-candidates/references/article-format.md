@@ -90,7 +90,7 @@ Each figure left in the claim must match a figure in that claim's own excerpt, n
 
 ## Section states
 
-Each section, and under Positions each issue, is in exactly one state:
+Each section, and under Positions each issue, is in exactly one state; an issue never uses `Not researched yet`, which only a whole section takes:
 
 - claims (one or more claim lines);
 - `Unknown, no source found`: the checklist was run and nothing usable turned up. `coverage` accepts it only when the search log backs it (`search-not-logged`);

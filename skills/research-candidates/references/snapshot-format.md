@@ -65,7 +65,7 @@ Every snapshot `fetch-snapshot` saves, `_ballot` ones included, gets one line ap
 - `<item>`: the checklist item number, one the contest's type uses: 1-5 for a candidate contest, 6 for a measure, 7 for a retention contest.
 - `<searched>`: the date `fetch-snapshot` wrote the line (`YYYY-MM-DD`), never a caller's value.
 
-`fetch-snapshot` refuses a subject the contest does not list or an item its type does not use, and writes no line for it. The log is append-only, and a later run of the same item adds another line. `coverage` reads it: a section in the state `Unknown, no source found` needs a line for its subject and each checklist item [sections.md](sections.md) maps to that section, or it fails with `search-not-logged` ([article-format.md](article-format.md)). The log proves only that the search ran, not what it found, so a line never makes a section anything but Unknown.
+`fetch-snapshot` refuses a subject that is not a candidate or official id the contest lists (or, for a measure, the contest's own id) or an item its type does not use, and writes no line for it. The log is append-only, and a later run of the same item adds another line. `coverage` reads it: a section in the state `Unknown, no source found` needs a line for its subject and each checklist item [sections.md](sections.md) maps to that section, or it fails with `search-not-logged` ([article-format.md](article-format.md)). The log proves only that the search ran, not what it found, so a line never makes a section anything but Unknown.
 
 ## Saved copies
 

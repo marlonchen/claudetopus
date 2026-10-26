@@ -47,7 +47,7 @@ A candidate quote reported in a T2 article is `T2s`. The compile step sets the `
 
 ## Discovery checklist
 
-Try items 1-5 for every candidate, in order, item 6 for every measure, and item 7 for every retention official. [sections.md](sections.md) maps each item to the sections it fills. After running an item for a candidate, official or measure, the discovery agent logs it with `fetch-snapshot --searched` ([snapshot-format.md](snapshot-format.md)), whatever it found; an item it never ran is never logged, so `coverage` can tell "searched and found nothing" from "never searched".
+Try items 1-5 for every candidate, in order, item 6 for every measure, and item 7 for every retention official. [sections.md](sections.md) maps each item to the sections it fills. After running an item for a candidate, official or measure, the discovery agent logs it with `fetch-snapshot --searched` ([snapshot-format.md](snapshot-format.md)), whatever it found. Running an item includes checking its own condition: an item that does not apply (item 1 for a state office, item 3 when neither the office nor any reporting suggests litigation) is logged once the agent has checked that, so the log records that every item was worked. An item it never got to is never logged, so `coverage` can tell "searched and found nothing" from "never searched".
 
 1. **Federal offices:** FEC candidate and committee totals (OpenFEC API), Congress.gov sponsored bills and roll-call votes for incumbents.
 2. **State offices:** the state legislature's member page and vote records (OpenStates API), the state campaign-finance database, the state ethics commission.
