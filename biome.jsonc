@@ -1,12 +1,15 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
     "useIgnoreFile": true
   },
   "files": {
-    "ignoreUnknown": false
+    "ignoreUnknown": false,
+    // rumdl owns Markdown (lint:md). Biome 2.6 started formatting it too, with
+    // padded tables that rumdl's style does not use, so keep it out of here.
+    "includes": ["**", "!**/*.md"]
   },
   "formatter": {
     "enabled": true,
