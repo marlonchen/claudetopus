@@ -12,17 +12,26 @@ Every snapshot carries one tier in its front matter ([snapshot-format.md](snapsh
 
 "Statements only" sources set `statements_only: true` in their front matter. T4 sources always do.
 
-The tier is never the model's call. The data repo's `tiers.yaml` maps sources to a tier and `statements_only`, and only the researcher edits it (Rule 7):
+The tier is never the model's call, and neither is whose words a source holds or what it is called. The data repo's `tiers.yaml` maps sources to a tier, `statements_only`, an owner and a source name, and only the researcher edits it (Rule 7):
 
 ```yaml
 - match: county.example.gov              # a host, or a host and path prefix
   tier: T1
+  owner: third-party                     # third-party, or the candidate or official id whose own site it is
+  source: Exampleton County elections    # the name the page receipt shows
 - match: www.example-paper.com/opinion/  # the longest match wins
   tier: T4
   statements_only: true
+  owner: third-party
+  source: Example Paper opinion page
+- match: janeexample.com                 # a campaign site: the candidate's own words
+  tier: T4
+  statements_only: true
+  owner: jane-example
+  source: Jane Example campaign site
 ```
 
-A host matches exactly or on a dot-label boundary (`www.county.example.gov` matches `county.example.gov`; `evilcounty.example.gov` does not). `fetch-snapshot` checks the requested URL and again after every redirect, records the final URL, and copies the tier and `statements_only` of the longest match into the snapshot. It refuses a URL with no match, and refuses to load a `tiers.yaml` with a T4 or "statements only" entry that lacks `statements_only: true`. A refused domain is logged to `unfetchable.md` with the reason `domain not in tiers.yaml`; those entries never go on the review list (review-list.md).
+A host matches exactly or on a dot-label boundary (`www.county.example.gov` matches `county.example.gov`; `evilcounty.example.gov` does not). `fetch-snapshot` checks the requested URL and again after every redirect, records the final URL, and copies the tier, `statements_only`, `owner` and `source` of the longest match into the snapshot ([snapshot-format.md](snapshot-format.md)); the caller never supplies them. It refuses a URL with no match, and refuses to load a `tiers.yaml` with a T4 or "statements only" entry that lacks `statements_only: true`, or with an entry that lacks `owner` or `source`. An `owner` is `third-party` or a candidate or official id from a `ballot.yaml` in the data repo; a campaign site gets its candidate's id, and everything else, debate hosts and questionnaire sites included, is `third-party`, since the candidate does not control what they publish. `review-list` uses `owner`, never the agent-chosen subject directory, to decide which "Says:" claims need a human check ([review-list.md](review-list.md)). A refused domain is logged to `unfetchable.md` with the reason `domain not in tiers.yaml`; those entries never go on the review list (review-list.md).
 
 ## Claim tags
 
@@ -38,14 +47,12 @@ A candidate quote reported in a T2 article is `T2s`. The compile step sets the `
 
 ## Discovery checklist
 
-Try these for every candidate, in order, and record what was found and what was not. [sections.md](sections.md) maps each item to the sections it fills.
+Try items 1-5 for every candidate, in order, item 6 for every measure, and item 7 for every retention official. [sections.md](sections.md) maps each item to the sections it fills. After running an item for a candidate, official or measure, the discovery agent logs it with `fetch-snapshot --searched` ([snapshot-format.md](snapshot-format.md)), whatever it found; an item it never ran is never logged, so `coverage` can tell "searched and found nothing" from "never searched".
 
 1. **Federal offices:** FEC candidate and committee totals (OpenFEC API), Congress.gov sponsored bills and roll-call votes for incumbents.
 2. **State offices:** the state legislature's member page and vote records (OpenStates API), the state campaign-finance database, the state ethics commission.
 3. **Courts:** state and federal court record searches for the candidate's name, when the office or reporting suggests litigation.
 4. **Reporting:** AP, Reuters, and the main local papers for the district, plus FactCheck.org and PolitiFact.
 5. **Candidate's own words:** campaign site issues page, Vote411 and Ballotpedia questionnaires, debate transcripts.
-
-Measures: the official text, the official fiscal note, the voter pamphlet's arguments for and against, and independent analysis.
-
-Judicial retention: the record in office, the state's judicial evaluation findings if any, discipline records, and the judge's own statements. Thin records are normal; say so rather than padding.
+6. **Measures:** the official text, the official fiscal note, the voter pamphlet's arguments for and against, and independent analysis.
+7. **Retention:** the record in office, the state's judicial evaluation findings if any, discipline records, and the official's own statements. Thin records are normal; say so rather than padding.

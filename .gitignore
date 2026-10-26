@@ -170,6 +170,8 @@ vite.config.ts.timestamp-*
 /*/*/site/
 /*/*/ballot.ledger
 /*/*/ballot-view.md
+/*/*/snapshots.sha256
+/*/*/search-log/
 # Skill source in this repo is never data.
 !/skills/*/sources/
 !/skills/*/articles/
@@ -177,6 +179,8 @@ vite.config.ts.timestamp-*
 !/skills/*/site/
 !/skills/*/ballot.ledger
 !/skills/*/ballot-view.md
+!/skills/*/snapshots.sha256
+!/skills/*/search-log/
 !/skills/*/ballot.yaml
 !/skills/*/private.yaml
 !/skills/*/unfetchable.md

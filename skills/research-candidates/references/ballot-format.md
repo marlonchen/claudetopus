@@ -12,6 +12,7 @@ contests:
   - id: us-house-07
     type: candidate
     jurisdiction: XX congressional district 7   # state and district the office covers
+    office_type: federal           # federal | state | local | judicial; sets the Positions issues (sections.md)
     title: Representative in Congress, 7th District   # exactly as printed
     printed_count: 2    # candidate lines counted on the official ballot
     vote_for: 1         # seats to fill, from the printed "Vote for" line
@@ -28,7 +29,7 @@ contests:
   - id: supreme-court-retention-a
     type: retention
     jurisdiction: XX supreme court
-    office_type: judicial          # see sections.md; omit for non-judicial offices
+    office_type: judicial          # retention: judicial for a judge; omit for other officials
     title: Shall Justice Pat Example of the Supreme Court be retained in office?   # exactly as printed
     official:
       id: pat-example
@@ -54,7 +55,9 @@ ignored_lines:          # sample-ballot lines that are not contests (instruction
   - Vote for one
 ```
 
-Contest types: `candidate`, `retention` (one judge or official, yes/no), and `measure`. Set `office_type: judicial` on judicial candidate and retention contests; other contests leave it out.
+Contest types: `candidate`, `retention` (one judge or official, yes/no), and `measure`.
+
+Every candidate contest carries an `office_type` from the list in [sections.md](sections.md), which picks its Positions issues; `ballot-check` fails a candidate contest without one or with a value not on that list. A retention contest for a judge carries `office_type: judicial`; other retention contests and measures leave it out.
 
 Candidate contests carry `vote_for`, the number of seats to fill; the page shows "Vote for N" when it is more than 1.
 
@@ -77,6 +80,6 @@ The page shows `display_title` when it is set and `title` otherwise. The ballot 
 - **Slug:** `slug` must match `^[a-z0-9]{6}$` and no other `ballot.yaml` in the data repo may use it, so a copied `ballot.yaml` can never publish over another ballot's page.
 - **Write-ins:** `certified_write_in` candidates skip the printed-ballot check and must appear verbatim in the `role: write_in_list` snapshot. If the county publishes none, the page says "Certified write-ins: none published".
 - **Withdrawals:** a `withdrawn_still_printed` candidate must also appear verbatim in a `role: withdrawal_notice` snapshot, the county or state notice of the withdrawal, so a mistyped status can never hide a candidate's record. A candidate list is not proof, since it names every candidate. Their On the ballot claim cites that snapshot. When the county or state publishes no such notice, the candidate stays `on_ballot` and gets every section.
-- **Tiers:** `ballot-check` fails any `tiers.yaml` `match` that contains, matched as in the publish privacy scan, a `private_strings` entry of any ballot in the data repo, or any address, street line, label or ZIP code from `addresses.yaml`, because the discovery agent and its web searches see every `tiers.yaml` host. `fetch-snapshot` runs the same check each time it loads `tiers.yaml`.
+- **Tiers:** `ballot-check` fails any `tiers.yaml` `match` or `source` that contains, matched as in the publish privacy scan, a `private_strings` entry of any ballot in the data repo, or any address, street line, label or ZIP code from `addresses.yaml`, because the discovery agent and its web searches see every `tiers.yaml` host, and every `source` name can reach the page. `fetch-snapshot` runs the same check each time it loads `tiers.yaml`.
 
 Corrections to the sample ballot become a new snapshot with `supersedes` set, plus an edit to `ballot.yaml`. The old snapshot stays. `ballot-check` lists every `supersedes` link and passes only when each one is named in a `confirmed_supersedes:` list the researcher keeps in `ballot.yaml`, so a planted snapshot can never become the authoritative ballot.

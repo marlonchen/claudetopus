@@ -9,7 +9,7 @@
 - [ ] The main session must not read `unfetchable.md` lines. A script (`review-list --refused-hosts <contest>` or a `fetch-snapshot` summary) prints only distinct, IDNA-normalized, valid LDH hosts of the contest's `domain not in tiers.yaml` entries, or a count for anything else (SKILL.md:23, the CRITICAL from cycle 3).
 - [ ] Limit the refused-host stop to refusals from the current discovery run, or skip URL+subject pairs a later snapshot saved, so the append-only log cannot block a contest forever. Also say how the researcher continues without adding the domain.
 - [ ] Say what happens to privacy refusals during discovery: they are never logged, and the agent replies only `done`, so today they reach no one. Fix the "every other source ... reaches the researcher through `review-list`" sentence.
-- [ ] Bind the fetch tool given to each discovery agent to its own contest, the way it already rejects `--ballot`, `--file` and `--geocode`.
+- [ ] Bind the fetch tool given to each discovery agent to its own contest, the way it already rejects `--ballot` and `--file`; its `--searched` mode is bound the same way (snapshot-format.md, Search log).
 - [ ] State that `fetch-snapshot` runs the privacy match before the tier lookup, before any redirect and before any write to `unfetchable.md`.
 
 **Why:** Each prose patch to this hand-off in /ship run 5 opened the next hole: "never read the reply" could not be enforced, and "read refused hosts from `unfetchable.md`" let attacker-chosen URL text into the session that has shell and file tools.
@@ -24,8 +24,8 @@
 
 **What:** Stop trusting agent-chosen snapshot metadata:
 
-- [ ] Give `tiers.yaml` entries an owner (a candidate id for a campaign site, or `third-party`). `fetch-snapshot` copies it into the snapshot from the host match, like the tier. `review-list` lists every `s`-tagged claim whose snapshot owner is not the candidate it sits under (review-list.md:9 trusts `subject` today, the CRITICAL from cycle 3).
-- [ ] Derive or check `source:` against the matched `tiers.yaml` entry (for example a `name:` field) instead of accepting a free-form name.
+- [ ] Give `tiers.yaml` entries an owner (a candidate id for a campaign site, or `third-party`). `fetch-snapshot` copies it into the snapshot from the host match, like the tier. `review-list` lists every `s`-tagged claim whose snapshot owner is not the candidate it sits under (the CRITICAL from cycle 3). **Spec written (2026-10-26):** `owner` and `source` are `tiers.yaml` fields copied into each snapshot, and review-list.md's attribution rule reads `owner` (source-tiers.md, snapshot-format.md); building it remains.
+- [ ] Derive or check `source:` against the matched `tiers.yaml` entry (for example a `name:` field) instead of accepting a free-form name. **Spec written (2026-10-26):** the entry's `source` is copied, and `fetch-snapshot` takes no option that sets it; building it remains.
 - [ ] Reject control characters and `---` in every front-matter value and write front matter with a real YAML emitter, so a `source:` with a newline cannot inject `public_url:` (snapshot-format.md:7, 38).
 - [ ] At publish, re-check every `public_url` and `url` against `tiers.yaml` and the privacy rules.
 
@@ -146,7 +146,7 @@
 
 **Context:** Found in the /ship run 5 pre-landing review (2026-10-19, cycle 2) after the discovery agent's free-text reply was removed as an injection channel; the owner chose to defer it to the scripts build rather than add spec text mid-review.
 
-**Depends on / blocked by:** `fetch-snapshot` and `coverage` being built.
+**Depends on / blocked by:** `fetch-snapshot` and `coverage` being built. **Spec written (2026-10-26):** `search-log/<contest>.tsv`, `fetch-snapshot --searched` and the `search-not-logged` code (snapshot-format.md, Search log), pinned by spec-parity.
 
 **Priority:** P2
 
