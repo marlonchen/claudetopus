@@ -9,7 +9,7 @@ const path = require("node:path");
 const { BALLOT_ID_PATTERN, ELECTION_PATTERN } = require("./constants");
 const { load } = require("./deps");
 const { Failure } = require("./output");
-const { TIER_RANK, parseMatch } = require("./tiers");
+const { TIER_RANK, conflicts, parseMatch } = require("./tiers");
 
 // Parse a YAML file into a document, refusing any parse error or warning.
 const readYamlDocument = (file, location) => {
@@ -75,7 +75,7 @@ const loadTiers = (root) => {
     // Another ballot's id never reaches this run's output, so its failures are unlocated.
     for (const id of loadBallot(root, ballot, "-").people) people.add(id);
   }
-  return doc.contents.items.map((node) => {
+  const entries = doc.contents.items.map((node) => {
     const at = `tiers.yaml:${lineCounter.linePos(node.range[0]).line}`;
     const entry = node.toJSON?.();
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -102,6 +102,7 @@ const loadTiers = (root) => {
       if (!people.has(entry.owner)) throw new Failure(at, "tiers-unknown-owner");
     }
     return {
+      at,
       match: entry.match,
       parsed,
       tier: entry.tier,
@@ -110,6 +111,13 @@ const loadTiers = (root) => {
       source: entry.source,
     };
   });
+  // Located at the later entry of the pair.
+  for (const [i, entry] of entries.entries()) {
+    if (entries.slice(0, i).some((earlier) => conflicts(earlier.parsed, entry.parsed))) {
+      throw new Failure(entry.at, "tiers-overlap");
+    }
+  }
+  return entries.map(({ at, ...entry }) => entry);
 };
 
 module.exports = { ballotDirs, loadBallot, loadTiers };

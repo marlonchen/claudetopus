@@ -68,7 +68,10 @@ const checkTarget = (root, { ballot, contest, subject, name }) => {
   if (subject !== "_race" && !listed.subjects.has(subject)) {
     throw new Failure(`${contest}/${subject}`, "unknown-subject");
   }
-  if (!ID_PATTERN.test(name)) throw new Failure(`${contest}/${subject}`, "bad-name");
+  // A trailing -<digits> is how a re-fetch is numbered, so a name never has one.
+  if (!ID_PATTERN.test(name) || /-[0-9]+$/.test(name)) {
+    throw new Failure(`${contest}/${subject}`, "bad-name");
+  }
   return listed;
 };
 

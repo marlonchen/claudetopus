@@ -8,7 +8,7 @@ const constants = require("../scripts/lib/constants");
 const { githubRepo } = require("../scripts/lib/repo-guard");
 const os = require("node:os");
 const { withLock } = require("../scripts/lib/snapshot-store");
-const { combineHops, matchUrl, parseMatch } = require("../scripts/lib/tiers");
+const { combineHops, conflicts, matchUrl, parseMatch } = require("../scripts/lib/tiers");
 
 // Seam 2 (spec, Testing Decisions): the shared library's edge cases that would
 // be slow through the CLI.
@@ -46,7 +46,7 @@ describe("source-tiers.md: host match on dot-label boundaries", () => {
   });
 });
 
-describe("source-tiers.md: path prefix on segment boundaries, longest match wins", () => {
+describe("source-tiers.md: path prefix on segment boundaries, most specific match wins", () => {
   const entries = [entry("news.example.com"), entry("news.example.com/opinion/")];
   it("matches the prefix itself and paths under it", () => {
     assert.equal(best(entries, "https://news.example.com/opinion"), "news.example.com/opinion/");
@@ -58,9 +58,31 @@ describe("source-tiers.md: path prefix on segment boundaries, longest match wins
   it("never matches a longer segment that starts with the prefix", () => {
     assert.equal(best(entries, "https://news.example.com/opinionated"), "news.example.com");
   });
-  it("prefers a more specific host over a shorter one", () => {
-    const hosts = [entry("example.com/news/"), entry("www.example.com")];
-    assert.equal(best(hosts, "https://www.example.com/news/x"), "www.example.com");
+  it("prefers an entry that lies within another, by host or by path", () => {
+    const nested = [entry("example.com/news/"), entry("www.example.com/news/")];
+    assert.equal(best(nested, "https://www.example.com/news/x"), "www.example.com/news/");
+  });
+});
+
+describe("source-tiers.md: two entries conflict when neither lies within the other", () => {
+  const conflict = (a, b) => conflicts(parseMatch(a), parseMatch(b));
+  it("lets nested entries stand, in either order", () => {
+    for (const [a, b] of [
+      ["example.com", "www.example.com"],
+      ["news.example.com", "news.example.com/opinion/"],
+      ["example.com/news", "www.example.com/news/world"],
+    ]) {
+      assert.equal(conflict(a, b), false, `${a} ${b}`);
+      assert.equal(conflict(b, a), false, `${b} ${a}`);
+    }
+  });
+  it("refuses a deeper host with a shorter path, and the same host and path twice", () => {
+    assert.equal(conflict("www.example.com", "example.com/news"), true);
+    assert.equal(conflict("Example.com/News/", "example.com/News"), true);
+  });
+  it("leaves entries no URL matches both of alone", () => {
+    assert.equal(conflict("example.com/news", "example.com/sport"), false);
+    assert.equal(conflict("a.example.com", "b.example.com"), false);
   });
 });
 
@@ -75,6 +97,7 @@ describe("source-tiers.md: a match is a host and an optional path prefix", () =>
       "county.example.gov:443",
       "a@b.gov",
       "x.gov?q",
+      "*.example.com",
       "",
       7,
     ]) {
@@ -179,12 +202,62 @@ describe("snapshot-format.md, Manifest: the ballot lock", () => {
   it("is released only while this run still owns it", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-lock-"));
     try {
-      const lock = path.join(dir, ".partial", ".lock");
+      const lock = path.join(dir, ".lock", "held");
       withLock(dir, () => fs.writeFileSync(lock, "1 another-owner\n"));
       assert.equal(fs.readFileSync(lock, "utf8"), "1 another-owner\n");
       fs.rmSync(lock);
       withLock(dir, () => assert.ok(fs.existsSync(lock)));
       assert.ok(!fs.existsSync(lock));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A ballot directory with its lock files already in place, aged by `ageMs`.
+  const lockedBallot = (files) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-lock-"));
+    fs.mkdirSync(path.join(dir, ".lock"));
+    for (const [name, [text, ageMs]] of Object.entries(files)) {
+      const file = path.join(dir, ".lock", name);
+      fs.writeFileSync(file, text);
+      const when = new Date(Date.now() - ageMs);
+      fs.utimesSync(file, when, when);
+    }
+    return dir;
+  };
+  const ballotLocked = (error) => error.code === "ballot-locked";
+
+  it("waits for a fresh lock even when its pid is not one this run can see", () => {
+    const dir = lockedBallot({ held: ["999999 other-namespace\n", 0] });
+    try {
+      assert.throws(() => withLock(dir, () => {}, 300), ballotLocked);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sleeps and keeps its deadline while another run breaks a stale lock", () => {
+    const dir = lockedBallot({ held: ["1 x\n", 3600 * 1000], break: ["2 y\n", 0] });
+    try {
+      const started = Date.now();
+      const cpu = process.cpuUsage();
+      assert.throws(() => withLock(dir, () => {}, 300), ballotLocked);
+      const elapsed = Date.now() - started;
+      const { user, system } = process.cpuUsage(cpu);
+      assert.ok(elapsed < 2000, `waited ${elapsed} ms`);
+      assert.ok((user + system) / 1000 < elapsed / 2, "spun instead of sleeping");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("takes over a stale lock whose break lock has an mtime in the future", () => {
+    const dir = lockedBallot({ held: ["1 x\n", 3600 * 1000], break: ["2 y\n", -3600 * 1000] });
+    try {
+      assert.equal(
+        withLock(dir, () => "held", 1000),
+        "held",
+      );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

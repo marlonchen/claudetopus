@@ -198,6 +198,8 @@
 - [ ] `readLock` stats and reads the lock through two path lookups, so on a filesystem that reuses inode numbers (ext4) `seen` can mix a dead lock's age with a live lock's text. Open once and `fstat` plus read the same fd.
 - [ ] `deps.js` real-paths only the cache side; under `NODE_PRESERVE_SYMLINKS` a symlinked cache gives a false `deps-missing`. Real-path both sides.
 
+Since the PR #8 review a lock is judged by age alone (no pid check, so sandboxed agents in other pid namespaces are safe), and a crashed run's lock delays the next run by up to 30s.
+
 **Why:** Each can let two discovery agents hold a ballot's lock at once (one's recovery then deletes the other's unfinished save, leaving a manifest line with no file) or block every script.
 
 **Context:** /ship run on feat/fetch-snapshot-tracer (2026-10-27), cycle-3 state-machines and adversarial review. The owner deferred them to ship (D6), since no real research runs before ticket 03's privacy refusals land; fix them in that PR. The realistic races (empty lock wedging the ballot, rename-and-put-back takeover) were fixed and are covered by tests.
@@ -217,13 +219,13 @@
 - [ ] Strip C0/C1 controls and bidi overrides from snapshot bodies.
 - [ ] `recover` turns any per-partial error into `internal-error` on every run; locate it and use `lstat` for the target check. Refuse symlinks under `sources/`.
 - [ ] fsync the `.partial/` and target directories, and check `writeSync`'s byte count, so a power loss cannot leave a manifest line with no file.
-- [ ] The owner check only covers this contest's subjects; decide whether a campaign site may be filed under a candidate of another contest.
+- [x] The owner check only covers this contest's subjects; decide whether a campaign site may be filed under a candidate of another contest. **Decided (PR #8 review):** yes. Its content can bear on that subject, and `owner` still records whose words it holds (snapshot-format.md).
 - [ ] `html-text.js` walks the DOM recursively; walk iteratively so deep nesting cannot overflow the stack.
 - [ ] `unsafe-value` refuses URLs containing `---`; `searchParams.delete` re-encodes the rest of the query.
 - [ ] `install-deps`: a leftover non-empty cache directory throws on rename; the fast path trusts any `node_modules`; `RESEARCH_CANDIDATES_DEPS` is not keyed to the lockfile; transitive modules still resolve through parent `node_modules`.
 - [ ] Rule 8 guard: a repo with no remotes passes, `GH_HOST` changes which server `gh` asks, and a gitfile or inherited `GIT_DIR` can point the top-level check at another repo.
 - [ ] Narrow the body-read `catch` to network and timeout errors, and cancel the reader.
-- [ ] Tests: the untested state-matrix cells (`.gstack/tmp/state-machines.*.md` lists them), a live-lock `ballot-locked` test, a two-waiter takeover test, bad-redirect, and install-deps failure paths. The test task needs the network on a cold cache.
+- [ ] Tests: the untested state-matrix cells (`.gstack/tmp/state-machines.*.md` lists them), a two-waiter takeover test, bad-redirect, and install-deps failure paths. The test task needs the network on a cold cache.
 
 **Why:** None is reachable in normal use today, but each weakens a guarantee the spec makes (tier strictness, write-once, Rule 5 output, the lockfile pin) or turns a recoverable error into `internal-error`.
 

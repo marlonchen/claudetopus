@@ -30,7 +30,8 @@ const remoteUrls = (root, name) => {
   const fetchUrls = run("git", ["remote", "get-url", "--all", name], root);
   const pushUrls = run("git", ["remote", "get-url", "--push", "--all", name], root);
   if (fetchUrls === null || pushUrls === null) return null;
-  return [...fetchUrls.split("\n"), ...pushUrls.split("\n")].filter(Boolean);
+  // A remote's push URLs are usually its fetch URLs; ask about each one once.
+  return [...new Set([...fetchUrls.split("\n"), ...pushUrls.split("\n")].filter(Boolean))];
 };
 
 const checkRemote = (root, name) => {
@@ -40,19 +41,16 @@ const checkRemote = (root, name) => {
   for (const url of urls) {
     const repo = githubRepo(url);
     if (!repo) throw new Failure(location, "guard-remote-not-private");
-    const rootId = run("gh", ["api", `repos/${repo}`, "--jq", ".source.id // .id"], root);
-    if (rootId === null || rootId.trim() === "") {
-      throw new Failure(location, "guard-remote-not-private");
-    }
-    if (rootId.trim() === SOURCE_REPO_ID) throw new Failure(location, "guard-skill-source-remote");
-    const visibility = run(
+    // One call: the visibility and the fork-network root id (null when unread).
+    const answer = run(
       "gh",
-      ["repo", "view", repo, "--json", "visibility", "--jq", ".visibility"],
+      ["api", `repos/${repo}`, "--jq", '"\\(.visibility) \\(.source.id // .id)"'],
       root,
     );
-    if (visibility === null || visibility.trim() !== "PRIVATE") {
-      throw new Failure(location, "guard-remote-not-private");
-    }
+    const [visibility, rootId] = (answer ?? "").trim().split(" ");
+    if (!rootId || rootId === "null") throw new Failure(location, "guard-remote-not-private");
+    if (rootId === SOURCE_REPO_ID) throw new Failure(location, "guard-skill-source-remote");
+    if (visibility !== "private") throw new Failure(location, "guard-remote-not-private");
   }
 };
 

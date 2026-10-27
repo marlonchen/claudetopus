@@ -7,7 +7,7 @@ description: "Objective, cited candidate research for a US election ballot, publ
 
 Builds a ballot guide for each voter address: every contest on the official ballot, every candidate at equal depth, every claim backed by a verbatim excerpt from a saved source. After the researcher reviews a short list of flagged items, the guide is published as one static page per ballot.
 
-**Status: scaffold.** Of the scripts in the table below, only `fetch-snapshot`'s plain fetch of an HTML page is built (`fetch-snapshot <election>/<ballot-id> <contest> <subject> <name> <url>`); its other modes and the other scripts are not. Its Rule 7 privacy refusals are not built yet either, so it does not yet refuse a URL holding the ballot id or a private value: do not use it for research until they are. When a step needs a script or mode that does not exist, say so and stop. Do not do its job by hand. Before the first script runs, the researcher installs their dependencies ([README.md](README.md#dependencies)); when a script reports `deps-missing`, ask them to.
+**Status: scaffold.** Of the scripts in the table below, only `fetch-snapshot`'s plain fetch of an HTML page is built (`fetch-snapshot <election>/<ballot-id> <contest> <subject> <name> <url>`); its other modes, its Wayback copies (`archives.tsv`) and the other scripts are not. Its Rule 7 privacy refusals are not built yet either, so it does not yet refuse a URL holding the ballot id or a private value: do not use it for research until they are. When a step needs a script or mode that does not exist, say so and stop. Do not do its job by hand. Before the first script runs, the researcher installs their dependencies ([README.md](README.md#dependencies)); when a script reports `deps-missing`, ask them to.
 
 All paths below are relative to the project root (the private data repo this skill is installed in).
 
@@ -56,6 +56,7 @@ All scripts live in `scripts/` in this skill. The neutrality pass (4.5, 5) is a 
       archives.tsv                      # append-only: snapshot path -> Wayback Machine capture time
       snapshots.sha256                  # append-only: sha256 of every snapshot fetch-snapshot saved
       .partial/                         # fetch-snapshot's unfinished saves, outside sources/
+      .lock/                            # fetch-snapshot's per-ballot lock
       search-log/<contest>.tsv          # append-only: which checklist items discovery ran, per subject
       ballot.ledger                     # append-only log of every _ballot snapshot --ballot saved
       ballot-view.md                    # matched sample-ballot spans, written by ballot-check

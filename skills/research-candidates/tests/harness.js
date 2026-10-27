@@ -26,31 +26,27 @@ const write = (file, text) => {
   fs.writeFileSync(file, text);
 };
 
-// The stub gh answers only the two calls Rule 8 makes, from a JSON file of
-// { "<owner>/<repo>": { visibility, id, sourceId, fail } } keyed in lower case.
-// A repo missing from the file fails like a repo gh cannot see; `visibility: ""`
-// prints nothing, as gh does for a field it cannot read.
+// The stub gh answers only the one call Rule 8 makes, from a JSON file of
+// { "<owner>/<repo>": { visibility, id, sourceId, fail } } keyed in lower case,
+// and logs each call's repo to GH_STUB_LOG. A repo missing from the file fails
+// like a repo gh cannot see; `visibility: ""` or `id: ""` prints null, as jq
+// does for a field gh did not return.
 const GH_STUB = `#!/usr/bin/env node
 "use strict";
 const fs = require("node:fs");
 const repos = JSON.parse(fs.readFileSync(process.env.GH_STUB_FILE, "utf8"));
 const args = process.argv.slice(2);
 const fail = (msg) => { process.stderr.write(msg + "\\n"); process.exit(1); };
-const lookup = (name) => {
-  const repo = repos[String(name).toLowerCase()];
-  if (!repo || repo.fail) fail("HTTP 404: Not Found");
-  return repo;
-};
-if (args[0] === "repo" && args[1] === "view") {
-  const repo = lookup(args[2]);
-  process.stdout.write(repo.visibility === "" ? "" : (repo.visibility ?? "PRIVATE") + "\\n");
-} else if (args[0] === "api" && /^repos\\/[^/]+\\/[^/]+$/.test(args[1] || "")) {
-  const repo = lookup(args[1].slice("repos/".length));
-  if (repo.id === "") process.stdout.write("");
-  else process.stdout.write(String(repo.sourceId ?? repo.id ?? 1) + "\\n");
-} else {
+if (args[0] !== "api" || !/^repos\\/[^/]+\\/[^/]+$/.test(args[1] || "")) {
   fail("gh stub: unexpected call: " + args.join(" "));
 }
+const name = args[1].slice("repos/".length);
+fs.appendFileSync(process.env.GH_STUB_LOG, name + "\\n");
+const repo = repos[name.toLowerCase()];
+if (!repo || repo.fail) fail("HTTP 404: Not Found");
+const field = (value) => (value === "" ? "null" : String(value));
+const visibility = field(String(repo.visibility ?? "PRIVATE").toLowerCase());
+process.stdout.write(visibility + " " + field(repo.sourceId ?? repo.id ?? 1) + "\\n");
 `;
 
 const DEFAULT_TIERS = `- match: county.example.gov
@@ -132,6 +128,8 @@ const makeDataRepo = (options = {}) => {
   const ghFile = path.join(bin, "gh-repos.json");
   const gh = options.gh ?? { "me/elections": { visibility: "PRIVATE", id: 42 } };
   write(ghFile, JSON.stringify(gh));
+  const ghLog = path.join(bin, "gh-calls.log");
+  write(ghLog, "");
 
   return {
     root,
@@ -144,7 +142,13 @@ const makeDataRepo = (options = {}) => {
     list: (rel) =>
       fs.existsSync(path.join(root, rel)) ? fs.readdirSync(path.join(root, rel)).sort() : [],
     write: (rel, text) => write(path.join(root, rel), text),
-    env: { PATH: `${bin}${path.delimiter}${process.env.PATH}`, GH_STUB_FILE: ghFile },
+    // The repos gh was asked about, in order.
+    ghCalls: () => fs.readFileSync(ghLog, "utf8").split("\n").filter(Boolean),
+    env: {
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      GH_STUB_FILE: ghFile,
+      GH_STUB_LOG: ghLog,
+    },
     cleanup: () => {
       fs.rmSync(root, { recursive: true, force: true });
       fs.rmSync(bin, { recursive: true, force: true });

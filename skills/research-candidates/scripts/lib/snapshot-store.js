@@ -7,13 +7,14 @@
 //   3. link the file into sources/ with exclusive create, then drop the partial.
 // Every run first finishes or discards leftover partials. Discovery agents for
 // different contests run at once, and recovery deletes partials it cannot
-// place, so recovery and saves hold a per-ballot lock: .partial/.lock, holding
-// the owner's pid and a random token, created whole by an exclusive link so it
-// is never empty. A lock is stale when its process is gone, when it is older
-// than any save could take (a reused pid), or when it is unreadable and not
-// brand new. Removing a stale lock is serialized by a second lock and checked
-// against the very file judged stale (breakLock), so a live lock is never moved
-// or removed, and a run removes its own lock only while it still holds its token.
+// place, so recovery and saves hold a per-ballot lock: <ballot>/.lock/held,
+// holding a random token, created whole by an exclusive link so it is never
+// empty. A lock is held only for one recovery or save, so it is stale once it
+// is older than any save could take. Age is the only test: a pid means nothing
+// to a run in another pid namespace (a sandboxed agent). Removing a stale lock
+// is serialized by a second lock, .lock/break, and checked against the very
+// file judged stale (breakLock), and a run removes its own lock only while it
+// still holds its token.
 //
 // RESEARCH_CANDIDATES_TEST_CRASH=after-partial|after-manifest|after-link kills the
 // process with SIGKILL right after that step. Tests only.
@@ -25,8 +26,9 @@ const { Failure } = require("./output");
 
 const MANIFEST = "snapshots.sha256";
 const LOCK_WAIT_MS = 60000;
-// A lock is held only for one recovery or save, which takes milliseconds.
-const LOCK_STALE_MS = 10 * 60 * 1000;
+// A recovery or save takes milliseconds; this leaves room for a slow disk.
+const LOCK_STALE_MS = 30000;
+// The break lock is held only while one stale lock is removed.
 const LOCK_GRACE_MS = 5000;
 const HASH_LINE = /^([0-9a-f]{64}) {2}(sources\/.+)$/;
 // A manifest path recovery may write to: under sources/, no empty, . or .. segment.
@@ -39,16 +41,9 @@ const crashPoint = (step) => {
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM";
-  }
-};
+const sha256 = (data) => crypto.createHash("sha256").update(data).digest("hex");
 
-// The lock's text, or null when there is no lock.
+// A lock file's text and identity, or null when there is none.
 const readLock = (lock) => {
   try {
     const { mtimeMs, ino } = fs.statSync(lock);
@@ -59,12 +54,9 @@ const readLock = (lock) => {
   }
 };
 
-const isStale = ({ text, mtimeMs }) => {
-  const age = Date.now() - mtimeMs;
-  const pid = Number.parseInt(text, 10);
-  if (!Number.isInteger(pid) || pid <= 0) return age > LOCK_GRACE_MS;
-  return !alive(pid) || age > LOCK_STALE_MS;
-};
+// Either way, so an mtime in the future (a clock stepped back, a skewed file
+// server) cannot keep a dead lock alive.
+const olderThan = ({ mtimeMs }, ms) => Math.abs(Date.now() - mtimeMs) > ms;
 
 // Create the lock whole: write a temp file, then link it into place exclusively.
 const tryCreateLock = (lock, text, token) => {
@@ -81,42 +73,56 @@ const tryCreateLock = (lock, text, token) => {
   }
 };
 
-// Remove a stale lock. Only the holder of .lock.break may remove .lock, and only
-// while .lock is still the file judged stale (same text and inode). A break lock
-// left by a crash is itself stale after the grace period.
+// Remove a stale lock; true when it is gone. Only the holder of the break lock
+// may remove it, and only while it is still the file judged stale (same text
+// and inode). A break lock left by a crash is itself stale after the grace period.
 const breakLock = (lock, seen, token) => {
-  const brk = `${lock}.break`;
+  const brk = path.join(path.dirname(lock), "break");
   if (!tryCreateLock(brk, `${process.pid} ${token}\n`, token)) {
     const held = readLock(brk);
-    if (held && Date.now() - held.mtimeMs > LOCK_GRACE_MS) fs.rmSync(brk, { force: true });
-    return;
+    if (held && olderThan(held, LOCK_GRACE_MS)) fs.rmSync(brk, { force: true });
+    return false;
   }
   try {
     const now = readLock(lock);
-    if (now && now.text === seen.text && now.ino === seen.ino) fs.rmSync(lock, { force: true });
+    if (now && (now.text !== seen.text || now.ino !== seen.ino)) return false;
+    fs.rmSync(lock, { force: true });
+    return true;
   } finally {
     fs.rmSync(brk, { force: true });
   }
 };
 
-// Run `body` holding the ballot's lock.
-const withLock = (ballotDir, body) => {
-  const partialDir = path.join(ballotDir, ".partial");
-  fs.mkdirSync(partialDir, { recursive: true });
-  const lock = path.join(partialDir, ".lock");
+// Temp files a crash left between writing and linking a lock. A live run's is
+// only milliseconds old.
+const removeLeftoverTemps = (lockDir) => {
+  for (const name of fs.readdirSync(lockDir)) {
+    if (!name.includes(".tmp-")) continue;
+    const leftover = readLock(path.join(lockDir, name));
+    if (leftover && olderThan(leftover, LOCK_GRACE_MS)) {
+      fs.rmSync(path.join(lockDir, name), { force: true });
+    }
+  }
+};
+
+// Run `body` holding the ballot's lock, or fail with ballot-locked after `waitMs`.
+const withLock = (ballotDir, body, waitMs = LOCK_WAIT_MS) => {
+  const lockDir = path.join(ballotDir, ".lock");
+  fs.mkdirSync(lockDir, { recursive: true });
+  const lock = path.join(lockDir, "held");
   const token = crypto.randomBytes(8).toString("hex");
+  // The pid is only for a person looking at the file.
   const text = `${process.pid} ${token}\n`;
-  const deadline = Date.now() + LOCK_WAIT_MS;
+  const deadline = Date.now() + waitMs;
   while (!tryCreateLock(lock, text, token)) {
     const seen = readLock(lock);
-    if (seen && isStale(seen)) {
-      breakLock(lock, seen, token);
-      continue;
-    }
-    if (Date.now() > deadline) throw new Failure(".partial/.lock", "ballot-locked");
+    // Gone, or stale and removed by this run: try again at once.
+    if (!seen || (olderThan(seen, LOCK_STALE_MS) && breakLock(lock, seen, token))) continue;
+    if (Date.now() > deadline) throw new Failure(".lock", "ballot-locked");
     sleep(50);
   }
   try {
+    removeLeftoverTemps(lockDir);
     return body();
   } finally {
     if (readLock(lock)?.text === text) fs.rmSync(lock, { force: true });
@@ -156,22 +162,20 @@ const recover = (ballotDir) => {
   if (!fs.existsSync(partialDir)) return;
   const manifest = readManifest(ballotDir);
   for (const name of fs.readdirSync(partialDir)) {
-    // The locks; other .lock* files are lock temp files, left by a crash once
-    // they are past the grace period (a live waiter's is only milliseconds old).
-    if (name === ".lock" || name === ".lock.break") continue;
-    if (name.startsWith(".lock")) {
-      const leftover = readLock(path.join(partialDir, name));
-      if (leftover && Date.now() - leftover.mtimeMs > LOCK_GRACE_MS) {
-        fs.rmSync(path.join(partialDir, name), { force: true });
-      }
-      continue;
-    }
     const partial = path.join(partialDir, name);
-    for (const rel of livePathsFor(manifest, name).filter((p) => SAFE_PATH.test(p))) {
-      const target = path.join(ballotDir, rel);
-      if (fs.existsSync(target)) continue;
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.linkSync(partial, target);
+    const paths = livePathsFor(manifest, name).filter((p) => SAFE_PATH.test(p));
+    // Never place a partial whose content is not what its manifest line names.
+    if (
+      paths.length &&
+      fs.statSync(partial).isFile() &&
+      sha256(fs.readFileSync(partial)) === name
+    ) {
+      for (const rel of paths) {
+        const target = path.join(ballotDir, rel);
+        if (fs.existsSync(target)) continue;
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.linkSync(partial, target);
+      }
     }
     fs.rmSync(partial, { recursive: true, force: true });
   }
@@ -197,9 +201,10 @@ const save = (ballotDir, dir, name, text) => {
   const manifestText = fs.existsSync(manifestFile) ? fs.readFileSync(manifestFile, "utf8") : "";
   if (manifestText && !manifestText.endsWith("\n")) throw new Failure(MANIFEST, "manifest-invalid");
   const data = Buffer.from(text, "utf8");
-  const hash = crypto.createHash("sha256").update(data).digest("hex");
+  const hash = sha256(data);
 
   const partial = path.join(ballotDir, ".partial", hash);
+  fs.mkdirSync(path.dirname(partial), { recursive: true });
   writeSynced(partial, data, "wx");
   crashPoint("after-partial");
 
