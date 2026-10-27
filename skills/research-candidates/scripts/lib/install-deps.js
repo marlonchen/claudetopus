@@ -15,7 +15,7 @@ const { SKILL_DIR, depsDir } = require("./deps");
 const main = () => {
   const dir = depsDir();
   if (fs.existsSync(path.join(dir, "node_modules"))) {
-    process.stdout.write(`${dir} installed\n`);
+    process.stdout.write("- deps-installed\n");
     return;
   }
   const tmp = `${dir}.tmp-${process.pid}`;
@@ -27,11 +27,12 @@ const main = () => {
   const npm = spawnSync(
     "npm",
     ["ci", "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"],
-    { cwd: tmp, stdio: "inherit" },
+    // npm's own output goes to stderr; stdout holds only the result line.
+    { cwd: tmp, stdio: ["ignore", process.stderr, process.stderr] },
   );
   if (npm.status !== 0) {
     fs.rmSync(tmp, { recursive: true, force: true });
-    process.stdout.write(`${dir} npm-ci-failed\n`);
+    process.stdout.write("- npm-ci-failed\n");
     process.exitCode = 1;
     return;
   }
@@ -42,7 +43,7 @@ const main = () => {
     fs.rmSync(tmp, { recursive: true, force: true });
     if (!fs.existsSync(path.join(dir, "node_modules"))) throw error;
   }
-  process.stdout.write(`${dir} installed\n`);
+  process.stdout.write("- deps-installed\n");
 };
 
 module.exports = { main };

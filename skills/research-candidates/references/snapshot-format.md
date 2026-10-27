@@ -60,7 +60,8 @@ Like every script, it prints only `location code [key]` lines (Rule 5) and exits
 - Arguments: `usage`, `bad-ballot`, `bad-url`, `unknown-ballot`, `unknown-contest`, `unknown-subject`, `bad-name`.
 - `tiers.yaml`, located by the entry's line: `tiers-invalid`, `tiers-statements-only`, `tiers-no-owner`, `tiers-no-source`, `tiers-owner-not-statements`, `tiers-unknown-owner`.
 - Data files: `file-missing`, `yaml-invalid`, `ballot-invalid`.
-- The save: `owner-not-subject`, `unsafe-value` (a front matter value holding a control character or `---`, located by its key), `ballot-locked`, `deps-missing`.
+- The save: `owner-not-subject`, `unsafe-value` (a front matter value holding a control character or `---`, located by its key), `ballot-locked`, `snapshot-exists` (a file appeared at the chosen path after its manifest line was written, which only a writer that skips the script can cause), `deps-missing`.
+- Anything else is a bug: `internal-error`, with the stack on stderr.
 
 ## Names
 

@@ -25,7 +25,7 @@ const entry = (match, fields = {}) => ({
 });
 const best = (entries, url) => matchUrl(entries, new URL(url))?.match ?? null;
 
-describe("tiers: host match on dot-label boundaries", () => {
+describe("source-tiers.md: host match on dot-label boundaries", () => {
   const entries = [entry("county.example.gov")];
   it("matches the host and its subdomains", () => {
     assert.equal(best(entries, "https://county.example.gov/x"), "county.example.gov");
@@ -44,7 +44,7 @@ describe("tiers: host match on dot-label boundaries", () => {
   });
 });
 
-describe("tiers: path prefix on segment boundaries, longest match wins", () => {
+describe("source-tiers.md: path prefix on segment boundaries, longest match wins", () => {
   const entries = [entry("news.example.com"), entry("news.example.com/opinion/")];
   it("matches the prefix itself and paths under it", () => {
     assert.equal(best(entries, "https://news.example.com/opinion"), "news.example.com/opinion/");
@@ -62,7 +62,7 @@ describe("tiers: path prefix on segment boundaries, longest match wins", () => {
   });
 });
 
-describe("tiers: match values", () => {
+describe("source-tiers.md: a match is a host and an optional path prefix", () => {
   it("accepts a host with an optional path prefix only", () => {
     assert.deepEqual(parseMatch("County.Example.gov/Elections/"), {
       host: "county.example.gov",
@@ -81,7 +81,7 @@ describe("tiers: match values", () => {
   });
 });
 
-describe("tiers: across redirect hops", () => {
+describe("source-tiers.md: across redirect hops", () => {
   const t1 = entry("a.gov", { tier: "T1", source: "A" });
   const t3 = entry("b.org", { tier: "T3", source: "B" });
   const t1s = entry("c.gov", { tier: "T1", statements_only: true, source: "C" });
@@ -97,13 +97,19 @@ describe("tiers: across redirect hops", () => {
     assert.equal(combineHops([t1s, t3]).statements_only, true);
   });
   it("refuses a hop with no match and an owner that changes", () => {
-    assert.deepEqual(combineHops([t1, null]), { refused: "domain not in tiers.yaml" });
+    assert.deepEqual(combineHops([t1, null]).refused, {
+      code: "domain-not-in-tiers",
+      reason: "domain not in tiers.yaml",
+    });
     const campaign = entry("jane.com", { tier: "T4", statements_only: true, owner: "jane" });
-    assert.deepEqual(combineHops([t1, campaign]), { refused: "owner changes across redirects" });
+    assert.deepEqual(combineHops([t1, campaign]).refused, {
+      code: "owner-changes-across-redirects",
+      reason: "owner changes across redirects",
+    });
   });
 });
 
-describe("repo guard: GitHub remote URLs", () => {
+describe("Rule 8: only a GitHub URL can be confirmed private", () => {
   it("reads owner/repo from https, ssh and scp-like URLs", () => {
     for (const url of [
       "https://github.com/me/elections.git",
@@ -148,13 +154,20 @@ describe("fetch-snapshot's output codes are the ones snapshot-format.md lists", 
     const listed = new Set([...section.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]));
     const libDir = path.join(SKILL_DIR, "scripts", "lib");
     const emitted = new Set();
-    for (const file of fs.readdirSync(libDir)) {
+    // install-deps is not fetch-snapshot; README.md lists its two codes.
+    for (const file of fs.readdirSync(libDir).filter((f) => f !== "install-deps.js")) {
       const source = fs.readFileSync(path.join(libDir, file), "utf8");
-      // new Failure(location, "code") and the refusal-code table's values.
-      for (const m of source.matchAll(/new Failure\([^;]*?, "([a-z-]+)"/g)) emitted.add(m[1]);
-      for (const m of source.matchAll(/^ {2}"[^"]+": "([a-z-]+)",$/gm)) emitted.add(m[1]);
+      // new Failure(location, "code"), refusals ({ code: "..." }, refuse(url, "...")) and
+      // the fixed "- code" lines a command prints itself.
+      for (const pattern of [
+        /new Failure\([^;]*?, "([a-z-]+)"/g,
+        /code: "([a-z-]+)"/g,
+        /refuse\(url, "([a-z-]+)"/g,
+        /"- ([a-z-]+)/g,
+      ]) {
+        for (const m of source.matchAll(pattern)) emitted.add(m[1]);
+      }
     }
-    emitted.add("http-error");
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
     for (const code of emitted) assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });

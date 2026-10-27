@@ -10,7 +10,7 @@
 // place, so recovery and saves hold a per-ballot lock (.partial/.lock, holding
 // the owner's pid; a lock whose process is gone is stale and taken over).
 //
-// RESEARCH_CANDIDATES_TEST_CRASH=after-partial|after-manifest kills the
+// RESEARCH_CANDIDATES_TEST_CRASH=after-partial|after-manifest|after-link kills the
 // process with SIGKILL right after that step. Tests only.
 
 const crypto = require("node:crypto");
@@ -124,6 +124,8 @@ const writeSynced = (file, data, flag) => {
 // Save `text` as sources/<dir>/<name>.md, or the next free numeric suffix.
 // Returns the path relative to the ballot directory. Call holding the lock.
 const save = (ballotDir, dir, name, text) => {
+  // A run that crashed since this one's first recovery left partials too.
+  recover(ballotDir);
   const data = Buffer.from(text, "utf8");
   const hash = crypto.createHash("sha256").update(data).digest("hex");
 
@@ -143,9 +145,18 @@ const save = (ballotDir, dir, name, text) => {
   writeSynced(path.join(ballotDir, MANIFEST), `${hash}  ${rel}\n`, "a");
   crashPoint("after-manifest");
 
+  // Only a writer that skips the lock can take the path now. The manifest line
+  // is already written and is never changed, so report it rather than retry;
+  // check then reports the line as snapshot-hash.
   const target = path.join(ballotDir, rel);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.linkSync(partial, target);
+  try {
+    fs.linkSync(partial, target);
+  } catch (error) {
+    if (error.code === "EEXIST") throw new Failure(rel, "snapshot-exists");
+    throw error;
+  }
+  crashPoint("after-link");
   fs.rmSync(partial);
   return rel;
 };

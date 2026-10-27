@@ -12,23 +12,11 @@ const path = require("node:path");
 const { BALLOT_ID_PATTERN, ELECTION_PATTERN, ID_PATTERN } = require("./constants");
 const { loadBallot, loadTiers } = require("./data-files");
 const { load } = require("./deps");
-const { cleanUrl, fetchPage } = require("./fetch-page");
+const { cleanUrl, fetchPage, isHttp } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
 const { Failure, runCommand } = require("./output");
 const { guardRepo } = require("./repo-guard");
 const { recover, save, withLock } = require("./snapshot-store");
-
-// unfetchable.md reason -> output code. An HTTP status reason is http-error.
-const REFUSAL_CODES = {
-  "domain not in tiers.yaml": "domain-not-in-tiers",
-  "owner changes across redirects": "owner-changes-across-redirects",
-  "not http": "not-http",
-  "network error": "network-error",
-  "bad redirect": "bad-redirect",
-  "too many redirects": "too-many-redirects",
-  "not html": "not-html",
-  "too large": "too-large",
-};
 
 // Local date, as for `fetched:`.
 const today = () => {
@@ -60,15 +48,18 @@ const parseArgs = (argv) => {
   } catch {
     throw new Failure("-", "bad-url");
   }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Failure("-", "bad-url");
-  }
+  if (!isHttp(parsed)) throw new Failure("-", "bad-url");
   return { ballot, contest, subject, name, url: parsed };
 };
 
 // The contest and subject must be a pair ballot.yaml lists (or _race), so the
 // target path under sources/ is always built from known ids.
 const checkTarget = (root, { ballot, contest, subject, name }) => {
+  // Checked here too, so an id ballot-check would fail never becomes a path.
+  if (!ID_PATTERN.test(contest)) throw new Failure(`${ballot}/ballot.yaml`, "unknown-contest");
+  if (subject !== "_race" && !ID_PATTERN.test(subject)) {
+    throw new Failure(`${contest}/${subject}`, "unknown-subject");
+  }
   const contests = loadBallot(root, ballot).contests;
   const listed = contests.get(contest);
   if (!listed) throw new Failure(`${ballot}/ballot.yaml`, "unknown-contest");
@@ -113,8 +104,8 @@ const main = (argv) =>
 
     const page = await fetchPage(entries, args.url);
     if (page.refused) {
-      logUnfetchable(ballotDir, page.url, where, page.refused);
-      throw new Failure(where, REFUSAL_CODES[page.refused] ?? "http-error");
+      logUnfetchable(ballotDir, page.url, where, page.refused.reason);
+      throw new Failure(where, page.refused.code);
     }
     // A campaign site is filed only under its own candidate.
     if (target.subjects.has(page.tiers.owner) && page.tiers.owner !== args.subject) {

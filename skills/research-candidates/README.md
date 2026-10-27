@@ -2,7 +2,7 @@
 
 Candidate research skill for Claude Code. For each voter address it builds a ballot guide where every claim is backed by a verbatim excerpt from a saved source, then publishes one static, phone-friendly page per ballot.
 
-See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place. Of the scripts in SKILL.md's script table, only `fetch-snapshot`'s plain fetch of an HTML page is built; its other modes, the other scripts and the fonts directory [page.md](references/page.md) embeds from are not.
+See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place. Of the scripts in SKILL.md's script table, only `fetch-snapshot`'s plain fetch of an HTML page is built, still without its Rule 7 privacy refusals; its other modes, the other scripts and the fonts directory [page.md](references/page.md) embeds from are not.
 
 This directory is the skill's *source*. The research data it works on (addresses, ballots, snapshots, review lists, articles) belongs in a separate **private** repo and must never be committed here: this repo is public.
 
@@ -39,7 +39,7 @@ The scripts need Node.js 20.19 or later and three npm packages, pinned to exact 
 node .claude/skills/research-candidates/scripts/install-deps
 ```
 
-This runs `npm ci --ignore-scripts` from the skill's lockfile, which checks every package against the lockfile's integrity hashes and runs no package install scripts, into `~/.cache/research-candidates/<lockfile hash>/` (`$XDG_CACHE_HOME` if set; `RESEARCH_CANDIDATES_DEPS` names another directory). Nothing is written under the installed skill, because publish refuses any file there that the pinned commit's tree lacks. Never run `npm install` inside `.claude/skills/research-candidates`. A new lockfile gets a new cache directory, so an upgrade never runs against the old packages; when a script reports `scripts/install-deps deps-missing`, run the command above.
+This runs `npm ci --ignore-scripts` from the skill's lockfile, which checks every package against the lockfile's integrity hashes and runs no package install scripts, into `~/.cache/research-candidates/<lockfile hash>/` (`$XDG_CACHE_HOME` if set; `RESEARCH_CANDIDATES_DEPS` names another directory). Nothing is written under the installed skill, because publish refuses any file there that the pinned commit's tree lacks. Never run `npm install` inside `.claude/skills/research-candidates`. It prints `- deps-installed`, or `- npm-ci-failed` with npm's own messages on stderr. A new lockfile gets a new cache directory, so an upgrade never runs against the old packages; when a script reports `scripts/install-deps deps-missing`, run the command above.
 
 ## Publishing
 

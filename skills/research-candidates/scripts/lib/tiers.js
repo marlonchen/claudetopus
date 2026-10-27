@@ -48,11 +48,17 @@ const matchUrl = (entries, url) => {
 };
 
 // Combine the matched entry of every hop, first to last. Returns
-// { tier, statements_only, owner, source } or { refused: reason }.
+// { tier, statements_only, owner, source } or { refused: { code, reason } }.
 const combineHops = (matches) => {
-  if (matches.some((m) => !m)) return { refused: "domain not in tiers.yaml" };
+  if (matches.some((m) => !m)) {
+    return { refused: { code: "domain-not-in-tiers", reason: "domain not in tiers.yaml" } };
+  }
   const owners = new Set(matches.map((m) => m.owner));
-  if (owners.size > 1) return { refused: "owner changes across redirects" };
+  if (owners.size > 1) {
+    return {
+      refused: { code: "owner-changes-across-redirects", reason: "owner changes across redirects" },
+    };
+  }
   const strictest = matches.reduce((a, b) => (TIER_RANK[b.tier] > TIER_RANK[a.tier] ? b : a));
   return {
     tier: strictest.tier,

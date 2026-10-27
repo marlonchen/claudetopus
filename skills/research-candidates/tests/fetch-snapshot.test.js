@@ -2,8 +2,19 @@
 
 const assert = require("node:assert");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
-const { BALLOT, articlePage, makeDataRepo, runCli, startServer } = require("./harness");
+const { depsDir } = require("../scripts/lib/deps");
+const {
+  BALLOT,
+  DEFAULT_BALLOT,
+  articlePage,
+  git,
+  makeDataRepo,
+  runCli,
+  startServer,
+} = require("./harness");
 
 // fetch-snapshot as the researcher and the discovery agent see it: exit code,
 // `location code` lines on stdout, and the files it writes or leaves alone.
@@ -114,7 +125,7 @@ describe("fetch-snapshot saves a tiered HTML page as a write-once snapshot", () 
       `${BALLOT}/snapshots.sha256`,
       `${data.read(`${BALLOT}/snapshots.sha256`)}-  ${rel}\n`,
     );
-    require("node:fs").rmSync(data.file(`${BALLOT}/${rel}`));
+    fs.rmSync(data.file(`${BALLOT}/${rel}`));
     const result = await fetchVia(data, routes, PLAIN);
     assert.equal(result.stdout, "sources/us-house-07/_race/county-page-2.md saved\n");
     assert.ok(!data.exists(`${BALLOT}/${rel}`));
@@ -181,6 +192,12 @@ describe("a page that cannot be saved is logged, never saved", () => {
     "not html",
   );
   logged(
+    "a page larger than the size cap",
+    { headers: { "content-length": String(11 * 1024 * 1024) }, body: "x".repeat(11 * 1024 * 1024) },
+    "too-large",
+    "too large",
+  );
+  logged(
     "a page with no text",
     { body: "<html><body><script>x()</script></body></html>" },
     "no-readable-text",
@@ -205,24 +222,22 @@ describe("output holds only location code [key] lines", () => {
 describe("a pinned install stays its git tree", () => {
   // The skill-pin gate refuses any file under the installed skill that its
   // tree lacks, so running a command must not leave one (no node_modules).
-  const skillDir = require("node:path").join(__dirname, "..");
+  const skillDir = path.join(__dirname, "..");
   const untracked = () =>
-    require("./harness")
-      .git(
-        skillDir,
-        "ls-files",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "--exclude=.DS_Store",
-        ".",
-      )
+    git(
+      skillDir,
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--exclude=.DS_Store",
+      ".",
+    )
       .split("\n")
       .filter(Boolean);
 
   it("loads its dependencies from outside the skill directory", async () => {
-    const { depsDir } = require("../scripts/lib/deps");
-    assert.ok(require("node:path").relative(skillDir, depsDir()).startsWith(".."));
+    assert.ok(path.relative(skillDir, depsDir()).startsWith(".."));
     const before = untracked();
     const data = repo();
     const result = await fetchVia(
@@ -290,6 +305,18 @@ describe("snapshot-format.md, Manifest: a crash at any step leaves a state the n
     ]);
     assert.equal(rerun.status, 1);
     assert.ok(data.exists(`${BALLOT}/sources/us-house-07/_race/county-page.md`));
+    assertConsistent(data);
+  });
+
+  it("drops a partial left behind after its file was linked into place", async () => {
+    const data = repo();
+    const crashed = await crash(data, "after-link");
+    assert.equal(crashed.signal, "SIGKILL");
+    assert.ok(data.exists(`${BALLOT}/sources/us-house-07/_race/county-page.md`));
+    assert.equal(data.list(`${BALLOT}/.partial`).length, 2);
+
+    const rerun = await fetchVia(data, routes, PLAIN);
+    assert.equal(rerun.stdout, "sources/us-house-07/_race/county-page-2.md saved\n");
     assertConsistent(data);
   });
 
@@ -441,6 +468,25 @@ describe("source-tiers.md: the tier, owner and source come only from tiers.yaml"
     assert.equal(unknownSubject.stdout, "us-house-07/pat-example unknown-subject\n");
     const traversal = await fetchSnapshot(data, [BALLOT, "us-house-07", "_race", "../../x", url]);
     assert.equal(traversal.stdout, "us-house-07/_race bad-name\n");
+  });
+});
+
+describe("ballot-format.md, Ids: a path under sources/ is built only from safe ids", () => {
+  it("never builds a path from an id ballot-check would fail, even one ballot.yaml lists", async () => {
+    const data = repo({
+      ballot: DEFAULT_BALLOT.replace("id: us-house-07", "id: ../us-house-07"),
+    });
+    const url = "https://county.example.gov/";
+    const contest = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, [
+      BALLOT,
+      "../us-house-07",
+      "_race",
+      "p",
+      url,
+    ]);
+    assert.equal(contest.stdout, `${BALLOT}/ballot.yaml unknown-contest\n`);
+    assert.ok(!data.exists(`${BALLOT}/sources`));
+    assert.deepEqual(data.list("2026-general"), ["xx-exampleton-1"]);
   });
 });
 
