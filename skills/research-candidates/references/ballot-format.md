@@ -1,6 +1,6 @@
 # Ballot format
 
-`<ballot-id>/ballot.yaml` is typed by the researcher from the saved official sample ballot. The model never supplies contests, candidates or counts.
+`<ballot-id>/ballot.yaml` is typed by the researcher from the saved official sample ballot. The model never supplies contests, candidates, counts or `not_researched`.
 
 ```yaml
 election: 2026-general
@@ -12,9 +12,11 @@ contests:
   - id: us-house-07
     type: candidate
     jurisdiction: XX congressional district 7   # state and district the office covers
+    office_type: federal           # federal | state | local | judicial; sets the Positions issues (sections.md)
     title: Representative in Congress, 7th District   # exactly as printed
     printed_count: 2    # candidate lines counted on the official ballot
     vote_for: 1         # seats to fill, from the printed "Vote for" line
+    not_researched: [Record in public office]   # optional: sections left for later, or all
     candidates:
       - id: jane-example            # directory name under sources/<contest>/
         name: Jane Example          # exactly as printed
@@ -28,7 +30,7 @@ contests:
   - id: supreme-court-retention-a
     type: retention
     jurisdiction: XX supreme court
-    office_type: judicial          # see sections.md; omit for non-judicial offices
+    office_type: judicial          # retention: judicial for a judge; omit for other officials
     title: Shall Justice Pat Example of the Supreme Court be retained in office?   # exactly as printed
     official:
       id: pat-example
@@ -54,7 +56,11 @@ ignored_lines:          # sample-ballot lines that are not contests (instruction
   - Vote for one
 ```
 
-Contest types: `candidate`, `retention` (one judge or official, yes/no), and `measure`. Set `office_type: judicial` on judicial candidate and retention contests; other contests leave it out.
+Contest types: `candidate`, `retention` (one judge or official, yes/no), and `measure`.
+
+Every candidate contest carries an `office_type` from the list in [sections.md](sections.md), which picks its Positions issues; `ballot-check` fails a candidate contest without one or with a value not on that list. A retention contest for a judge carries `office_type: judicial`; other retention contests and measures leave it out.
+
+Any contest may carry `not_researched`, which only the researcher writes: the sections left for later when time is short, each named as in [sections.md](sections.md) without its letter, or `all` for every section apart from On the ballot. `coverage` then requires exactly those sections to be `Not researched yet` ([article-format.md](article-format.md)). `ballot-check` fails a name that is not a section of the contest's type, and On the ballot, which is never left for later. The researcher removes a name once its section is researched.
 
 Candidate contests carry `vote_for`, the number of seats to fill; the page shows "Vote for N" when it is more than 1.
 
@@ -72,11 +78,11 @@ The page shows `display_title` when it is set and `title` otherwise. The ballot 
 - **Companion documents:** `candidate_list`, `pamphlet`, `write_in_list` and `withdrawal_notice` snapshots must be county- or state-wide documents, since the compile agent reads them whole. `ballot-check` fails one whose fetch URL had a query string (`ballot.ledger` records whether it did) or whose body holds a voter-specific value: an address, street line or label from `addresses.yaml`, matched as in the publish privacy scan (SKILL.md step 6.3). It does not apply the scan's ZIP, title, place-name or link checks, which county-wide documents fail by nature. A personalized lookup result is saved only as the sample ballot. A companion that fails, or that the researcher finds personalized, is retired by listing its path under `retired_companions:` in `ballot.yaml`, which keeps it off the `read:` lines; the researcher then saves a county-wide copy.
 - **Private text:** no `private_strings` entry may appear in `ballot.yaml` outside the printed `title` of a contest that has a `display_title` (that title is copied exactly as printed, and the page never shows it). A county can share a word with a private township (Washington Township in Washington County), so when an entry appears in the `state` or `county` field, `ballot-check` fails, names that field, and says to list the township's full name, never the bare shared word. When a `private_strings` entry equals a field the page shows (a candidate's printed `name`, or `display_name` in `publish.yaml`), `ballot-check` fails and names the field's key, never the text; a name that is public by nature (the voter is on the ballot) comes out of `private_strings`, and the researcher keeps every other entry. When an entry's digit run reads as a year (1900 to 2099, as in a precinct named 2024), `ballot-check` warns, without quoting the entry, that the publish privacy scan matches that run only next to the entry's other words (SKILL.md step 6.3).
 - **Party names:** `party` is copied exactly as printed. When the ballot prints an abbreviation, the researcher adds `party_name`, the party's full name as an official `_ballot/` source (the candidate list or the voter pamphlet) spells it out, and the page shows that ([page.md](page.md)). `ballot-check` fails, with no `party_name`, a `party` with any word written as an abbreviation: all capitals (`D`, `DEM`), or holding a period, slash or hyphen (`Dem.`, `D.F.L.`, `DEM/WF`, `D-NPL`, `Ind. Am.`). A full name such as `Green` or `Working Families` passes; one printed in capitals (`GREEN PARTY`) needs a `party_name`, which may be the same words as an official source writes them, and the check that a `_ballot/` snapshot contains it ignores case. It also fails a `party_name` that no `_ballot/` snapshot contains, so the full name is never the researcher's own guess.
-- **Ids:** every contest, candidate and official `id` matches `^[a-z0-9]+(-[a-z0-9]+)*$`, so an id is always a safe directory name, never collides with `_race` or `_ballot`, and never holds `--`, which page anchors use to join a contest id and a section ([page.md](page.md)). A contest id may not be `ballot`, the page's own anchor for the ballot list. Contest ids become page anchors, so `ballot-check` fails a contest id that, with hyphens read as spaces, contains a `private_strings` entry or the printed `title` of a contest with a `display_title`.
+- **Ids:** every contest, candidate and official `id` matches `^[a-z0-9]+(-[a-z0-9]+)*$`, so an id is always a safe directory name, never collides with `_race` or `_ballot`, and never holds `--`, which page anchors use to join a contest id and a section ([page.md](page.md)). A contest id may not be `ballot`, the page's own anchor for the ballot list. A candidate or official id names one person across the data repo, since a `tiers.yaml` `owner` is a bare id: `ballot-check` fails an id that two `ballot.yaml` files give different printed names, and a different person with the same name gets another id (`john-smith-2`). Contest ids become page anchors, so `ballot-check` fails a contest id that, with hyphens read as spaces, contains a `private_strings` entry or the printed `title` of a contest with a `display_title`.
 - **Ballot ids:** the ballot id, the `<ballot-id>` directory name, is exactly `<state>-<county>-<n>`: `state` from `ballot.yaml` in lower case; `county` from `ballot.yaml` with its letters folded to ASCII (ñ reads as n), apostrophes (' or ’) dropped, one trailing City and Borough, Borough, Census Area, Municipality, County or Parish dropped, longest first (never city alone, so St. Louis city and St. Louis County stay apart), lower case, and every other run of spaces or punctuation read as one hyphen; and a 1-2 digit number the researcher picks to tell ballots in one county apart (the example above is `xx-exampleton-1`; Doña Ana County gives nm-dona-ana-1, and Juneau City and Borough gives ak-juneau-1). So it matches `^[a-z]{2}-[a-z]+(-[a-z]+)*-[1-9][0-9]?$` and holds no word the researcher chose. Ending in a number keeps the privacy scan from matching it in ordinary page text. Agents read paths under it, so `ballot-check` also fails a ballot id whose number equals any digit run of any `private_strings` entry: with `Precinct 12` listed, 12 fails, so pick another. The county words are fixed by `ballot.yaml` and already public through the contest list, and the Private text rule already fails a `private_strings` entry in `county`, so the ballot id needs no separate check of them. It checks the ballot directories under every `<election>` directory in the data repo (the Layout gives their pattern), not only the current one, so an id made under an older template is caught. Paths in `ballot.ledger` and `archives.tsv` are relative to the ballot directory, so they never hold the id. To rename a ballot id, the researcher renames its directory and its entry in `addresses.yaml`, then reruns `ballot-check`.
 - **Slug:** `slug` must match `^[a-z0-9]{6}$` and no other `ballot.yaml` in the data repo may use it, so a copied `ballot.yaml` can never publish over another ballot's page.
 - **Write-ins:** `certified_write_in` candidates skip the printed-ballot check and must appear verbatim in the `role: write_in_list` snapshot. If the county publishes none, the page says "Certified write-ins: none published".
 - **Withdrawals:** a `withdrawn_still_printed` candidate must also appear verbatim in a `role: withdrawal_notice` snapshot, the county or state notice of the withdrawal, so a mistyped status can never hide a candidate's record. A candidate list is not proof, since it names every candidate. Their On the ballot claim cites that snapshot. When the county or state publishes no such notice, the candidate stays `on_ballot` and gets every section.
-- **Tiers:** `ballot-check` fails any `tiers.yaml` `match` that contains, matched as in the publish privacy scan, a `private_strings` entry of any ballot in the data repo, or any address, street line, label or ZIP code from `addresses.yaml`, because the discovery agent and its web searches see every `tiers.yaml` host. `fetch-snapshot` runs the same check each time it loads `tiers.yaml`.
+- **Tiers:** `ballot-check` fails any `tiers.yaml` `match` or `source` that contains, matched as in the publish privacy scan, a `private_strings` entry of any ballot in the data repo, or any address, street line, label or ZIP code from `addresses.yaml`, because the discovery agent and its web searches see every `tiers.yaml` host, and every `source` name can reach the page. `fetch-snapshot` runs the same check each time it loads `tiers.yaml`.
 
 Corrections to the sample ballot become a new snapshot with `supersedes` set, plus an edit to `ballot.yaml`. The old snapshot stays. `ballot-check` lists every `supersedes` link and passes only when each one is named in a `confirmed_supersedes:` list the researcher keeps in `ballot.yaml`, so a planted snapshot can never become the authoritative ballot.

@@ -13,7 +13,8 @@ body{margin:0;background:#e6e7e4;font:17px/1.5 var(--body);color:var(--fg);displ
 .later{opacity:.45}
 h1{font:600 24px/1.2 var(--serif);margin:4px 0 4px}
 h2{font:600 19px/1.3 var(--serif);margin:24px 0 8px}
-h3{font:700 17px/1.4 var(--body);margin:0}
+h3,h4{font:700 17px/1.4 var(--body);margin:0}
+h3.issue{font:600 17px/1.4 var(--serif);margin:16px 0 4px}
 .meta,.party,.src{color:var(--muted);font-size:14px}
 .party{font-weight:400}
 a,.link{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
@@ -59,17 +60,17 @@ details.src .note{font-size:17px;color:var(--fg)}
   <li><span class="row"><span>U.S. Senate</span><span class="st ok">Ready<span class="chev" aria-hidden="true">›</span></span></span></li>
   <li><a class="row" href="#us-house-05"><span>U.S. House, District 5</span><span class="st ok">Ready<span class="chev" aria-hidden="true">›</span></span></a></li>
   <li><span class="row"><span>Governor</span><span class="st ok">Ready<span class="chev" aria-hidden="true">›</span></span></span></li>
-  <li><span class="row"><span>State Senate, District 26</span><span class="st">Not ready yet<span class="chev" aria-hidden="true">›</span></span></span></li>
+  <li><span class="row"><span>State Senate, District 26</span><span class="st">Not researched yet<span class="chev" aria-hidden="true">›</span></span></span></li>
   <li><a class="row" href="#school-director"><span>School Director<span class="sub">Vote for 3</span></span><span class="st">Not ready yet<span class="chev" aria-hidden="true">›</span></span></a></li>
   <li><a class="row" href="#question-1"><span>Question 1: Open space bond</span><span class="st ok">Ready<span class="chev" aria-hidden="true">›</span></span></a></li>
  </ul>
 </main></div>
 
-<!-- 2 · Candidate race, topic-first stack: its top; Background and Record run on below the fold (D2, 2A, 6A, 7A, 8A, 13A, 14A) -->
+<!-- 2 · Candidate race, topic-first stack: its top; Background and Record run on below the fold, Record not researched yet (D2, 2A, 6A, 7A, 8A, 13A, 14A) -->
 <div><div class="label">2 · One race, by topic</div><section class="phone" id="us-house-05">
  <a class="link" href="#ballot"><span aria-hidden="true">←</span> All races</a>
  <h1>U.S. House, District 5</h1>
- <div class="banner"><span aria-hidden="true">✓</span> 3 of 3 candidates on the official ballot covered</div>
+ <div class="banner"><span aria-hidden="true">✓</span> 3 of 3 candidates on the official ballot · 1 topic not researched yet</div>
  <div class="meta">Updated Oct 24, 2026 · Not affiliated with any campaign or party · <a href="#ballot">About this guide <span aria-hidden="true">↑</span></a></div>
  <nav class="chips" aria-label="Topics in this race"><a class="chip" href="#us-house-05--on-the-ballot">On the ballot</a><a class="chip" href="#us-house-05--background">Background</a><a class="chip" href="#us-house-05--record">Record</a><a class="chip" href="#us-house-05--money">Money</a><a class="chip" href="#us-house-05--positions">Positions</a><a class="chip" href="#us-house-05--controversies">Controversies</a></nav>
  <h2 id="us-house-05--on-the-ballot">On the ballot</h2>
@@ -87,9 +88,7 @@ details.src .note{font-size:17px;color:var(--fg)}
  <div class="cand"><h3>Cand. B <span class="party">· Republican</span></h3><div class="unk"><span aria-hidden="true">○</span> Unknown: no source found.</div></div>
  <div class="cand"><h3>Cand. C <span class="party">· Libertarian</span></h3><div class="unk"><span aria-hidden="true">○</span> Unknown: no source found.</div></div>
  <h2 id="us-house-05--record">Record</h2>
- <div class="cand"><h3>Cand. A <span class="party">· Democratic</span></h3><div class="unk"><span aria-hidden="true">○</span> Unknown: no source found.</div></div>
- <div class="cand"><h3>Cand. B <span class="party">· Republican</span></h3><div class="unk"><span aria-hidden="true">○</span> Unknown: no source found.</div></div>
- <div class="cand"><h3>Cand. C <span class="party">· Libertarian</span></h3><div class="unk"><span aria-hidden="true">○</span> Unknown: no source found.</div></div>
+ <div class="unk">Not researched yet. Research on this topic is still to come, for every candidate at once. Check back; this link stays the same.</div>
 </section></div>
 
 <!-- 2b · Same race, Money section with a receipt open -->
@@ -108,18 +107,19 @@ details.src .note{font-size:17px;color:var(--fg)}
   <details class="src"><summary><span class="lab"><span class="badge">Official record</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. B, Money section</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
 </section></div>
 
-<!-- 2c · Positions, after Money in page order -->
-<div><div class="label">2c · Same race, Positions</div><section class="phone">
+<!-- 2c · Positions, after Money in page order: its first issue; the other issues run on below -->
+<div><div class="label">2c · Same race, Positions, first issue</div><section class="phone">
  <h2 id="us-house-05--positions" style="margin-top:4px">Positions</h2>
- <div class="cand"><h3>Cand. A <span class="party">· Democratic</span></h3>
+ <h3 class="issue">Taxes and spending</h3>
+ <div class="cand"><h4>Cand. A <span class="party">· Democratic</span></h4>
   <div><span class="says">Says:</span> would expand the Child Tax Credit.</div>
   <blockquote>“Expanding the Child Tax Credit is my first priority.”<cite>Vote411 questionnaire</cite></blockquote>
-  <details class="src"><summary><span class="lab"><span class="badge">Candidate's own words</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. A, Positions section</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
- <div class="cand"><h3>Cand. B <span class="party">· Republican</span></h3>
+  <details class="src"><summary><span class="lab"><span class="badge">Candidate's own words</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. A, Positions section, Taxes and spending</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
+ <div class="cand"><h4>Cand. B <span class="party">· Republican</span></h4>
   <div><span class="says">Says:</span> would make the 2017 tax cuts permanent.</div>
   <blockquote>“I will fight to make the 2017 tax cuts permanent for working families.”<cite>Campaign website</cite></blockquote>
-  <details class="src"><summary><span class="lab"><span class="badge">Candidate's own words</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. B, Positions section</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
- <div class="cand"><h3>Cand. C <span class="party">· Libertarian</span></h3>
+  <details class="src"><summary><span class="lab"><span class="badge">Candidate's own words</span><span class="vh">.</span>&nbsp;<span aria-hidden="true">·</span></span><span class="link">Source<span class="vh"> for Cand. B, Positions section, Taxes and spending</span> <span class="dc" aria-hidden="true">▸</span><span class="do" aria-hidden="true">▾</span></span></summary></details></div>
+ <div class="cand"><h4>Cand. C <span class="party">· Libertarian</span></h4>
   <div class="unk"><span aria-hidden="true">○</span> Unknown: no source found.</div></div>
 </section></div>
 
