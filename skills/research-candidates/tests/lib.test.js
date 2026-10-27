@@ -6,6 +6,8 @@ const path = require("node:path");
 const { describe, it } = require("node:test");
 const constants = require("../scripts/lib/constants");
 const { githubRepo } = require("../scripts/lib/repo-guard");
+const os = require("node:os");
+const { withLock } = require("../scripts/lib/snapshot-store");
 const { combineHops, matchUrl, parseMatch } = require("../scripts/lib/tiers");
 
 // Seam 2 (spec, Testing Decisions): the shared library's edge cases that would
@@ -170,5 +172,21 @@ describe("fetch-snapshot's output codes are the ones snapshot-format.md lists", 
     }
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
     for (const code of emitted) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+  });
+});
+
+describe("snapshot-format.md, Manifest: the ballot lock", () => {
+  it("is released only while this run still owns it", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-lock-"));
+    try {
+      const lock = path.join(dir, ".partial", ".lock");
+      withLock(dir, () => fs.writeFileSync(lock, "1 another-owner\n"));
+      assert.equal(fs.readFileSync(lock, "utf8"), "1 another-owner\n");
+      fs.rmSync(lock);
+      withLock(dir, () => assert.ok(fs.existsSync(lock)));
+      assert.ok(!fs.existsSync(lock));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

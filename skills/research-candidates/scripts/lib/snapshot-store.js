@@ -11,8 +11,9 @@
 // the owner's pid and a random token, created whole by an exclusive link so it
 // is never empty. A lock is stale when its process is gone, when it is older
 // than any save could take (a reused pid), or when it is unreadable and not
-// brand new. A stale lock is taken over by renaming it aside first, so only one
-// waiter can take it, and a run removes the lock only while it holds its token.
+// brand new. Removing a stale lock is serialized by a second lock and checked
+// against the very file judged stale (breakLock), so a live lock is never moved
+// or removed, and a run removes its own lock only while it still holds its token.
 //
 // RESEARCH_CANDIDATES_TEST_CRASH=after-partial|after-manifest|after-link kills the
 // process with SIGKILL right after that step. Tests only.
@@ -50,7 +51,8 @@ const alive = (pid) => {
 // The lock's text, or null when there is no lock.
 const readLock = (lock) => {
   try {
-    return { text: fs.readFileSync(lock, "utf8"), mtimeMs: fs.statSync(lock).mtimeMs };
+    const { mtimeMs, ino } = fs.statSync(lock);
+    return { text: fs.readFileSync(lock, "utf8"), mtimeMs, ino };
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
@@ -79,24 +81,22 @@ const tryCreateLock = (lock, text, token) => {
   }
 };
 
-// Move a stale lock aside. Only one waiter's rename can take it; if what it took
-// is not the lock it judged stale, a new owner got there first, so put it back.
-const takeOver = (lock, seen, token) => {
-  const aside = `${lock}.stale-${token}`;
+// Remove a stale lock. Only the holder of .lock.break may remove .lock, and only
+// while .lock is still the file judged stale (same text and inode). A break lock
+// left by a crash is itself stale after the grace period.
+const breakLock = (lock, seen, token) => {
+  const brk = `${lock}.break`;
+  if (!tryCreateLock(brk, `${process.pid} ${token}\n`, token)) {
+    const held = readLock(brk);
+    if (held && Date.now() - held.mtimeMs > LOCK_GRACE_MS) fs.rmSync(brk, { force: true });
+    return;
+  }
   try {
-    fs.renameSync(lock, aside);
-  } catch (error) {
-    if (error.code === "ENOENT") return;
-    throw error;
+    const now = readLock(lock);
+    if (now && now.text === seen.text && now.ino === seen.ino) fs.rmSync(lock, { force: true });
+  } finally {
+    fs.rmSync(brk, { force: true });
   }
-  if (fs.readFileSync(aside, "utf8") !== seen.text) {
-    try {
-      fs.linkSync(aside, lock);
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-    }
-  }
-  fs.rmSync(aside, { force: true });
 };
 
 // Run `body` holding the ballot's lock.
@@ -110,7 +110,7 @@ const withLock = (ballotDir, body) => {
   while (!tryCreateLock(lock, text, token)) {
     const seen = readLock(lock);
     if (seen && isStale(seen)) {
-      takeOver(lock, seen, token);
+      breakLock(lock, seen, token);
       continue;
     }
     if (Date.now() > deadline) throw new Failure(".partial/.lock", "ballot-locked");
@@ -156,7 +156,16 @@ const recover = (ballotDir) => {
   if (!fs.existsSync(partialDir)) return;
   const manifest = readManifest(ballotDir);
   for (const name of fs.readdirSync(partialDir)) {
-    if (name.startsWith(".lock")) continue;
+    // The locks; other .lock* files are lock temp files, left by a crash once
+    // they are past the grace period (a live waiter's is only milliseconds old).
+    if (name === ".lock" || name === ".lock.break") continue;
+    if (name.startsWith(".lock")) {
+      const leftover = readLock(path.join(partialDir, name));
+      if (leftover && Date.now() - leftover.mtimeMs > LOCK_GRACE_MS) {
+        fs.rmSync(path.join(partialDir, name), { force: true });
+      }
+      continue;
+    }
     const partial = path.join(partialDir, name);
     for (const rel of livePathsFor(manifest, name).filter((p) => SAFE_PATH.test(p))) {
       const target = path.join(ballotDir, rel);

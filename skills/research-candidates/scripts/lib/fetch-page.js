@@ -125,7 +125,7 @@ const fetchPage = async (entries, startUrl) => {
     try {
       bytes = await readCapped(response);
     } catch {
-      // A reset, a timeout or a bad encoding partway through the body.
+      // A reset or a timeout partway through the body.
       return refuse(url, "network-error", "network error");
     }
     if (!bytes) return refuse(url, "too-large", "too large");

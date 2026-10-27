@@ -934,4 +934,57 @@ describe("pre-landing review fixes", () => {
     assert.equal(result.stdout, "- yaml-invalid\n");
     assert.doesNotMatch(result.stdout, /yy-otherplace/);
   });
+
+  it("loads no dependency from outside the install-deps cache, even through NODE_PATH", async () => {
+    const data = repo();
+    data.write("np/yaml/package.json", '{"name":"yaml","main":"i.js"}');
+    data.write("np/yaml/i.js", "module.exports = {};");
+    data.write(".empty-deps/package.json", "{}");
+    data.write(".empty-deps/node_modules/.keep", "");
+    const result = await fetchVia(data, routes, PLAIN, {
+      RESEARCH_CANDIDATES_DEPS: data.file(".empty-deps"),
+      NODE_PATH: data.file("np"),
+    });
+    assert.equal(result.stdout, "scripts/install-deps deps-missing\n");
+    assert.deepEqual(result.seen, []);
+  });
+
+  it("finds its dependencies through a symlinked cache path", async () => {
+    const data = repo();
+    const link = data.file("deps-link");
+    fs.symlinkSync(depsDir(), link);
+    const result = await fetchVia(data, routes, PLAIN, { RESEARCH_CANDIDATES_DEPS: link });
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+  });
+
+  it("logs a body cut off partway as a network error", async () => {
+    const data = repo();
+    const result = await fetchVia(
+      data,
+      {
+        "https://county.example.gov/": {
+          headers: { "content-length": "100000" },
+          body: "<html><body><p>partial",
+        },
+      },
+      PLAIN,
+    );
+    assert.equal(result.stdout, "us-house-07/_race network-error\n");
+    assert.match(data.read(`${BALLOT}/unfetchable.md`), / \| network error\n$/);
+    assert.ok(!data.exists(`${BALLOT}/sources`));
+  });
+
+  it("removes a lock temp file a crash left, and keeps a fresh one", async () => {
+    const data = repo();
+    const old = `${BALLOT}/.partial/.lock.tmp-deadbeef`;
+    const fresh = `${BALLOT}/.partial/.lock.tmp-cafef00d`;
+    data.write(old, "1 x\n");
+    const past = new Date(Date.now() - 60 * 1000);
+    fs.utimesSync(data.file(old), past, past);
+    data.write(fresh, "1 y\n");
+    const result = await fetchVia(data, routes, PLAIN);
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+    assert.ok(!data.exists(old));
+    assert.ok(data.exists(fresh));
+  });
 });
