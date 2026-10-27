@@ -2,7 +2,7 @@
 
 Candidate research skill for Claude Code. For each voter address it builds a ballot guide where every claim is backed by a verbatim excerpt from a saved source, then publishes one static, phone-friendly page per ballot.
 
-See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place. Of the scripts in SKILL.md's script table, only `fetch-snapshot`'s plain fetch of an HTML page is built, still without its Rule 7 privacy refusals or its Wayback copies (`archives.tsv`); its other modes, the other scripts and the fonts directory [page.md](references/page.md) embeds from are not.
+See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place. Of the scripts in SKILL.md's script table, only `fetch-snapshot`'s plain fetch of an HTML page, with its Rule 7 privacy refusals, and its `--ballot` import are built; its `--searched` mode, its Wayback copies (`archives.tsv`), the other scripts and the fonts directory [page.md](references/page.md) embeds from are not.
 
 This directory is the skill's *source*. The research data it works on (addresses, ballots, snapshots, review lists, articles) belongs in a separate **private** repo and must never be committed here: this repo is public.
 
@@ -29,11 +29,22 @@ Pin a commit of this repo you have read that is on its default branch (`main`; p
 
 Never install it at user scope (`--scope user`): Rule 8 lets it run only in the private data repo, so everywhere else it would only load and refuse. To try local changes before they are pushed, see [Install a skill](../../README.md#install-a-skill), and never run `--from-local` into the real data repo: use a throwaway private repo with made-up addresses, so unreviewed code never runs next to real ones.
 
-Then install the scripts' dependencies (next section), and from inside the data repo ask Claude Code to "research my ballot" or "add an address".
+Then install the data repo's Claude Code settings (next section) and the scripts' dependencies (the one after), and from inside the data repo ask Claude Code to "research my ballot" or "add an address".
+
+## Data-repo settings
+
+[data-repo-settings.json](data-repo-settings.json) holds the deny rules Rules 3 and 5 rely on: the model's file edits to `sources/`, `snapshots.sha256`, `search-log/` and `ballot.ledger` under any ballot, and every Bash call holding `--show`, `--ballot` or `--file`, which print or prompt with private text and run only in the researcher's own terminal. Merge its `deny` list into the data repo's `.claude/settings.json` (copy the file there if it has none) and commit it:
+
+```bash
+cd ~/src/github/<user>/elections
+cp .claude/skills/research-candidates/data-repo-settings.json .claude/settings.json   # only when there is none yet
+```
+
+Check the merged file again after each upgrade of the skill. The rules cover Claude Code's own file tools and Bash command text; a Bash command that writes a file some other way is not covered, which is why `snapshots.sha256` also records every snapshot's hash (Rule 3).
 
 ## Dependencies
 
-The scripts need Node.js 20.19 or later and three npm packages, pinned to exact versions in [package.json](package.json) and [package-lock.json](package-lock.json): Readability and linkedom, which reduce an HTML page to readable text, and yaml, which reads the data files and writes snapshot front matter. Install them from the data repo after each install or upgrade of the skill:
+The scripts need Node.js 20.19 or later, poppler's `pdftotext` on `PATH` for PDF sample ballots (`brew install poppler`, or `apt install poppler-utils`), and three npm packages, pinned to exact versions in [package.json](package.json) and [package-lock.json](package-lock.json): Readability and linkedom, which reduce an HTML page to readable text, and yaml, which reads the data files and writes snapshot front matter. Install them from the data repo after each install or upgrade of the skill:
 
 ```bash
 node .claude/skills/research-candidates/scripts/install-deps

@@ -9,35 +9,21 @@
 // A URL holding a private value (Rule 7) is refused before anything else
 // reads it, on every hop, and only its class code is printed: it is never
 // requested and never logged, since the URL is the private text.
+//
+// fetch-snapshot --ballot ... is the researcher's step 2 import (ballot-import.js).
 
 const fs = require("node:fs");
 const path = require("node:path");
+const ballotImport = require("./ballot-import").main;
 const { BALLOT_ID_PATTERN, ELECTION_PATTERN, ID_PATTERN } = require("./constants");
 const { loadBallot, loadPrivateValues, loadTiers } = require("./data-files");
-const { load } = require("./deps");
 const { cleanUrl, fetchPage, isHttp, spellings } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
 const { Failure, runCommand } = require("./output");
 const { refusalCode, scan } = require("./privacy");
 const { guardRepo } = require("./repo-guard");
+const { URL_CLASSES, snapshotText, today } = require("./snapshot-file");
 const { recover, save, withLock } = require("./snapshot-store");
-
-// Local date, as for `fetched:`.
-const today = () => {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
-
-// C0 and C1 controls, DEL, and the line and paragraph separators.
-const hasControl = (value) =>
-  [...value].some((ch) => {
-    const code = ch.codePointAt(0);
-    return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029;
-  });
-
-// The classes a fetched URL may not hold (Rule 7, snapshot-format.md).
-const URL_CLASSES = ["ballot-id", "address", "zip", "label", "private-string", "key"];
 
 const parseArgs = (argv) => {
   if (argv.length !== 5 || argv.some((arg) => arg.startsWith("--"))) {
@@ -89,19 +75,9 @@ const logUnfetchable = (ballotDir, url, where, reason) => {
   fs.appendFileSync(path.join(ballotDir, "unfetchable.md"), line);
 };
 
-// The snapshot file: front matter from a YAML emitter, then the body.
-const snapshotText = (fields, text) => {
-  for (const [key, value] of Object.entries(fields)) {
-    if (typeof value === "string" && (hasControl(value) || value.includes("---"))) {
-      throw new Failure(key, "unsafe-value");
-    }
-  }
-  const YAML = load("yaml");
-  const yaml = YAML.stringify(fields, { lineWidth: 0 });
-  return `---\n${yaml}---\n${text}\n`;
-};
+const main = (argv) => (argv[0] === "--ballot" ? ballotImport(argv) : plainFetch(argv));
 
-const main = (argv) =>
+const plainFetch = (argv) =>
   runCommand(async () => {
     const root = process.cwd();
     const args = parseArgs(argv);

@@ -64,9 +64,37 @@ Like every script, it prints only `location code [key]` lines (Rule 5) and exits
 - The save: `owner-not-subject`, `unsafe-value` (a front matter value holding a control character or `---`, located by its key), `ballot-locked`, `manifest-invalid` (`snapshots.sha256` does not end in a newline, so the next line would join the last), `snapshot-exists` (a file appeared at the chosen path after its manifest line was written, which only a writer that skips the script can cause), `deps-missing`.
 - Anything else is a bug: `internal-error`, with the stack on stderr.
 
+The researcher's step 2 import is:
+
+```text
+fetch-snapshot --ballot <election>/<ballot-id> <role> <url>
+fetch-snapshot --ballot --file <election>/<ballot-id> <role> <path> <url>
+```
+
+`<role>` is one of the `role` values above. The first form fetches `<url>`, which may be an HTML page or a PDF; the second reads `<path>`, a PDF or HTML file under `downloads/`, and `<url>` is the page it came from, of which only the origin is recorded. Both refuse with `not-a-terminal` when stdout or stdin is not a terminal or `CLAUDECODE` is set (Rule 5), before they read anything, then show the URL (or the file and origin) and the role and save only after a `y`. Each saves `sources/_ballot/<name>.md`, whose `<name>` is the role with its underscores as hyphens (sample-ballot.md, candidate-list.md) and a numeric suffix for a later one (sample-ballot-2.md), so no name comes from the source's own file name or URL, which can carry a precinct. A PDF becomes text through plain `pdftotext` (Body); one with no text layer, such as a scan, fails `pdf-no-text` instead of saving an empty snapshot. Failures are located `_ballot` and none is written to `unfetchable.md`. Their codes, beyond the plain fetch's:
+
+- `not-a-terminal`, `bad-role`, `not-confirmed` (anything but `y` or `yes`), `not-t1` (a host, on any hop, whose tier is not `T1`), `ledger-invalid` (`ballot.ledger` does not end in a newline).
+- A privacy class code for the URL up to its query, followed by a second line, `- ` and the hint code `use-ballot-file`: save the file into `downloads/` and use `--file`. The query may hold the address, so it is not checked for it; an API key value is refused anywhere in the URL.
+- `--file`: `file-not-in-downloads` (the path, with symlinks resolved, is not under `downloads/`), `bad-file` (not a regular file, or not a PDF or HTML file by both its extension and its first bytes).
+- PDFs: `pdftotext-missing` (install poppler), `pdf-unreadable`, `pdf-no-text`.
+
 ## Names
 
 Use a short kebab-case name for the source (`fec-totals.md`). Re-fetching writes a new file with a numeric suffix (`fec-totals-2.md`); a file is never overwritten. A suffix always means a re-fetch, so `fetch-snapshot` refuses a name that ends in `-` and digits (`bad-name`). Numbers in names are fine: `check` strips link targets, link text and inline code before looking for figures.
+
+## Ballot ledger
+
+`<ballot-id>/ballot.ledger` lists every `_ballot` snapshot `--ballot` saved, one line each, appended after the snapshot's manifest line and before its file lands (Manifest), so a crash between the two leaves a snapshot with no ledger line, which `ballot-check` refuses, never the reverse. The line holds five tab-separated fields:
+
+```text
+<path>	<role>	<from>	<query>	<saved>
+```
+
+- `<path>`: the snapshot's path relative to the ballot directory, starting with `sources/_ballot/`.
+- `<role>`: its `role`.
+- `<from>`: `url` for a fetch, `file` for `--file`.
+- `<query>`: `query` when the URL given or any URL fetched on the way had a query string, otherwise `none`; always `none` for `--file`, which fetched nothing, so `ballot-check` reads `<from>` too.
+- `<saved>`: the date (`YYYY-MM-DD`, local time).
 
 ## Manifest
 

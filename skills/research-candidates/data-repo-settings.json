@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/**/sources/**)",
+      "Edit(/**/snapshots.sha256)",
+      "Edit(/**/search-log/**)",
+      "Edit(/**/ballot.ledger)",
+      "Bash(*--show*)",
+      "Bash(*--ballot*)",
+      "Bash(*--file*)"
+    ]
+  }
+}

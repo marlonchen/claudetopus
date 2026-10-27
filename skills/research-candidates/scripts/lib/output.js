@@ -2,18 +2,21 @@
 
 // Every command reports only `location code [key]` lines (Rule 5): never a
 // matched or quoted value, never a URL. A Failure carries one such line up to
-// the command, which prints it and exits non-zero.
+// the command, which prints it and exits non-zero. A `hint` code, printed on
+// a second line as `- <hint>`, names what to run instead.
 
 class Failure extends Error {
-  constructor(location, code, key) {
+  constructor(location, code, key, hint) {
     super(`${location} ${code}`);
     this.location = location;
     this.code = code;
     this.key = key;
+    this.hint = hint;
   }
 
   get line() {
-    return [this.location, this.code, this.key].filter(Boolean).join(" ");
+    const line = [this.location, this.code, this.key].filter(Boolean).join(" ");
+    return this.hint ? `${line}\n- ${this.hint}` : line;
   }
 }
 
