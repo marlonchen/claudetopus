@@ -150,6 +150,30 @@
 
 **Priority:** P2
 
+### Check the review-list size against race 1
+
+**What:** Count the review items of race 1's contests (issue 17) against the 5-15 items per contest target (03-ux.md). If the owner rule floods the list, narrow it: flag a `third-party` "Says:" claim only when the snapshot is not `statements_only`, or only an `owner` that is another candidate, and put questionnaire hosts on `statements_only` entries.
+
+**Why:** Every Vote411, Ballotpedia and debate host is `third-party`, so each of their Positions claims is a review item, and the federal and state lists have seven issues each. A three-candidate federal race can reach 21 Positions items before Controversies, `T2i` and allegation words.
+
+**Context:** PR #7 interrogate review (2026-10-26), D5; the owner chose to measure on real data before narrowing.
+
+**Depends on / blocked by:** race 1 compiled and `review-list` built.
+
+**Priority:** P2
+
+### spec-parity contracts as data
+
+**What:** Move the machine contracts (Positions issue lists, checklist-to-section map, failure codes, search-log fields, office types) into one parsed block that the scripts and spec-parity both read, have spec-parity check that the prose agrees with it instead of pinning sentences, and split `spec-parity.test.js` (2,900+ lines) per reference behind a shared helpers module.
+
+**Why:** Sentence pins catch rewording, not contradictions: the `search-not-logged` row said "one of" the items while snapshot-format.md said "each", and both stayed green.
+
+**Context:** PR #7 interrogate review (2026-10-26), N4 and N5; both reviewers raised it. Deferred so it lands with the first script that reads the contracts.
+
+**Depends on / blocked by:** the first script that parses a reference (issue 02 or 07).
+
+**Priority:** P2
+
 ### Derived-number claims
 
 **What:** Support derived-number claims. The removed spec: a derived number ("61% from PACs") is allowed only when both inputs are claims in the same section with their own excerpts, and the derived claim shows its formula in inline code (`` `= 1,220,000 / 2,000,000` ``). It has no link and no excerpt of its own; its tag is the weakest of its inputs' tags. `check` skips the excerpt-figure match for its result, requires each number in the formula to match a figure in a sibling claim, recomputes it, rounds half-up to the decimal places shown, and fails with a `derived-mismatch` code otherwise. Its review key uses the formula in place of the excerpt, with an empty snapshot path and file hash.

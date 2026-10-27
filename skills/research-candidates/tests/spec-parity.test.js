@@ -187,6 +187,13 @@ const capture = (text, pattern, what) => {
   assert.ok(found, `${what} is gone`);
   return found[1];
 };
+// The article-format.md structure example, without its fence.
+const articleExample = () =>
+  capture(
+    ARTICLE,
+    /## Structure\n\n```markdown\n([\s\S]*?)```/,
+    "article-format.md's structure example",
+  );
 // The discovery checklist item numbers each sections.md table cites, by table heading.
 const checklistItemsBySection = (heading) => {
   const table = sectionTable(heading);
@@ -224,6 +231,34 @@ describe("ChecklistReferences", () => {
     }
     for (const item of items)
       assert.ok(owners.has(item), `checklist item ${item} fills no section`);
+    // Extended by PR #7 interrogate review.
+    // Value: protects=an item whose condition depends on reporting runs after Reporting, and
+    //   Record and Money have an item that applies to every office type that has them;
+    //   fails_when=the courts item runs before reporting again, or a local office's only Record
+    //   and Money items are federal and state; why_new=a premature "does not apply" line was
+    //   permanent, and a local Unknown was backed by nothing searched; seam=none
+    const reporting = capture(TIERS, /^(\d+)\. \*\*Reporting:\*\*/m, "the Reporting item");
+    for (const [, n, text] of TIERS.matchAll(/^(\d+)\. \*\*[^*]+\*\* ([^\n]+)$/gm)) {
+      if (/\breporting\b/.test(text) && Number(n) < Number(reporting))
+        assert.match(
+          text,
+          new RegExp(`Run after item ${reporting}\\.`),
+          `item ${n} runs too early`,
+        );
+    }
+    assert.match(TIERS, new RegExp(`except that item 3 runs after item ${reporting}`));
+    const recordItems = checklistItemsBySection(TYPE_TABLES.candidate)
+      .filter(([section]) => /^[CD]\. /.test(section))
+      .flatMap(([, items]) => items);
+    for (const type of officeTypes().filter((t) => t !== "judicial")) {
+      const covers = recordItems.some((item) =>
+        new RegExp(
+          `^${item}\\. \\*\\*[^*]*\\b${type === "federal" ? "Federal" : type}\\b`,
+          "im",
+        ).test(TIERS),
+      );
+      assert.ok(covers, `no Record or Money checklist item applies to ${type} offices`);
+    }
     // Every section but the ballot record draws on at least one item, or Unknown could never pass.
     for (const heading of TABLES) {
       for (const [section, items] of checklistItemsBySection(heading)) {
@@ -1015,10 +1050,19 @@ const realBallotIds = () => {
 //   no_claim=history (git log -S) and other forms of the id
 // Fixed by /ship pre-landing review: untracked files are searched too (a new file was missed).
 // Extended for issue 01: case-insensitive, in contents and paths alike.
+// Extended by PR #7 interrogate review: every separator the publish scan reads as a space
+//   (pa_x_1, pa x 1, pa/x/1, pa.x.1, pa+x+1), and a directory that is not a ballot id fails
+//   loudly instead of matching everywhere.
+const ID_SEPARATORS = ["-", "_", " ", "/", ".", "+"];
+const realBallotIdForms = () =>
+  realBallotIds().flatMap((id) => {
+    assert.match(id, ballotRule("Ballot ids"), "a data-repo ballot directory is not a ballot id");
+    return ID_SEPARATORS.map((sep) => id.replaceAll("-", sep));
+  });
 describe("RealBallotIdsStayPrivate", () => {
   const skip = !fs.existsSync(DATA_REPO) && "no data repo next to this one";
   it("no real ballot id appears in this repo's files or index", { skip }, () => {
-    const patterns = realBallotIds().flatMap((id) => ["-e", id]);
+    const patterns = realBallotIdForms().flatMap((form) => ["-e", form]);
     if (patterns.length === 0) return;
     // Tracked and untracked (not ignored) files, then the index.
     for (const where of ["--untracked", "--cached"]) {
@@ -1037,15 +1081,15 @@ describe("RealBallotIdsStayPrivate", () => {
 
   it("no real ballot id appears in a path in this repo", { skip }, () => {
     const ids = realBallotIds();
+    // Any separator the scan reads as a space, folded to a hyphen.
+    const fold = (p) => p.toLowerCase().replace(/[-_ /.+]/g, "-");
     const files = spawnSync(
       "git",
       ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
       { cwd: REPO_ROOT, encoding: "utf8" },
     );
     assert.strictEqual(files.status, 0, `git ls-files failed: ${files.stderr}`);
-    const hits = files.stdout
-      .split("\0")
-      .filter((p) => ids.some((id) => p.toLowerCase().includes(id.toLowerCase())));
+    const hits = files.stdout.split("\0").filter((p) => ids.some((id) => fold(p).includes(id)));
     // A count only, never the path: the path holds the id (Rule 5).
     assert.strictEqual(hits.length, 0, `${hits.length} paths contain a real ballot id`);
   });
@@ -1097,6 +1141,8 @@ describe("FailureCodes", () => {
       "addr-mom",
       // The tiers.yaml owner value for a source no candidate controls.
       "third-party",
+      // ballot-format.md's example id for a second person with the same name.
+      "john-smith-2",
       // A Claude Code SKILL.md front-matter key the ballot gate names, not a failure code.
       "allowed-tools",
       exampleBallotId(),
@@ -1505,9 +1551,9 @@ describe("SectionStates", () => {
     const exempt = SECTIONS.match(/in the state `([^`]+)`/);
     assert.ok(exempt, "sections.md no longer names the exemption state");
     assert.ok(states.has(exempt[1]), `sections.md state "${exempt[1]}" is not defined`);
-    const example = ARTICLE.match(/## Structure\n\n```markdown\n([\s\S]*?)```/);
-    assert.ok(example, "article-format.md has no structure example");
-    const bare = example[1].split("\n").filter((line) => /^[A-Z]/.test(line));
+    const bare = articleExample()
+      .split("\n")
+      .filter((line) => /^[A-Z]/.test(line));
     assert.ok(bare.length > 0, "article-format.md example shows no section state");
     for (const line of bare) assert.ok(states.has(line), `example state "${line}" is not defined`);
   });
@@ -1602,7 +1648,10 @@ describe("PageCopy", () => {
   // The wireframe's race has a section not researched yet, so it shows the banner without
   // "covered"; page.md still gives the fully covered form.
   it('page.md gives the "covered" banner, which a not-researched section drops', () => {
-    assert.ok(PAGE.includes('("3 of 3 candidates on the official ballot covered";'));
+    assert.ok(
+      PAGE.includes('("3 of 3 candidates on the official ballot covered";'),
+      "page.md lost the fully covered banner",
+    );
     assert.match(PAGE, /`Not researched yet` section never counts as covered/);
   });
 
@@ -1756,7 +1805,7 @@ describe("WireframeStructure", () => {
     for (const text of hidden)
       assert.match(
         text,
-        /^[^,]+, (?:[^,]+ section|Positions section, [^,]+)$/,
+        /^[^,]+, (?:(?!Positions )[^,]+ section|Positions section, [^,]+)$/,
         `hidden text "${text}"`,
       );
   });
@@ -2310,8 +2359,7 @@ describe("ResearcherOnlyModes", () => {
       }
     }
     // The agents' fetch tool rejects every mode the Scripts table gives fetch-snapshot.
-    const row = SKILL.split("\n").find((l) => l.startsWith("| `fetch-snapshot` |"));
-    assert.ok(row, "the Scripts table has no fetch-snapshot row");
+    const row = scriptRow("fetch-snapshot");
     const modes = new Set([...row.matchAll(/`(?:--\w+ )?(--\w+)`/g)].map((m) => m[1]));
     assert.ok(modes.size >= 2, `only ${[...modes]} fetch-snapshot modes found`);
     const rejects = SNAPSHOT.match(/The fetch tool given to agents rejects ([^.]+)\./);
@@ -2323,7 +2371,7 @@ describe("ResearcherOnlyModes", () => {
     //   rejected, or another mode joins the allow list; why_new=discovery must log the items it
     //   ran; seam=none; no_claim=the agent tool configuration (not built yet)
     const allows = SNAPSHOT.match(
-      /It allows only a plain fetch and ([^.]+?), both bound to the agent's own contest\./,
+      /It allows only a plain fetch and ([^.]+?), both bound to the agent's own contest[.:]/,
     );
     assert.ok(allows, "snapshot-format.md no longer says what the agents' fetch tool allows");
     const allowed = new Set([...allows[1].matchAll(/`(--\w+)`/g)].map((m) => m[1]));
@@ -2733,11 +2781,7 @@ describe("PositionsIssues", () => {
 
   it("the article example, page and keys use the issues of one office type, in order", () => {
     const lists = positionsIssues();
-    const example = capture(
-      ARTICLE,
-      /## Structure\n\n```markdown\n([\s\S]*?)```/,
-      "article-format.md's structure example",
-    );
+    const example = articleExample();
     // Only the headings under Positions, which the example ends with.
     const used = [...from(example, "### E. Positions").matchAll(/^#### (.+)$/gm)].map((m) => m[1]);
     assert.ok(used.length >= 2, "the article example shows fewer than two Positions issues");
@@ -2806,6 +2850,76 @@ describe("NotResearched", () => {
     );
     assert.match(list, /class="st">Not researched yet</, "the wireframe list shows no such row");
   });
+
+  // Added by PR #7 interrogate review.
+  // Value: protects=only the researcher's not_researched list in ballot.yaml puts a section in
+  //   the state, coverage matches it exactly both ways, On the ballot is never left for later,
+  //   and the article and ballot examples agree; fails_when=the compile agent can declare the
+  //   state alone again, or the list stops being checked against sections.md;
+  //   why_new=nothing recorded the researcher's decision, so the state bypassed both the search
+  //   log and the review list; seam=none; no_claim=coverage and ballot-check (not built yet)
+  it("only the researcher's not_researched list puts a section in the state", () => {
+    assert.match(
+      state(),
+      /Only the researcher decides that, by listing the section under the contest's `not_researched` in `ballot\.yaml`/,
+    );
+    assert.match(state(), /exactly where that list names the section/);
+    assert.match(
+      failureCodeRow("section-state")[1],
+      /in a section the contest's `not_researched` does not list, or a listed section is in another state/,
+    );
+    assert.match(
+      BALLOT,
+      /The model never supplies contests, candidates, counts or `not_researched`\./,
+    );
+    assert.match(
+      BALLOT,
+      /Any contest may carry `not_researched`, which only the researcher writes/,
+    );
+    assert.match(
+      BALLOT,
+      /`ballot-check` fails a name that is not a section of the contest's type, and On the ballot/,
+    );
+    assert.match(SKILL, /they list it under the contest's `not_researched` in `ballot\.yaml`/);
+    assert.match(ARTICLE, /A contest whose `not_researched` is `all`/);
+    // The ballot.yaml example lists sections by their sections.md names, and the article
+    // example shows each of them in the state.
+    const listed = capture(
+      BALLOT,
+      /^ +not_researched: \[([^\]]+)\]/m,
+      "the not_researched example",
+    ).split(", ");
+    const names = new Set(sectionTable(TYPE_TABLES.candidate).rows.map((r) => r[0].slice(3)));
+    for (const name of listed) {
+      assert.ok(names.has(name), `not_researched example "${name}" is not a candidate section`);
+      assert.match(articleExample(), new RegExp(`### [A-Z]\\. ${name}\n\nNot researched yet\n`));
+    }
+    // On the ballot is never a gap.
+    assert.match(
+      ARTICLE,
+      /On the ballot always holds claims, never `Unknown, no source found` or `Not researched yet`/,
+    );
+    assert.match(state(), /for every candidate block of the contest that has the section/);
+  });
+
+  // Added by PR #7 interrogate review.
+  // Value: protects=the banner's plural, multi-seat, write-in, measure and retention forms, the
+  //   measure wording of both notes, and what the ready-to-read count counts; fails_when=a form
+  //   is dropped or the count goes back to every ready contest; why_new=only the one-topic
+  //   single-seat form was defined; seam=none; no_claim=publish (not built yet)
+  it("the banner, notes and ready count cover every race shape", () => {
+    assert.match(PAGE, /drops "covered", from the write-in count too \("\+1 certified write-in"\)/);
+    assert.match(PAGE, /"1 topic" or "N topics"/);
+    assert.match(PAGE, /"6 of 6 candidates · Vote for up to 3 · 2 topics not researched yet"/);
+    assert.match(PAGE, /"Official text and fiscal note saved · 1 topic not researched yet"/);
+    assert.match(
+      PAGE,
+      /On a measure, which has no candidates, the line drops ", for every candidate at once"/,
+    );
+    assert.match(PAGE, /shows the note alone, without its sentence about candidates/);
+    assert.match(PAGE, /the second counts `ready` contests that are not not-researched contests/);
+    assert.match(PAGE, /is not counted as ready to read, though it is `ready`/);
+  });
 });
 
 // Added for issue 01 (TODOS: prove a search ran before "Unknown, no source found").
@@ -2830,6 +2944,26 @@ describe("SearchLog", () => {
     assert.match(log(), /never a caller's value/, "the date is not the script's own");
   });
 
+  // Added by PR #7 interrogate review.
+  // Value: protects=the --searched signature names its contest, which the agents' tool fixes,
+  //   and a measure's log subject is the _race subject its snapshots are filed under;
+  //   fails_when=the contest argument is dropped again, or the log and the snapshot front matter
+  //   name a measure's subject differently; why_new=the unbound form had no contest and a
+  //   measure had two subject names; seam=none; no_claim=fetch-snapshot (not built yet)
+  it("--searched names its contest, and a measure logs under _race as its snapshots do", () => {
+    assert.match(log(), /^`fetch-snapshot --searched <contest> <subject> <item>` appends/m);
+    assert.match(log(), /The agents' fetch tool fixes `<contest>` to its own contest/);
+    assert.match(SKILL, /`fetch-snapshot --searched`; its tool fixes the contest/);
+    assert.match(log(), /^- `<subject>`:[^\n]*or `_race` for a measure/m);
+    assert.match(SNAPSHOT, /^subject: \S+ +# [^\n]*_race \(also every measure source\)/m);
+    assert.ok(
+      layoutEntries().some((e) => e.endsWith("/_race/")),
+      "the Layout has no _race directory",
+    );
+    assert.match(SKILL, /sources\/<contest>\/_race\/ +# [^\n]*every measure source/);
+    assert.doesNotMatch(log(), /contest id for a measure/, "a measure logs under its contest id");
+  });
+
   it("each contest type logs exactly the checklist items its sections cite", () => {
     const stated = log().match(
       /1-5 for a candidate contest, (\d+) for a measure, (\d+) for a retention contest/,
@@ -2847,9 +2981,26 @@ describe("SearchLog", () => {
     );
   });
 
+  // Extended by PR #7 interrogate review.
+  // Value: protects=an Unknown Positions issue needs log lines too, both files ask for every
+  //   item, and a malformed log line fails; fails_when=the row or the log narrows to whole
+  //   sections, says "one of" the items, or a bad line passes silently; why_new=the row said
+  //   "one of" while the log said "each", and both stayed green; seam=none; no_claim=coverage
   it("an Unknown without a log line fails with the coverage code in the table", () => {
     const row = failureCodeRow("search-not-logged");
-    assert.match(row[1], /^Reported by `coverage`: a section is `Unknown, no source found`/);
+    assert.match(
+      row[1],
+      /^Reported by `coverage`: a section or Positions issue is `Unknown, no source found`/,
+    );
+    assert.match(log(), /a section, or a Positions issue, in the state `Unknown, no source found`/);
+    // Both files require every item the section draws on, never any one of them.
+    assert.match(row[1], /a line for its subject and each checklist item the section draws on/);
+    assert.match(log(), /a line for its subject and each checklist item/);
+    for (const text of [row[1], log()]) assert.doesNotMatch(text, /one of the checklist items/);
+    assert.match(row[1], /or the log has a malformed line/);
+    assert.match(log(), /It also fails with `search-not-logged`, located by log line/);
+    assert.match(log(), /has a `<contest>` that is not the file's name/);
+    assert.match(log(), /Each line is one append ending in a newline/);
     assert.match(log(), /or it fails with `search-not-logged`/);
     assert.match(
       between(ARTICLE, "## Section states"),
@@ -2887,6 +3038,68 @@ describe("SnapshotManifest", () => {
     assert.match(scriptRow("check"), /every snapshot matches `snapshots\.sha256`/);
     assert.match(SKILL, /^3\. \*\*Snapshots are write-once\.\*\*[^\n]*`snapshots\.sha256`/m);
   });
+
+  // Added by PR #7 interrogate review.
+  // Value: protects=a crash mid-save is repaired by the next run, a duplicate or malformed line
+  //   fails, leftovers are skipped as the skill check skips them, a snapshot can be retired only
+  //   by the researcher, and the manifest and search log are denied to the model, committed and
+  //   only grow; fails_when=a step of the save order, a failure case or a guard is dropped;
+  //   why_new=a crash, a duplicate line or a deleted junk snapshot blocked publish for good, and
+  //   nothing guarded the manifest itself; seam=none; no_claim=fetch-snapshot, check, publish
+  it("a crash, a duplicate line and a retired snapshot each have one defined outcome", () => {
+    const manifest = between(SNAPSHOT, "## Manifest");
+    assert.ok(
+      layoutEntries().some((e) => e.endsWith("/<ballot-id>/.partial/")),
+      "the Layout has no .partial/",
+    );
+    assert.match(
+      manifest,
+      /writes the snapshot to `<ballot-id>\/\.partial\/<sha256>` and syncs it to disk, appends the manifest line as one write ending in a newline, then moves the file to its path under `sources\/`, refusing if that path exists/,
+    );
+    assert.match(manifest, /every run finishes an interrupted save/);
+    assert.match(manifest, /the researcher appends `- {2}<path>`, a hyphen in place of the hash/);
+    assert.match(manifest, /the model never writes the manifest \(Rule 3\)/);
+    const cases = [...manifest.matchAll(/^- (.+);?$/gm)].map((m) => m[1]).join("\n");
+    for (const failure of [
+      /a file with no line, or a file whose path is retired/,
+      /a line whose file is gone, unless a retire line for its path follows it/,
+      /more than one hash line or more than one retire line for one path/,
+      /a line in neither form/,
+      /a symlink anywhere under `sources\/`/,
+    ])
+      assert.match(cases, failure);
+    assert.match(
+      manifest,
+      /They skip only regular files that are operating-system and editor leftovers \(`\.DS_Store`, `Thumbs\.db`, `\*\.swp`\)/,
+    );
+    assert.match(
+      ballotGate(),
+      /\(`\.DS_Store`, `Thumbs\.db`, `\*\.swp`\)/,
+      "the two leftover lists differ",
+    );
+    const row = failureCodeRow("snapshot-hash");
+    assert.match(
+      row[1],
+      /a path has more than one hash or retire line, a manifest line is malformed/,
+    );
+    // The trust anchors are guarded like what they protect.
+    assert.match(
+      SKILL,
+      /^3\. [^\n]*the data repo's Claude Code settings deny the model's own writes to all four/m,
+    );
+    assert.match(
+      ballotGate(),
+      /`review\/`, `tiers\.yaml`, `snapshots\.sha256` and `search-log\/` must have no uncommitted changes/,
+    );
+    assert.match(
+      ballotGate(),
+      /`snapshots\.sha256` and each search log must begin with all of their lines from the commit before/,
+    );
+    assert.match(
+      SKILL,
+      /the researcher commits `review\/`, `tiers\.yaml`, `snapshots\.sha256` and `search-log\/`/,
+    );
+  });
 });
 
 // Added for issue 01 (TODOS: source metadata the agent chooses must not decide attribution).
@@ -2909,5 +3122,44 @@ describe("SnapshotOwner", () => {
     assert.match(rule, /never from the subject directory the discovery agent chose/);
     assert.doesNotMatch(rule, /`subject`/, "attribution reads the subject field again");
     assert.match(between(REVIEW, "## Item keys"), /tier, owner or body\)/);
+  });
+
+  // Added by PR #7 interrogate review.
+  // Value: protects=a redirect cannot change whose words a snapshot holds, the loader refuses a
+  //   candidate-owned entry that is not T4 statements only or names no listed id, an owner id
+  //   names one person across ballots, and a claim filed under a rival is still reviewed
+  //   whatever its tag; fails_when=any of these rules is dropped or weakened; why_new=owner was
+  //   unspecified across hops, the T4 rule held only in the example, and the old subject check
+  //   was deleted with nothing in its place for non-Says claims; seam=none;
+  //   no_claim=fetch-snapshot, ballot-check, review-list (not built yet)
+  it("redirects, the loader and ids keep owner sound, and misfiled claims are reviewed", () => {
+    assert.match(
+      TIERS,
+      /Across redirects, the tier is the strictest any hop's longest match gives, `owner` must be the same at every hop, and `source` is the final URL's/,
+    );
+    assert.match(TIERS, /refused and logged with the reason `owner changes across redirects`/);
+    assert.match(
+      TIERS,
+      /an entry whose `owner` is not `third-party` unless it is T4 with `statements_only: true`/,
+    );
+    assert.match(TIERS, /an `owner` that no `ballot\.yaml` in the data repo lists/);
+    // The example's candidate-owned entries obey the loader rule the sentence states.
+    for (const [, entry] of TIERS.matchAll(/^- match: [^\n]*\n((?: {2}[^\n]*\n)+)/gm)) {
+      if (/^ {2}owner: third-party\b/m.test(entry)) continue;
+      assert.match(entry, /^ {2}tier: T4\b/m, "a candidate-owned example entry is not T4");
+      assert.match(entry, /^ {2}statements_only: true\b/m);
+    }
+    assert.match(ballotRuleLine("Ids"), /A candidate or official id names one person across/);
+    assert.match(
+      ballotRuleLine("Ids"),
+      /fails an id that two `ballot\.yaml` files give different printed names/,
+    );
+    const misfiled = REVIEW.split("\n").find((l) => l.includes("misfiling risk"));
+    assert.ok(misfiled, "review-list.md lost its misfiled-claim rule");
+    assert.match(
+      misfiled,
+      /^- every claim, whatever its tag, whose cited snapshot is filed under another candidate or official of the contest/,
+    );
+    assert.match(misfiled, /The subject directory cannot clear a claim, only add one/);
   });
 });

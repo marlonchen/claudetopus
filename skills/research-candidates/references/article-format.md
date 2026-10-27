@@ -34,9 +34,11 @@ Not researched yet
 #### Economy and jobs
 
 Unknown, no source found
+
+…
 ```
 
-Section headings come from [sections.md](sections.md), in that order, for every candidate in ballot order. Under Positions, each issue of the contest's office type ([sections.md](sections.md), Positions issues) is a `####` heading, in the list's order, and holds the section state; Positions itself holds only those headings, unless the whole section is `Not researched yet` or `Not part of this office's job`. Retention contests have one `##` block for the judge or official, and measures one `##` block titled with the contest id, never the printed title. The page takes every contest and measure heading from `ballot.yaml` (step 6.2). There is no separate source list: the set of snapshots an article cites is the set of its claim links.
+The example stops partway (`…`): an article has every section and every issue of its list. Section headings come from [sections.md](sections.md), in that order, for every candidate in ballot order. Under Positions, each issue of the contest's office type ([sections.md](sections.md), Positions issues) is a `####` heading, in the list's order, and holds the section state; Positions itself holds only those headings, unless the whole section is `Not researched yet` or `Not part of this office's job`. Retention contests have one `##` block for the judge or official, and measures one `##` block titled with the contest id, never the printed title. The page takes every contest and measure heading from `ballot.yaml` (step 6.2). There is no separate source list: the set of snapshots an article cites is the set of its claim links.
 
 ## Claim lines
 
@@ -84,9 +86,9 @@ Each figure left in the claim must match a figure in that claim's own excerpt, n
 | `claim-format` | A claim line is malformed, or its link points at a missing snapshot or one outside `sources/` |
 | `block-missing` | A candidate, official or measure block is missing, out of ballot order, or under the wrong `#` or `##` heading |
 | `section-missing` | A section is missing, out of order or duplicated |
-| `section-state` | A section or Positions issue has no state, more than one, or a state it may not use, or `Not researched yet` is used for some candidates in a section but not all |
-| `search-not-logged` | Reported by `coverage`: a section is `Unknown, no source found`, but the contest's search log has no line for its subject and one of the checklist items the section draws on ([snapshot-format.md](snapshot-format.md)) |
-| `snapshot-hash` | Reported by `check` and `publish`, located by snapshot path: a snapshot's sha256 differs from its line in `snapshots.sha256`, it has no line, or a line's file is gone |
+| `section-state` | A section or Positions issue has no state, more than one, or a state it may not use, or `Not researched yet` is used for some candidates in a section but not all, or in a section the contest's `not_researched` does not list, or a listed section is in another state |
+| `search-not-logged` | Reported by `coverage`: a section or Positions issue is `Unknown, no source found`, but the contest's search log lacks a line for its subject and each checklist item the section draws on, or the log has a malformed line ([snapshot-format.md](snapshot-format.md)) |
+| `snapshot-hash` | Reported by `check` and `publish`, located by snapshot path or manifest line: a snapshot's sha256 differs from its line in `snapshots.sha256`, it has no line or is retired, a line's file is gone and not retired, a path has more than one hash or retire line, a manifest line is malformed, or `sources/` holds a symlink |
 
 ## Section states
 
@@ -94,10 +96,12 @@ Each section, and under Positions each issue, is in exactly one state; an issue 
 
 - claims (one or more claim lines);
 - `Unknown, no source found`: the checklist was run and nothing usable turned up. `coverage` accepts it only when the search log backs it (`search-not-logged`);
-- `Not researched yet`: the checklist has not been run for this section yet, so it says nothing about the candidate. It is how a section or a whole contest left for later, when the schedule runs short, says it still needs research; it never stands in for Unknown. `coverage` accepts it in any section but On the ballot, and only when the section is in it for every candidate block of the contest, so no candidate is researched deeper than a rival on one topic. Under Positions it covers the whole section, with no issue headings. It needs no search-log line, and a log line does not change it;
+- `Not researched yet`: the checklist has not been run for this section yet, so it says nothing about the candidate. It is how a section or a whole contest left for later, when the schedule runs short, says it still needs research; it never stands in for Unknown. Only the researcher decides that, by listing the section under the contest's `not_researched` in `ballot.yaml` ([ballot-format.md](ballot-format.md)). `coverage` accepts it in any section but On the ballot, exactly where that list names the section, and only when the section is in it for every candidate block of the contest that has the section, so no candidate is researched deeper than a rival on one topic. Under Positions it covers the whole section, with no issue headings. It needs no search-log line, and a log line does not change it;
 - `Not part of this office's job`: only where [sections.md](sections.md) says so.
 
-A contest whose every section, apart from On the ballot, is `Not researched yet` is a not-researched contest: the page shows who is on the ballot and says the rest is still to come ([page.md](page.md)).
+On the ballot always holds claims, never `Unknown, no source found` or `Not researched yet`: every block in it is on the official ballot record.
+
+A contest whose `not_researched` is `all`, so that every section apart from On the ballot is `Not researched yet`, is a not-researched contest: the page shows who is on the ballot and says the rest is still to come ([page.md](page.md)).
 
 A withdrawn candidate who is still printed has only the sections [sections.md](sections.md) gives it; the rest are absent, not in any state. Its On the ballot claim cites the `withdrawal_notice` snapshot ([snapshot-format.md](snapshot-format.md)). Certified write-ins come after printed candidates.
 

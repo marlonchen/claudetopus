@@ -10,7 +10,7 @@ fetched: 2026-10-12                # fetch date shown on the receipt
 method: api                        # html | pdf | api
 tier: T1                           # T1 | T2 | T3 | T4, from tiers.yaml (source-tiers.md)
 statements_only: false             # from tiers.yaml; true: claims citing it must be "Says:" claims
-subject: jane-example              # candidate id, retention official id, _race, or _ballot
+subject: jane-example              # candidate id, retention official id, _race (also every measure source), or _ballot
 owner: third-party                 # from tiers.yaml: third-party, or the candidate or official id whose own site it is
 public_url: https://www.fec.gov/data/candidate/H0XX00000/   # optional, see below
 ---
@@ -28,7 +28,7 @@ supersedes: sample-ballot.md       # optional: the earlier snapshot this one cor
 
 `fetch-snapshot` removes API keys from every URL it records, in snapshots and in the unfetchable log alike. A key parameter is any query parameter whose name matches `/^(api[_-]?key|key|token|access[_-]?token|secret|sig(nature)?)$/i` (`api_key`, OpenStates' `apikey`, `apiKey`, `access_token`). Key values are the values of the API-key environment variables the scripts read (`OPENFEC_API_KEY`, `OPENSTATES_API_KEY`); `fetch-snapshot` and the publish privacy scan both refuse any URL or page that contains one. For `_ballot` snapshots it also drops the whole query string and fragment, because county lookups often carry the address, precinct or voter id there.
 
-`--ballot` mode, used only in step 2 and only by the researcher, takes a county or state URL that may carry the address in its query, shows the URL and `role` and asks for confirmation at the terminal, saves it as a `_ballot` snapshot, and records it with the query and fragment dropped. The URL's host must be `T1` in `tiers.yaml`. If the address, ZIP or a `private_strings` entry is in the URL's path instead, it refuses; the researcher downloads the file into `downloads/` and saves it with `fetch-snapshot --ballot --file <path>`, giving the county page's origin as the URL. `--file` accepts only PDF or HTML files under `downloads/`. The fetch tool given to agents rejects `--ballot` and `--file`. It allows only a plain fetch and `--searched` (Search log, below), both bound to the agent's own contest. Privacy refusals, in every mode (a URL holding the ballot id, an address, street line, ZIP code, label, `private_strings` entry or key value), and every `--ballot` refusal or failure are never written to `unfetchable.md`; they show only as a class code at the terminal, since the URL is the private text.
+`--ballot` mode, used only in step 2 and only by the researcher, takes a county or state URL that may carry the address in its query, shows the URL and `role` and asks for confirmation at the terminal, saves it as a `_ballot` snapshot, and records it with the query and fragment dropped. The URL's host must be `T1` in `tiers.yaml`. If the address, ZIP or a `private_strings` entry is in the URL's path instead, it refuses; the researcher downloads the file into `downloads/` and saves it with `fetch-snapshot --ballot --file <path>`, giving the county page's origin as the URL. `--file` accepts only PDF or HTML files under `downloads/`. The fetch tool given to agents rejects `--ballot` and `--file`. It allows only a plain fetch and `--searched` (Search log, below), both bound to the agent's own contest: the tool fixes the contest argument, so the agent never gives one. Privacy refusals, in every mode (a URL holding the ballot id, an address, street line, ZIP code, label, `private_strings` entry or key value), and every `--ballot` refusal or failure are never written to `unfetchable.md`; they show only as a class code at the terminal, since the URL is the private text.
 
 ## Body
 
@@ -50,22 +50,38 @@ Use a short kebab-case name for the source (`fec-totals.md`). Re-fetching writes
 
 ## Manifest
 
-Every snapshot `fetch-snapshot` saves, `_ballot` ones included, gets one line appended to `<ballot-id>/snapshots.sha256`: the sha256 of the whole file, two spaces, and its path relative to the ballot directory, starting with `sources/`, the format `sha256sum -c` reads. The manifest sits outside `sources/` because it is append-only; a line is never changed or removed, and a re-fetch adds a line for its new file. `check` and `publish` hash every file under `sources/` and fail with `snapshot-hash` ([article-format.md](article-format.md)), located by the snapshot's path, on a file whose hash differs from its line, a file with no line, or a line whose file is gone. Write-once (Rule 3) is then checked even when an edit gets past the data repo's settings deny rule on `sources/`.
+Every snapshot `fetch-snapshot` saves, `_ballot` ones included, gets one line appended to `<ballot-id>/snapshots.sha256`: the sha256 of the whole file, two spaces, and its path relative to the ballot directory, starting with `sources/`, the format `sha256sum -c` reads. The manifest sits outside `sources/` because it is append-only; a line is never changed or removed, and a re-fetch adds a line for its new file.
+
+`fetch-snapshot` saves in three steps, so a crash at any point leaves a state its next run repairs: it writes the snapshot to `<ballot-id>/.partial/<sha256>` and syncs it to disk, appends the manifest line as one write ending in a newline, then moves the file to its path under `sources/`, refusing if that path exists. Before anything else, every run finishes an interrupted save: a `.partial/` file whose hash has a manifest line and whose path is missing is moved into place, and any other `.partial/` file is deleted.
+
+To retire a snapshot (a junk page, or a file planted under `sources/`), the researcher appends `-  <path>`, a hyphen in place of the hash, deletes the file, and commits both; the model never writes the manifest (Rule 3). A claim citing a retired snapshot fails `claim-format`, since its file is gone.
+
+`check` and `publish` hash every file under `sources/` and fail with `snapshot-hash` ([article-format.md](article-format.md)), located by the snapshot's path, or by line number for a bad manifest line, on:
+
+- a file whose hash differs from its line, a file with no line, or a file whose path is retired;
+- a line whose file is gone, unless a retire line for its path follows it;
+- more than one hash line or more than one retire line for one path, or a retire line with no hash line before it;
+- a line in neither form, or one not ending in a newline;
+- a symlink anywhere under `sources/`.
+
+They skip only regular files that are operating-system and editor leftovers (`.DS_Store`, `Thumbs.db`, `*.swp`), as the ballot gate's skill check does (SKILL.md step 6.1). Write-once (Rule 3) is then checked even when an edit gets past the data repo's settings deny rule on `sources/`, and the ballot gate checks that the manifest itself only grows (SKILL.md step 6.1).
 
 ## Search log
 
-`fetch-snapshot --searched <subject> <item>` appends one line to `<ballot-id>/search-log/<contest>.tsv`, the contest the agent's fetch tool is bound to, after the discovery agent has run a discovery checklist item ([source-tiers.md](source-tiers.md)) for one candidate, official or measure. It writes nothing else. The line holds four tab-separated fields and no free text:
+`fetch-snapshot --searched <contest> <subject> <item>` appends one line to `<ballot-id>/search-log/<contest>.tsv` after the discovery agent has run a discovery checklist item ([source-tiers.md](source-tiers.md)) for one candidate, official or measure. The agents' fetch tool fixes `<contest>` to its own contest, so the agent gives only the subject and the item. It writes nothing else. The line holds four tab-separated fields and no free text:
 
 ```text
 <contest>	<subject>	<item>	<searched>
 ```
 
 - `<contest>`: the contest id, the same as the file name.
-- `<subject>`: the candidate id, the retention official's id, or the contest id for a measure, as listed in `ballot.yaml`.
+- `<subject>`: the candidate id or the retention official's id, as listed in `ballot.yaml`, or `_race` for a measure, the subject its snapshots are filed under.
 - `<item>`: the checklist item number, one the contest's type uses: 1-5 for a candidate contest, 6 for a measure, 7 for a retention contest.
-- `<searched>`: the date `fetch-snapshot` wrote the line (`YYYY-MM-DD`), never a caller's value.
+- `<searched>`: the date `fetch-snapshot` wrote the line (`YYYY-MM-DD`, in local time, as for `fetched:`), never a caller's value.
 
-`fetch-snapshot` refuses a subject that is not a candidate or official id the contest lists (or, for a measure, the contest's own id) or an item its type does not use, and writes no line for it. The log is append-only, and a later run of the same item adds another line. `coverage` reads it: a section in the state `Unknown, no source found` needs a line for its subject and each checklist item [sections.md](sections.md) maps to that section, or it fails with `search-not-logged` ([article-format.md](article-format.md)). The log proves only that the search ran, not what it found, so a line never makes a section anything but Unknown.
+`fetch-snapshot` refuses a subject that is not a candidate or official id the contest lists (or `_race`, for a measure) or an item its type does not use, and writes no line for it. Each line is one append ending in a newline, so lines from discovery agents running at once never interleave. The log is append-only, and a later run of the same item adds another line.
+
+`coverage` reads it: a section, or a Positions issue, in the state `Unknown, no source found` needs a line for its subject and each checklist item [sections.md](sections.md) maps to that section (an issue uses the items of Positions), or it fails with `search-not-logged` ([article-format.md](article-format.md)). It also fails with `search-not-logged`, located by log line, on a line that does not split into the four fields, does not end in a newline, has a `<contest>` that is not the file's name, or has a malformed item or date. A line for a subject the contest no longer lists is ignored, and a missing log has no lines. The log proves only that the search ran, not what it found, so a line never makes a section anything but Unknown.
 
 ## Saved copies
 

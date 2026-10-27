@@ -20,7 +20,7 @@ The page is one file. The trust header and freshness line appear in full once, a
 
 ## Ballot screen
 
-The title, then a two-part banner, "6 contests on your ballot · 4 ready to read". The first number comes from the official sample ballot, and the second counts `ready` contests. Then one line: "Tap a race to compare the candidates".
+The title, then a two-part banner, "6 contests on your ballot · 4 ready to read". The first number comes from the official sample ballot, and the second counts `ready` contests that are not not-researched contests (below). Then one line: "Tap a race to compare the candidates".
 
 Contests follow in ballot order as one list, with no group headings (`ballot.yaml` has no level to group by, and grouping would break ballot order). Each contest is a row in a divided list, not a bordered card: one link that fills the row, holding the contest name on the left, its status in words on the right, and a chevron. Rows are at least 48px tall. A multi-seat contest shows "Vote for 3" under its name, from `vote_for` ([ballot-format.md](ballot-format.md)).
 
@@ -28,11 +28,11 @@ Contests follow in ballot order as one list, with no group headings (`ballot.yam
 
 A contest that is not `ready` shows "Not ready yet" on the ballot list. Its row stays tappable and opens a short note: "Not ready yet. Every candidate gets the same research before anything shows here. Check back; this link stays the same." When no contest is `ready`, the banner reads "6 contests on your ballot · none ready yet", followed by the same note.
 
-A `ready` contest whose every section, apart from On the ballot, is `Not researched yet` ([article-format.md](article-format.md)) shows "Not researched yet" on the ballot list and is not counted as ready to read. Its race shows the title, the On the ballot section and then one note in place of the rest, with no chips: "Not researched yet. This race is on your ballot, but we haven't researched it yet. Every candidate gets the same research before the rest shows here. Check back; this link stays the same." A measure, which has no On the ballot section, shows the note alone.
+A `ready` contest whose every section, apart from On the ballot, is `Not researched yet` ([article-format.md](article-format.md)) shows "Not researched yet" on the ballot list and is not counted as ready to read, though it is `ready`. Its race shows the title, the On the ballot section and then one note in place of the rest, with no chips: "Not researched yet. This race is on your ballot, but we haven't researched it yet. Every candidate gets the same research before the rest shows here. Check back; this link stays the same." A measure, which has no On the ballot section, shows the note alone, without its sentence about candidates.
 
 ## Race screen
 
-The contest title and the coverage banner ("3 of 3 candidates on the official ballot covered"; for multi-seat contests "6 of 6 candidates covered · Vote for up to 3"). A `Not researched yet` section never counts as covered, so when any section is in that state the banner drops "covered" and says how many sections are still to come: "3 of 3 candidates on the official ballot · 1 topic not researched yet". Then a row of chips that jump to each section in [sections.md](sections.md): On the ballot, Background, Record, Money, Positions, Controversies. The chips wrap onto as many lines as they need and never clip or scroll sideways. Each chip is a plain link with a `--muted` border; none is shown as selected.
+The contest title and the coverage banner ("3 of 3 candidates on the official ballot covered"; for multi-seat contests "6 of 6 candidates covered · Vote for up to 3"). A `Not researched yet` section never counts as covered, so when any section is in that state the banner drops "covered", from the write-in count too ("+1 certified write-in"), and ends by saying how many sections are still to come, "1 topic" or "N topics": "3 of 3 candidates on the official ballot · 1 topic not researched yet", or "6 of 6 candidates · Vote for up to 3 · 2 topics not researched yet". Then a row of chips that jump to each section in [sections.md](sections.md): On the ballot, Background, Record, Money, Positions, Controversies. The chips wrap onto as many lines as they need and never clip or scroll sideways. Each chip is a plain link with a `--muted` border; none is shown as selected.
 
 Each section is a heading. Under it, every candidate appears in ballot order as a block:
 
@@ -49,7 +49,7 @@ The same block works for 2 to 6 candidates and for multi-seat contests.
 
 **Unknown and out of scope.** "○ Unknown: no source found" sits in that candidate's slot, in italic at full body contrast, so a gap shows up next to rivals who have claims. A section that is "Not part of this office's job" shows once, as a heading line with "(not part of this office's job)" and no per-candidate rows, and it is left out of the chips.
 
-**Not researched yet.** A section in the state `Not researched yet` is in that state for every candidate, so it also shows once: its heading, then one line in italic at full body contrast and no per-candidate rows: "Not researched yet. Research on this topic is still to come, for every candidate at once. Check back; this link stays the same." It carries no ○, so it never reads as "we looked and found nothing". It keeps its chip, so a reader who jumps there learns that the topic is still pending.
+**Not researched yet.** A section in the state `Not researched yet` is in that state for every candidate, so it also shows once: its heading, then one line in italic at full body contrast and no per-candidate rows: "Not researched yet. Research on this topic is still to come, for every candidate at once. Check back; this link stays the same." On a measure, which has no candidates, the line drops ", for every candidate at once". It carries no ○, so it never reads as "we looked and found nothing". It keeps its chip, so a reader who jumps there learns that the topic is still pending.
 
 **Withdrawn and write-in candidates.** The banner counts printed, non-withdrawn candidates. A withdrawn candidate stays in ballot position, in `--muted` text (never faded with opacity), labeled "Withdrew (still on printed ballot)", showing only the sections [sections.md](sections.md) gives it. Certified write-ins come after printed candidates, are labeled "Certified write-in" and counted separately ("+1 certified write-in covered"). When the county publishes no write-in list, the race says "Certified write-ins: none published".
 
@@ -63,6 +63,8 @@ The same stack, with one block per section instead of one per candidate.
 
 - **Measures:** What it does (official text) · Fiscal effect (official fiscal note) · Arguments for · Arguments against · Independent analysis. For and Against are sibling blocks of equal size, each labeled "from the official voter guide", and are never presented as facts. Banner: "Official text and fiscal note saved".
 - **Retention:** the judge's or official's name, then On the ballot · Record in office · Evaluation findings · Discipline · Statements. Banner: "Official record searched: N sources". A section with no source shows "○ Unknown: no source found" plus a one-line note that thin records are common for judges.
+
+A measure or retention race with a section not researched yet adds the same ending to its banner: "Official text and fiscal note saved · 1 topic not researched yet".
 
 ## Type
 
