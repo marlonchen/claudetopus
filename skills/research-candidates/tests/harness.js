@@ -103,8 +103,23 @@ contests:
 
 const BALLOT = "2026-general/xx-exampleton-1";
 
+// Fictional private values; tests/privacy.test.js plants them in URLs.
+const DEFAULT_PRIVATE = `private_strings:
+  - Precinct 12
+  - Springfield Township
+  - BS-0412
+ignored_lines:
+  - Vote for one
+`;
+
+const DEFAULT_ADDRESSES = `addr-mom:
+  address: 123 Elm Street Apt 4, Springfield, XX 99999
+  ballot: ${BALLOT}
+`;
+
 // A private data repo that passes Rule 8: publish.yaml, one private GitHub
-// remote, tiers.yaml and one ballot. Options override each part.
+// remote, tiers.yaml, addresses.yaml and one ballot with its private.yaml.
+// Options override each part.
 const makeDataRepo = (options = {}) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rc-data-"));
   git(root, "init", "-q");
@@ -112,6 +127,12 @@ const makeDataRepo = (options = {}) => {
   if (options.tiers !== false) write(path.join(root, "tiers.yaml"), options.tiers ?? DEFAULT_TIERS);
   if (options.ballot !== false) {
     write(path.join(root, BALLOT, "ballot.yaml"), options.ballot ?? DEFAULT_BALLOT);
+  }
+  if (options.ballot !== false && options.private !== false) {
+    write(path.join(root, BALLOT, "private.yaml"), options.private ?? DEFAULT_PRIVATE);
+  }
+  if (options.addresses !== false) {
+    write(path.join(root, "addresses.yaml"), options.addresses ?? DEFAULT_ADDRESSES);
   }
   const remotes = options.remotes ?? { origin: ["https://github.com/me/elections.git"] };
   for (const [name, urls] of Object.entries(remotes)) {
@@ -217,7 +238,9 @@ ${paragraphs.map((p) => `<p>${p}</p>`).join("\n")}
 
 module.exports = {
   BALLOT,
+  DEFAULT_ADDRESSES,
   DEFAULT_BALLOT,
+  DEFAULT_PRIVATE,
   DEFAULT_TIERS,
   articlePage,
   git,

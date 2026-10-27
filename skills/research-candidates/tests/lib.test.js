@@ -169,6 +169,16 @@ describe("constants match the reference text they come from", () => {
     assert.ok(ballot.includes(`\`${constants.BALLOT_ID_PATTERN.source}\``));
     assert.ok(ballot.includes(`\`${constants.ID_PATTERN.source}\``));
   });
+  it("the API key variables are the ones snapshot-format.md names", () => {
+    const named = read("references/snapshot-format.md").match(
+      /environment variables the scripts read \(([^)]*)\)/,
+    );
+    assert.ok(named, "snapshot-format.md no longer names the API key variables");
+    assert.deepEqual(
+      [...named[1].matchAll(/`([A-Z_]+)`/g)].map((m) => m[1]),
+      constants.KEY_ENV,
+    );
+  });
 });
 
 describe("fetch-snapshot's output codes are the ones snapshot-format.md lists", () => {

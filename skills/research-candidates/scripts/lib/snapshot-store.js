@@ -43,14 +43,22 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 
 const sha256 = (data) => crypto.createHash("sha256").update(data).digest("hex");
 
-// A lock file's text and identity, or null when there is none.
+// A lock file's text and identity, or null when there is none. One open file,
+// so the age, inode and text all come from the same file even when a lock is
+// replaced in between and the filesystem reuses its inode number.
 const readLock = (lock) => {
+  let fd;
   try {
-    const { mtimeMs, ino } = fs.statSync(lock);
-    return { text: fs.readFileSync(lock, "utf8"), mtimeMs, ino };
+    fd = fs.openSync(lock, "r");
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
+  }
+  try {
+    const { mtimeMs, ino } = fs.fstatSync(fd);
+    return { text: fs.readFileSync(fd, "utf8"), mtimeMs, ino };
+  } finally {
+    fs.closeSync(fd);
   }
 };
 

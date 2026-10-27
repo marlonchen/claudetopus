@@ -10,7 +10,7 @@
 - [ ] Limit the refused-host stop to refusals from the current discovery run, or skip URL+subject pairs a later snapshot saved, so the append-only log cannot block a contest forever. Also say how the researcher continues without adding the domain.
 - [ ] Say what happens to privacy refusals during discovery: they are never logged, and the agent replies only `done`, so today they reach no one. Fix the "every other source ... reaches the researcher through `review-list`" sentence.
 - [ ] Bind the fetch tool given to each discovery agent to its own contest, the way it already rejects `--ballot` and `--file`; its `--searched` mode is bound the same way (snapshot-format.md, Search log).
-- [ ] State that `fetch-snapshot` runs the privacy match before the tier lookup, before any redirect and before any write to `unfetchable.md`.
+- [x] State that `fetch-snapshot` runs the privacy match before the tier lookup, before any redirect and before any write to `unfetchable.md`. **Built (ticket 03):** stated in snapshot-format.md and tested through the command.
 
 **Why:** Each prose patch to this hand-off in /ship run 5 opened the next hole: "never read the reply" could not be enforced, and "read refused hosts from `unfetchable.md`" let attacker-chosen URL text into the session that has shell and file tools.
 
@@ -44,6 +44,7 @@
 - decide whether to fold confusables (Cyrillic or Greek look-alike letters) everywhere;
 - excerpt matching joins `pdftotext` hyphenated line breaks and the scan does not, so if `check` joins after collapsing whitespace, `Spring- field Township` passes `check` and the scan reads it as `spring field township`; define the join so it cannot, or add it to the scan;
 - make `ballot-check` refuse a `private_strings`, address or label entry with no letters or digits left after normalization, since an empty entry would match every page or none;
+- **Built (ticket 03), in `scripts/lib/privacy.js` and stated in SKILL.md step 6.3:** the fold order and the value-normalization items below; NFKC-made digits (`9410³`, `①`) count for the ZIP and digit-run checks; reading ZWNJ, ZWJ and soft hyphens as spaces may split a word into a short private entry (`Spring­field Township` matching `Field Township`), and that refusal is accepted, since the matcher fails closed. Still open: confusables, the combining-mark NFD variant, the `check` items and the parity-test items.
 - fold order: in the NFKC variants, apply the ignorable fold and NFKC first, then the quote, dash and case folds, whitespace collapse and form 3's separators (or NFKC_Casefold), since NFKC run last brings back capitals (`𝐒𝐩𝐫𝐢𝐧𝐠𝐟𝐢𝐞𝐥𝐝` becomes `Springfield`) and creates separators (`／`, `․`) after they were read as spaces; collapse whitespace after the ignorable fold, so `Pat <ZWSP> Voter` still reads as `pat voter`;
 - say that each searched value is normalized the same way as the form and variant it is matched against, ignorable fold and NFKC included, so an entry holding a soft hyphen still matches page text whose soft hyphen the variant removed; add a parity case;
 - decide whether digits NFKC creates (`9410³` becomes `94103`, `①` becomes `1`) count for the ZIP and digit-run checks, and whether reading ZWNJ, ZWJ and soft hyphens as spaces may split ordinary words into a short private entry (`Spring­field Township` matching `Field Township`);
@@ -194,9 +195,9 @@
 
 **What:** Close three rare cases the cycle-3 /ship review found in `scripts/lib/snapshot-store.js` and `scripts/lib/deps.js`:
 
-- [ ] `.lock.break` is judged stale by age alone and removed by path, so a breaker paused for over 5s mid-break (laptop sleep) can lose it and then remove a live `.lock`. Check its pid with `isStale`, and remove a stale break lock only after confirming its text and inode.
-- [ ] `readLock` stats and reads the lock through two path lookups, so on a filesystem that reuses inode numbers (ext4) `seen` can mix a dead lock's age with a live lock's text. Open once and `fstat` plus read the same fd.
-- [ ] `deps.js` real-paths only the cache side; under `NODE_PRESERVE_SYMLINKS` a symlinked cache gives a false `deps-missing`. Real-path both sides.
+- [ ] `.lock.break` is judged stale by age alone and removed by path, so a breaker paused for over 5s mid-break (laptop sleep) can lose it and then remove a live `.lock`. Check its pid with `isStale`, and remove a stale break lock only after confirming its text and inode. **Still open after ticket 03:** the pid check no longer applies (locks are judged by age, below), and confirming text and inode before a remove by path leaves the same window, so this needs its own design.
+- [x] `readLock` stats and reads the lock through two path lookups, so on a filesystem that reuses inode numbers (ext4) `seen` can mix a dead lock's age with a live lock's text. Open once and `fstat` plus read the same fd.
+- [x] `deps.js` real-paths only the cache side; under `NODE_PRESERVE_SYMLINKS` a symlinked cache gives a false `deps-missing`. Real-path both sides.
 
 Since the PR #8 review a lock is judged by age alone (no pid check, so sandboxed agents in other pid namespaces are safe), and a crashed run's lock delays the next run by up to 30s.
 
