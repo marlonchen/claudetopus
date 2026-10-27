@@ -44,9 +44,8 @@ const ballotDirs = (root) => {
 
 // { contests: Map<contest id, { type, subjects: Set<id> }>, people: Set<id> }
 // from <ballot>/ballot.yaml. Subjects are the contest's candidate or official ids.
-const loadBallot = (root, ballot) => {
-  const location = `${ballot}/ballot.yaml`;
-  const data = readYamlDocument(path.join(root, location), location).doc.toJS();
+const loadBallot = (root, ballot, location = `${ballot}/ballot.yaml`) => {
+  const data = readYamlDocument(path.join(root, ballot, "ballot.yaml"), location).doc.toJS();
   if (!data || !Array.isArray(data.contests)) throw new Failure(location, "ballot-invalid");
   const contests = new Map();
   const people = new Set();
@@ -73,7 +72,8 @@ const loadTiers = (root) => {
   const people = new Set();
   for (const ballot of ballotDirs(root)) {
     if (!fs.existsSync(path.join(root, ballot, "ballot.yaml"))) continue;
-    for (const id of loadBallot(root, ballot).people) people.add(id);
+    // Another ballot's id never reaches this run's output, so its failures are unlocated.
+    for (const id of loadBallot(root, ballot, "-").people) people.add(id);
   }
   return doc.contents.items.map((node) => {
     const at = `tiers.yaml:${lineCounter.linePos(node.range[0]).line}`;

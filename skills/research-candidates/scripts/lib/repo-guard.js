@@ -57,6 +57,12 @@ const checkRemote = (root, name) => {
 };
 
 const guardRepo = (root) => {
+  // Every check below is relative to the project root, so it must be the repo's top level.
+  const top = run("git", ["rev-parse", "--show-toplevel"], root);
+  if (top === null) throw new Failure(".", "guard-not-git-repo");
+  if (fs.realpathSync(top.trim()) !== fs.realpathSync(root)) {
+    throw new Failure(".", "guard-not-repo-root");
+  }
   if (!fs.statSync(path.join(root, "publish.yaml"), { throwIfNoEntry: false })?.isFile()) {
     throw new Failure("publish.yaml", "guard-no-publish-yaml");
   }

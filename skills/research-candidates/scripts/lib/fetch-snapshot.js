@@ -48,7 +48,8 @@ const parseArgs = (argv) => {
   } catch {
     throw new Failure("-", "bad-url");
   }
-  if (!isHttp(parsed)) throw new Failure("-", "bad-url");
+  // Credentials in a URL are never fetched or recorded.
+  if (!isHttp(parsed) || parsed.username || parsed.password) throw new Failure("-", "bad-url");
   return { ballot, contest, subject, name, url: parsed };
 };
 
@@ -57,8 +58,9 @@ const parseArgs = (argv) => {
 const checkTarget = (root, { ballot, contest, subject, name }) => {
   // Checked here too, so an id ballot-check would fail never becomes a path.
   if (!ID_PATTERN.test(contest)) throw new Failure(`${ballot}/ballot.yaml`, "unknown-contest");
+  // A malformed subject is never echoed: it is the agent's text (Rule 5).
   if (subject !== "_race" && !ID_PATTERN.test(subject)) {
-    throw new Failure(`${contest}/${subject}`, "unknown-subject");
+    throw new Failure(`${contest}/-`, "unknown-subject");
   }
   const contests = loadBallot(root, ballot).contests;
   const listed = contests.get(contest);
@@ -71,7 +73,9 @@ const checkTarget = (root, { ballot, contest, subject, name }) => {
 };
 
 const logUnfetchable = (ballotDir, url, where, reason) => {
-  const line = `- ${cleanUrl(url).href} | ${where} | ${today()} | ${reason}\n`;
+  // A non-http redirect target can hold raw spaces and |, which would forge fields.
+  const href = cleanUrl(url).href.replace(/[\s|]/g, encodeURIComponent);
+  const line = `- ${href} | ${where} | ${today()} | ${reason}\n`;
   fs.appendFileSync(path.join(ballotDir, "unfetchable.md"), line);
 };
 

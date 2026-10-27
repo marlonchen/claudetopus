@@ -27,9 +27,16 @@ const depsDir = () => {
 
 let requireDep;
 const load = (name) => {
-  requireDep ??= createRequire(path.join(depsDir(), "package.json"));
+  const dir = depsDir();
+  requireDep ??= createRequire(path.join(dir, "package.json"));
   try {
-    return requireDep(name);
+    // Node would otherwise look in parent node_modules and NODE_PATH too, so a
+    // missing install could load some other copy instead of the pinned one.
+    const resolved = requireDep.resolve(name);
+    if (path.relative(path.join(dir, "node_modules"), resolved).startsWith("..")) {
+      throw new Failure("scripts/install-deps", "deps-missing");
+    }
+    return requireDep(resolved);
   } catch (error) {
     if (error.code === "MODULE_NOT_FOUND") {
       throw new Failure("scripts/install-deps", "deps-missing");

@@ -27,9 +27,11 @@ const withoutFragment = (url) => {
   return copy;
 };
 
-// The URL as recorded: key parameters removed, fragment dropped.
+// The URL as recorded: credentials and key parameters removed, fragment dropped.
 const cleanUrl = (url) => {
   const clean = withoutFragment(url);
+  clean.username = "";
+  clean.password = "";
   for (const name of [...clean.searchParams.keys()]) {
     if (KEY_PARAM.test(name)) clean.searchParams.delete(name);
   }
@@ -119,7 +121,13 @@ const fetchPage = async (entries, startUrl) => {
       await response.body?.cancel();
       return refuse(url, "not-html", "not html");
     }
-    const bytes = await readCapped(response);
+    let bytes;
+    try {
+      bytes = await readCapped(response);
+    } catch {
+      // A reset, a timeout or a bad encoding partway through the body.
+      return refuse(url, "network-error", "network error");
+    }
     if (!bytes) return refuse(url, "too-large", "too large");
     return { url, html: decode(bytes, contentType), tiers: combined };
   }

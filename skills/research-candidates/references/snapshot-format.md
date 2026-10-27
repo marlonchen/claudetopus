@@ -52,15 +52,15 @@ A plain fetch is:
 fetch-snapshot <election>/<ballot-id> <contest> <subject> <name> <url>
 ```
 
-It saves the page at `<url>` as `<ballot-id>/sources/<contest>/<subject>/<name>.md` (see Names). The agents' fetch tool fixes the ballot and the contest, so the agent gives only the subject, the name and a URL from a search result. Before anything else it checks Rule 8, then finishes any interrupted save (Manifest).
+It saves the page at `<url>` as `<ballot-id>/sources/<contest>/<subject>/<name>.md` (see Names). The agents' fetch tool fixes the ballot and the contest, so the agent gives only the subject, the name and a URL from a search result. Once its arguments parse, it checks Rule 8 before it writes anything, then finishes any interrupted save (Manifest).
 
 Like every script, it prints only `location code [key]` lines (Rule 5) and exits non-zero on any failure. A save prints the snapshot's path relative to the ballot directory and `saved`. A page it could not save is logged to `unfetchable.md` (Unfetchable log) and printed as `<contest>/<subject>` and a code: `domain-not-in-tiers`, `owner-changes-across-redirects`, `http-error`, `not-html`, `no-readable-text`, `network-error`, `bad-redirect`, `too-many-redirects`, `too-large` or `not-http`. Its other codes:
 
-- Rule 8: `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private` (located `remote:<name>`, never the URL), `guard-not-git-repo`.
-- Arguments: `usage`, `bad-ballot`, `bad-url`, `unknown-ballot`, `unknown-contest`, `unknown-subject`, `bad-name`.
+- Rule 8: `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private` (located `remote:<name>`, never the URL), `guard-not-git-repo`, `guard-not-repo-root` (run from somewhere other than the repo's top level).
+- Arguments: `usage`, `bad-ballot`, `bad-url` (also a URL holding credentials), `unknown-ballot`, `unknown-contest`, `unknown-subject`, `bad-name`.
 - `tiers.yaml`, located by the entry's line: `tiers-invalid`, `tiers-statements-only`, `tiers-no-owner`, `tiers-no-source`, `tiers-owner-not-statements`, `tiers-unknown-owner`.
-- Data files: `file-missing`, `yaml-invalid`, `ballot-invalid`.
-- The save: `owner-not-subject`, `unsafe-value` (a front matter value holding a control character or `---`, located by its key), `ballot-locked`, `snapshot-exists` (a file appeared at the chosen path after its manifest line was written, which only a writer that skips the script can cause), `deps-missing`.
+- Data files: `file-missing`, `yaml-invalid`, `ballot-invalid`. A failure in another ballot's `ballot.yaml`, read for the owner ids, is located `-`, so no other ballot's id reaches the output.
+- The save: `owner-not-subject`, `unsafe-value` (a front matter value holding a control character or `---`, located by its key), `ballot-locked`, `manifest-invalid` (`snapshots.sha256` does not end in a newline, so the next line would join the last), `snapshot-exists` (a file appeared at the chosen path after its manifest line was written, which only a writer that skips the script can cause), `deps-missing`.
 - Anything else is a bug: `internal-error`, with the stack on stderr.
 
 ## Names

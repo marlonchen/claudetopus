@@ -294,18 +294,19 @@ describe("a pinned install stays its git tree", () => {
   // The skill-pin gate refuses any file under the installed skill that its
   // tree lacks, so running a command must not leave one (no node_modules).
   const skillDir = path.join(__dirname, "..");
+  // Every file git does not track, ignored or not: the gate refuses both kinds.
   const untracked = () =>
-    git(
-      skillDir,
-      "ls-files",
-      "--others",
-      "--ignored",
-      "--exclude-standard",
-      "--exclude=.DS_Store",
-      ".",
-    )
-      .split("\n")
-      .filter(Boolean);
+    git(skillDir, "ls-files", "--others", "--exclude=.DS_Store", ".").split("\n").filter(Boolean);
+
+  it("sees a stray file whether or not .gitignore covers it", () => {
+    const stray = path.join(skillDir, "zz-stray-probe.txt");
+    fs.writeFileSync(stray, "x");
+    try {
+      assert.ok(untracked().includes("zz-stray-probe.txt"));
+    } finally {
+      fs.rmSync(stray);
+    }
+  });
 
   it("loads its dependencies from outside the skill directory", async () => {
     assert.ok(path.relative(skillDir, depsDir()).startsWith(".."));
@@ -716,10 +717,11 @@ describe("front matter is emitted, never assembled from untrusted text", () => {
 describe("Rule 8: the repo guard refuses to write outside a private data repo", () => {
   it("refuses without publish.yaml", async () => {
     const data = repo({ publish: false });
-    const result = await fetchSnapshot(data, PLAIN);
+    const result = await fetchVia(data, {}, PLAIN);
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "publish.yaml guard-no-publish-yaml\n");
-    assert.ok(!data.exists(`${BALLOT}/sources`));
+    assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+    assert.deepEqual(result.seen, []);
   });
 
   it("refuses in a clone of the skill's source repo", async () => {
@@ -728,6 +730,18 @@ describe("Rule 8: the repo guard refuses to write outside a private data repo", 
     const result = await fetchSnapshot(data, PLAIN);
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "skills/research-candidates/SKILL.md guard-skill-source-clone\n");
+  });
+
+  it("refuses when run from below the repo's top level", async () => {
+    const data = repo();
+    data.write("sub/publish.yaml", "branch: main\n");
+    const result = await runCli("fetch-snapshot", PLAIN, {
+      cwd: data.file("sub"),
+      env: data.env,
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, ". guard-not-repo-root\n");
+    assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
   });
 
   // Value: protects=a project root outside any git repo is refused, since its remotes cannot be checked; fails_when=guardRepo treats a failed `git remote` as no remotes and lets the run write; why_new=every other guard test runs inside a git repo; seam=none; no_claim=a git repo with no remotes
@@ -748,10 +762,11 @@ describe("Rule 8: the repo guard refuses to write outside a private data repo", 
   const refusesRemote = (name, options, code) =>
     it(name, async () => {
       const data = repo(options);
-      const result = await fetchSnapshot(data, PLAIN);
+      const result = await fetchVia(data, {}, PLAIN);
       assert.equal(result.status, 1);
       assert.equal(result.stdout, code);
-      assert.ok(!data.exists(`${BALLOT}/sources`));
+      assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+      assert.deepEqual(result.seen, []);
     });
 
   refusesRemote(
@@ -807,4 +822,116 @@ describe("Rule 8: the repo guard refuses to write outside a private data repo", 
     },
     "remote:backup guard-remote-not-private\n",
   );
+});
+
+describe("pre-landing review fixes", () => {
+  const routes = { "https://county.example.gov/": { body: COUNTY_PAGE } };
+  const lockFile = `${BALLOT}/.partial/.lock`;
+
+  it("Rule 5: never echoes a malformed subject, so it cannot forge an output line", async () => {
+    const data = repo();
+    const forged = "x\nsources/us-house-07/_race/forged.md saved";
+    const result = await fetchVia(data, routes, [BALLOT, "us-house-07", forged, "n", PLAIN[4]]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "us-house-07/- unknown-subject\n");
+    assert.deepEqual(result.seen, []);
+  });
+
+  it("takes over an empty lock left by a crash once it is past the grace period", async () => {
+    const data = repo();
+    data.write(lockFile, "");
+    const old = new Date(Date.now() - 60 * 1000);
+    fs.utimesSync(data.file(lockFile), old, old);
+    const result = await fetchVia(data, routes, PLAIN);
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+    assert.deepEqual(data.list(`${BALLOT}/.partial`), []);
+  });
+
+  it("takes over a lock older than any save, even when its pid is alive (a reused pid)", async () => {
+    const data = repo();
+    data.write(lockFile, `${process.pid} someone-else\n`);
+    const old = new Date(Date.now() - 60 * 60 * 1000);
+    fs.utimesSync(data.file(lockFile), old, old);
+    const result = await fetchVia(data, routes, PLAIN);
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+    assert.deepEqual(data.list(`${BALLOT}/.partial`), []);
+  });
+
+  it("takes over a lock whose process is gone", async () => {
+    const data = repo();
+    data.write(lockFile, "999999 dead-owner\n");
+    const result = await fetchVia(data, routes, PLAIN);
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+    assert.deepEqual(data.list(`${BALLOT}/.partial`), []);
+  });
+
+  it("refuses a URL holding credentials, and never logs them from a redirect", async () => {
+    const data = repo();
+    const direct = await fetchVia(data, {}, [
+      BALLOT,
+      "us-house-07",
+      "_race",
+      "p",
+      "https://u:pw@county.example.gov/",
+    ]);
+    assert.equal(direct.stdout, "- bad-url\n");
+    const redirected = await fetchVia(
+      data,
+      {
+        "https://county.example.gov/go": {
+          status: 302,
+          headers: { location: "https://u:pw@county.example.gov/in" },
+        },
+      },
+      [BALLOT, "us-house-07", "_race", "p", "https://county.example.gov/go"],
+    );
+    assert.equal(redirected.status, 1);
+    assert.doesNotMatch(data.read(`${BALLOT}/unfetchable.md`), /pw|u:/);
+  });
+
+  it("logs a non-http redirect target without letting it forge unfetchable.md fields", async () => {
+    const data = repo();
+    const result = await fetchVia(
+      data,
+      {
+        "https://county.example.gov/go": {
+          status: 302,
+          headers: { location: "data:x, | fake/contest | 2026-01-01 | ok" },
+        },
+      },
+      [BALLOT, "us-house-07", "_race", "p", "https://county.example.gov/go"],
+    );
+    assert.equal(result.stdout, "us-house-07/_race not-http\n");
+    const line = data.read(`${BALLOT}/unfetchable.md`);
+    assert.equal(line.split(" | ").length, 4);
+    assert.match(line, / \| us-house-07\/_race \| \d{4}-\d{2}-\d{2} \| not http\n$/);
+  });
+
+  it("refuses to append to a manifest whose last line has no newline", async () => {
+    const data = repo();
+    data.write(`${BALLOT}/snapshots.sha256`, "-  sources/us-house-07/_race/old.md");
+    const result = await fetchVia(data, routes, PLAIN);
+    assert.equal(result.stdout, "snapshots.sha256 manifest-invalid\n");
+    assert.equal(data.read(`${BALLOT}/snapshots.sha256`), "-  sources/us-house-07/_race/old.md");
+    assert.ok(!data.exists(`${BALLOT}/sources`));
+  });
+
+  it("never relinks a leftover partial to a manifest path outside sources/", async () => {
+    const data = repo();
+    const hash = "a".repeat(64);
+    data.write(`${BALLOT}/.partial/${hash}`, "planted");
+    data.write(`${BALLOT}/snapshots.sha256`, `${hash}  sources/../escaped.md\n`);
+    await fetchVia(data, routes, PLAIN);
+    assert.ok(!data.exists(`${BALLOT}/escaped.md`));
+    assert.ok(!data.list(`${BALLOT}/.partial`).includes(hash));
+  });
+
+  it("does not name another ballot when its ballot.yaml is broken", async () => {
+    const data = repo();
+    data.write("2026-general/yy-otherplace-2/ballot.yaml", "contests: [unclosed\n");
+    const result = await fetchVia(data, routes, PLAIN);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "- yaml-invalid\n");
+    assert.doesNotMatch(result.stdout, /yy-otherplace/);
+  });
 });
