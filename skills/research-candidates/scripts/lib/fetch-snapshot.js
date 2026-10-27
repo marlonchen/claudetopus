@@ -117,8 +117,8 @@ const main = (argv) =>
     const values = loadPrivateValues(root, args.ballot);
     // A privacy refusal stops the command here or inside fetchPage, so it can
     // never reach logUnfetchable.
-    const checkPrivate = (text) => {
-      const code = refusalCode(scan(text, values, URL_CLASSES));
+    const checkPrivate = (texts) => {
+      const code = refusalCode(texts.flatMap((text) => scan(text, values, URL_CLASSES)));
       if (code) throw new Failure(where, code);
     };
     // Every spelling, before tiers.yaml is read, so a private URL never reaches the tier lookup.

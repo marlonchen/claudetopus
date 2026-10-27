@@ -100,13 +100,12 @@ const refuse = (url, code, reason) => ({ url, refused: { code, reason } });
 
 // Every spelling of a URL the privacy check reads: as given (the argument or
 // the Location header), parsed, and with its host in Unicode, since parsing
-// turns a Unicode host into punycode.
-const spellings = (url, given) =>
-  [
-    given,
-    url.href,
-    url.href.replace(url.host, domainToUnicode(url.hostname) + (url.port ? `:${url.port}` : "")),
-  ].join("\n");
+// turns a Unicode host into punycode. Each is checked on its own, so no
+// phrase is read across two of them.
+const spellings = (url, given) => {
+  const host = domainToUnicode(url.hostname) + (url.port ? `:${url.port}` : "");
+  return [given, url.href, url.href.replace(url.host, () => host)];
+};
 
 // Fetch reads header bytes as latin1, so a Location sent as raw UTF-8 arrives
 // as mojibake. Read it as UTF-8, as browsers do, when its bytes are valid UTF-8.
@@ -119,9 +118,9 @@ const fromHeader = (value) => {
 // Returns { url, html, tiers } for a saved page, or { url, refused: { code,
 // reason } } with the URL to log (the refused hop, or the final URL) and the
 // unfetchable.md reason. The caller has privacy-checked `startUrl`;
-// `checkPrivate(text)` throws on a private value, and runs on each redirect's
-// Location before it is parsed and on every spelling once it is, so no URL is
-// requested, tier-matched or returned for logging unchecked.
+// `checkPrivate(texts)` throws on a private value in any of `texts`, and runs
+// on each redirect's Location before it is parsed and on every spelling once
+// it is, so no URL is requested, tier-matched or returned for logging unchecked.
 const fetchPage = async (entries, startUrl, checkPrivate) => {
   const matches = [];
   let url = startUrl;
@@ -142,7 +141,7 @@ const fetchPage = async (entries, startUrl, checkPrivate) => {
       const location = response.headers.get("location");
       const given = fromHeader(location);
       // A bad redirect logs only the hop before it, but its text is still checked.
-      checkPrivate(`${location}\n${given}`);
+      checkPrivate([location, given]);
       try {
         url = new URL(given, url);
       } catch {

@@ -92,6 +92,13 @@ describe("privacy matcher: every normalization variant, refusing on any", () => 
     assert.deepEqual(classes("addr%252Dmom"), ["label"]);
   });
 
+  it("decodes latin1 percent-escapes and folds ß and final sigma", () => {
+    const values = { "private-string": ["Peña Hall", "Straße Nord", "Οδος"] };
+    assert.deepEqual(classes("/Pe%F1a-Hall", values), ["private-string"]);
+    assert.deepEqual(classes("/STRASSE-NORD/", values), ["private-string"]);
+    assert.deepEqual(classes("/ΟΔΟΣ/", values), ["private-string"]);
+  });
+
   it("normalizes each value like the form it is matched against", () => {
     const values = { "private-string": ["Spring­field Township", "Ｌｉｎｃｏｌｎ Gym"] };
     assert.deepEqual(classes("springfield-township", values), ["private-string"]);
@@ -176,8 +183,14 @@ describe("privacy matcher: what callers pass and get back", () => {
     assert.deepEqual(classes("x=K3YV4LUE0123456789"), []);
   });
 
-  it("skips empty values instead of matching everything", () => {
-    assert.deepEqual(classes("anything", { label: ["", "   "], "private-string": ["­"] }), []);
+  it("skips values with no letter or digit instead of matching every separator", () => {
+    const values = { label: ["", "   "], "private-string": ["­", ".", "-", " / "] };
+    assert.deepEqual(classes("https://a.example/x-y/spring­field", values), []);
+  });
+
+  it("trims a key value before matching it", () => {
+    assert.deepEqual(classes("?k=k3yV4lue0123456789", { key: ["k3yV4lue0123456789\n"] }), ["key"]);
+    assert.deepEqual(classes("anything", { key: ["  "] }), []);
   });
 
   it("refuses with the first class in report order", () => {
