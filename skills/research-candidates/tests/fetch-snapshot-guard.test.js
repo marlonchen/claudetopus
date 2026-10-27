@@ -80,6 +80,11 @@ describe("deps.js: the npm dependencies load only from the install-deps cache", 
     fs.symlinkSync(depsDir(), link);
     const result = await fetchVia(data, routes, PLAIN, { RESEARCH_CANDIDATES_DEPS: link });
     assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+    const preserved = await fetchVia(data, routes, PLAIN, {
+      RESEARCH_CANDIDATES_DEPS: link,
+      NODE_PRESERVE_SYMLINKS: "1",
+    });
+    assert.equal(preserved.stdout, "sources/us-house-07/_race/county-page-2.md saved\n");
   });
 });
 
@@ -89,7 +94,7 @@ describe("Rule 8: the repo guard refuses to write outside a private data repo", 
     const result = await fetchVia(data, {}, PLAIN);
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "publish.yaml guard-no-publish-yaml\n");
-    assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+    assert.deepEqual(data.list(BALLOT), ["ballot.yaml", "private.yaml"]);
     assert.deepEqual(result.seen, []);
   });
 
@@ -110,7 +115,7 @@ describe("Rule 8: the repo guard refuses to write outside a private data repo", 
     });
     assert.equal(result.status, 1);
     assert.equal(result.stdout, ". guard-not-repo-root\n");
-    assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+    assert.deepEqual(data.list(BALLOT), ["ballot.yaml", "private.yaml"]);
   });
 
   // Value: protects=a project root outside any git repo is refused, since its remotes cannot be checked; fails_when=guardRepo treats a failed `git remote` as no remotes and lets the run write; why_new=every other guard test runs inside a git repo; seam=none; no_claim=a git repo with no remotes
@@ -124,7 +129,7 @@ describe("Rule 8: the repo guard refuses to write outside a private data repo", 
     );
     assert.equal(result.status, 1);
     assert.equal(result.stdout, ". guard-not-git-repo\n");
-    assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+    assert.deepEqual(data.list(BALLOT), ["ballot.yaml", "private.yaml"]);
     assert.deepEqual(result.seen, []);
   });
 
@@ -134,7 +139,7 @@ describe("Rule 8: the repo guard refuses to write outside a private data repo", 
       const result = await fetchVia(data, {}, PLAIN);
       assert.equal(result.status, 1);
       assert.equal(result.stdout, code);
-      assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+      assert.deepEqual(data.list(BALLOT), ["ballot.yaml", "private.yaml"]);
       assert.deepEqual(result.seen, []);
     });
 

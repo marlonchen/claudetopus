@@ -228,7 +228,7 @@ describe("output holds only location code [key] lines", () => {
       assert.equal(badUrl.status, 1);
       assert.equal(badUrl.stdout, "- bad-url\n");
     }
-    assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+    assert.deepEqual(data.list(BALLOT), ["ballot.yaml", "private.yaml"]);
   });
 
   // Value: protects=a well-formed ballot argument naming no ballot directory is refused before anything is written; fails_when=main drops the ballot-directory check, so recover or the unfetchable log creates <election>/<ballot-id>/ on the fly; why_new=every other test names the one existing ballot; seam=none; no_claim=a ballot directory without ballot.yaml

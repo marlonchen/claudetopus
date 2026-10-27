@@ -32,8 +32,8 @@ const load = (name) => {
   try {
     // Node would otherwise look in parent node_modules and NODE_PATH too, so a
     // missing install could load some other copy instead of the pinned one.
-    const resolved = requireDep.resolve(name);
-    // resolve() returns a real path, so compare against the real cache path.
+    // Both sides as real paths: resolve() keeps symlinks under NODE_PRESERVE_SYMLINKS.
+    const resolved = fs.realpathSync(requireDep.resolve(name));
     const modules = fs.realpathSync(path.join(dir, "node_modules"));
     if (path.relative(modules, resolved).startsWith("..")) {
       throw new Failure("scripts/install-deps", "deps-missing");

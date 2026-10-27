@@ -1,12 +1,13 @@
 "use strict";
 
 // Parsers for the data files fetch-snapshot reads: ballot.yaml (only the ids
-// it needs; ballot-check validates the rest) and tiers.yaml. Failures are
-// located by file and, where there is one, the entry's line.
+// it needs; ballot-check validates the rest), tiers.yaml, and the private
+// values in private.yaml and addresses.yaml. Failures are located by file and,
+// where there is one, the entry's line, never by a private value.
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { BALLOT_ID_PATTERN, ELECTION_PATTERN } = require("./constants");
+const { BALLOT_ID_PATTERN, ELECTION_PATTERN, KEY_ENV } = require("./constants");
 const { load } = require("./deps");
 const { Failure } = require("./output");
 const { TIER_RANK, conflicts, parseMatch } = require("./tiers");
@@ -120,4 +121,55 @@ const loadTiers = (root) => {
   return entries.map(({ at, ...entry }) => entry);
 };
 
-module.exports = { ballotDirs, loadBallot, loadTiers };
+// addresses.yaml: { <label>: { address, ballot } }. The street line is the
+// address up to its first comma; its ZIPs are its standalone 5-digit tokens.
+const loadAddresses = (root) => {
+  const { doc, lineCounter } = readYamlDocument(
+    path.join(root, "addresses.yaml"),
+    "addresses.yaml",
+  );
+  const YAML = load("yaml");
+  if (!YAML.isMap(doc.contents)) throw new Failure("addresses.yaml", "addresses-invalid");
+  return doc.contents.items.map((pair) => {
+    const at = `addresses.yaml:${lineCounter.linePos(pair.key?.range?.[0] ?? 0).line}`;
+    const label = YAML.isScalar(pair.key) ? pair.key.value : null;
+    const entry = pair.value?.toJSON?.();
+    if (typeof label !== "string" || label.trim() === "" || !entry || typeof entry !== "object") {
+      throw new Failure(at, "addresses-invalid");
+    }
+    const { address, ballot } = entry;
+    if (typeof address !== "string" || address.trim() === "") {
+      throw new Failure(at, "addresses-invalid");
+    }
+    if (ballot !== undefined && ballot !== null && typeof ballot !== "string") {
+      throw new Failure(at, "addresses-invalid");
+    }
+    const zips = [...address.normalize("NFKC").matchAll(/(?<![0-9])[0-9]{5}(?![0-9])/g)];
+    return { label, address, street: address.split(",")[0], zips: zips.map((m) => m[0]) };
+  });
+};
+
+// The values the privacy matcher checks for one ballot (SKILL.md step 6.3),
+// by class: the ballot id and its private_strings, every address, street
+// line, label and ZIP in addresses.yaml, and the API key values set in the
+// environment. No script prints any of them (Rule 5).
+const loadPrivateValues = (root, ballot) => {
+  const location = `${ballot}/private.yaml`;
+  const data = readYamlDocument(path.join(root, ballot, "private.yaml"), location).doc.toJS();
+  const strings = data?.private_strings ?? [];
+  if (!data || typeof data !== "object" || !Array.isArray(strings)) {
+    throw new Failure(location, "private-invalid");
+  }
+  if (strings.some((s) => typeof s !== "string")) throw new Failure(location, "private-invalid");
+  const addresses = loadAddresses(root);
+  return {
+    "ballot-id": [ballot.split("/")[1]],
+    "private-string": strings,
+    address: addresses.flatMap((a) => [a.address, a.street]),
+    zip: addresses.flatMap((a) => a.zips),
+    label: addresses.map((a) => a.label),
+    key: KEY_ENV.map((name) => process.env[name]).filter(Boolean),
+  };
+};
+
+module.exports = { ballotDirs, loadBallot, loadPrivateValues, loadTiers };

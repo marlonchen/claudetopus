@@ -12,4 +12,7 @@ const BALLOT_ID_PATTERN = /^[a-z]{2}-[a-z]+(-[a-z]+)*-[1-9][0-9]?$/;
 // ballot-format.md, Ids: contest, candidate and official ids. Snapshot names use it too.
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-module.exports = { BALLOT_ID_PATTERN, ELECTION_PATTERN, ID_PATTERN, SOURCE_REPO_ID };
+// snapshot-format.md, Cleaning the URL: the API-key environment variables the scripts read.
+const KEY_ENV = ["OPENFEC_API_KEY", "OPENSTATES_API_KEY"];
+
+module.exports = { BALLOT_ID_PATTERN, ELECTION_PATTERN, ID_PATTERN, KEY_ENV, SOURCE_REPO_ID };

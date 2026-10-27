@@ -1,14 +1,16 @@
 "use strict";
 
-// Fetch a page hop by hop. Every hop's URL is tier-matched before it is
-// requested, so a host missing from tiers.yaml is never contacted; redirects
-// are followed by hand for the same reason.
+// Fetch a page hop by hop. Every hop's URL is privacy-checked and then
+// tier-matched before it is requested, so a URL holding a private value or a
+// host missing from tiers.yaml is never contacted; redirects are followed by
+// hand for the same reason.
 //
 // RESEARCH_CANDIDATES_TEST_HTTP_TARGET (127.0.0.1:<port> or localhost:<port>)
 // sends every request to a local test server over plain http, with the URL it
 // stands for in the X-Original-Url header. Tests only; any other value is
 // ignored, so the variable can never send a page anywhere but this machine.
 
+const { domainToUnicode } = require("node:url");
 const { combineHops, matchUrl } = require("./tiers");
 
 const MAX_HOPS = 10;
@@ -96,13 +98,28 @@ const decode = (bytes, contentType) => {
 
 const refuse = (url, code, reason) => ({ url, refused: { code, reason } });
 
+// Every spelling of a hop's URL the privacy check reads: as given (the
+// argument or the Location header), parsed, and with its host in Unicode, since
+// parsing turns a Unicode host into punycode.
+const spellings = (url, given) =>
+  [
+    given,
+    url.href,
+    url.href.replace(url.host, domainToUnicode(url.hostname) + (url.port ? `:${url.port}` : "")),
+  ].join("\n");
+
 // Returns { url, html, tiers } for a saved page, or { url, refused: { code,
 // reason } } with the URL to log (the refused hop, or the final URL) and the
-// unfetchable.md reason.
-const fetchPage = async (entries, startUrl) => {
+// unfetchable.md reason. `privateCode(text)` gives a privacy refusal's code or
+// null; it runs on every hop before anything else, and a privacy refusal has no
+// reason, since it is never logged.
+const fetchPage = async (entries, startUrl, privateCode) => {
   const matches = [];
   let url = startUrl;
+  let given = startUrl.href;
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
+    const privacy = privateCode(spellings(url, given));
+    if (privacy) return { url, refused: { code: privacy, private: true } };
     if (!isHttp(url)) return refuse(url, "not-http", "not http");
     matches.push(matchUrl(entries, url));
     const combined = combineHops(matches);
@@ -116,8 +133,12 @@ const fetchPage = async (entries, startUrl) => {
     }
     if (response.status >= 300 && response.status < 400 && response.headers.has("location")) {
       await response.body?.cancel();
+      given = response.headers.get("location");
+      // A bad redirect logs only the hop before it, but its text is still checked.
+      const redirectPrivacy = privateCode(given);
+      if (redirectPrivacy) return { url, refused: { code: redirectPrivacy, private: true } };
       try {
-        url = new URL(response.headers.get("location"), url);
+        url = new URL(given, url);
       } catch {
         return refuse(url, "bad-redirect", "bad redirect");
       }

@@ -6,15 +6,19 @@
 // <ballot>/sources/<contest>/<subject>/<name>.md (snapshot-format.md). Its
 // tier, statements_only, owner and source name come only from the matched
 // tiers.yaml entries; a page that cannot be saved is logged to unfetchable.md.
+// A URL holding a private value (Rule 7) is refused before anything else
+// reads it, on every hop, and only its class code is printed: it is never
+// requested and never logged, since the URL is the private text.
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { BALLOT_ID_PATTERN, ELECTION_PATTERN, ID_PATTERN } = require("./constants");
-const { loadBallot, loadTiers } = require("./data-files");
+const { loadBallot, loadPrivateValues, loadTiers } = require("./data-files");
 const { load } = require("./deps");
 const { cleanUrl, fetchPage, isHttp } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
 const { Failure, runCommand } = require("./output");
+const { refusalCode, scan } = require("./privacy");
 const { guardRepo } = require("./repo-guard");
 const { recover, save, withLock } = require("./snapshot-store");
 
@@ -31,6 +35,9 @@ const hasControl = (value) =>
     const code = ch.codePointAt(0);
     return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029;
   });
+
+// The classes a fetched URL may not hold (Rule 7, snapshot-format.md).
+const URL_CLASSES = ["ballot-id", "address", "zip", "label", "private-string", "key"];
 
 const parseArgs = (argv) => {
   if (argv.length !== 5 || argv.some((arg) => arg.startsWith("--"))) {
@@ -50,7 +57,7 @@ const parseArgs = (argv) => {
   }
   // Credentials in a URL are never fetched or recorded.
   if (!isHttp(parsed) || parsed.username || parsed.password) throw new Failure("-", "bad-url");
-  return { ballot, contest, subject, name, url: parsed };
+  return { ballot, contest, subject, name, given: url, url: parsed };
 };
 
 // The contest and subject must be a pair ballot.yaml lists (or _race), so the
@@ -106,10 +113,16 @@ const main = (argv) =>
     withLock(ballotDir, () => recover(ballotDir));
 
     const target = checkTarget(root, args);
-    const entries = loadTiers(root);
     const where = `${args.contest}/${args.subject}`;
+    const values = loadPrivateValues(root, args.ballot);
+    const privateCode = (text) => refusalCode(scan(text, values, URL_CLASSES));
+    // Before tiers.yaml is read, so a private URL never reaches the tier lookup.
+    const refused = privateCode(args.given);
+    if (refused) throw new Failure(where, refused);
+    const entries = loadTiers(root);
 
-    const page = await fetchPage(entries, args.url);
+    const page = await fetchPage(entries, args.url, privateCode);
+    if (page.refused?.private) throw new Failure(where, page.refused.code);
     if (page.refused) {
       logUnfetchable(ballotDir, page.url, where, page.refused.reason);
       throw new Failure(where, page.refused.code);

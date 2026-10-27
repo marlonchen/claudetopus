@@ -56,6 +56,16 @@ ignored_lines:          # sample-ballot lines that are not contests (instruction
   - Vote for one
 ```
 
+`addresses.yaml`, at the project root, holds each address the researcher adds under its label (SKILL.md step 1); the model never reads or writes it (Rule 5). Scripts read it only to refuse or scan for its values:
+
+```yaml
+addr-mom:                 # the label: distinctive, never mom or home (SKILL.md step 6.3)
+  address: 123 Elm Street Apt 4, Springfield, XX 99999   # one line, street line first
+  ballot: 2026-general/xx-exampleton-1   # empty until step 2
+```
+
+The scripts take the street line to be the address up to its first comma, and its ZIP codes to be its standalone 5-digit tokens, so write the address on one line with a comma after the street.
+
 Contest types: `candidate`, `retention` (one judge or official, yes/no), and `measure`.
 
 Every candidate contest carries an `office_type` from the list in [sections.md](sections.md), which picks its Positions issues; `ballot-check` fails a candidate contest without one or with a value not on that list. A retention contest for a judge carries `office_type: judicial`; other retention contests and measures leave it out.
