@@ -6,7 +6,7 @@
 // private value matched and the class of value, never the value or the text.
 //
 // Text is checked in three forms: raw; decoded and folded; and folded again
-// with - _ / . + read as spaces. The two folded forms are each built in four
+// with - _ / . + = : , ; ~ & read as spaces. The two folded forms are each built in four
 // variants (default-ignorable code points removed or read as spaces, NFKC on
 // or off), since each fold catches a spelling the others miss and can hide
 // another. In every variant the ignorable fold and NFKC come first, then the
@@ -19,13 +19,14 @@
 // The value classes a caller can ask for, in report order, with the code a
 // privacy refusal prints for each (Rule 5: only the class, never the text).
 const CLASSES = {
-  "ballot-id": { code: "private-ballot-id" },
-  address: { code: "private-address" },
-  zip: { code: "private-zip" },
-  label: { code: "private-label" },
-  "private-string": { code: "private-string" },
-  key: { code: "private-key" },
+  "ballot-id": "private-ballot-id",
+  address: "private-address",
+  zip: "private-zip",
+  label: "private-label",
+  "private-string": "private-string",
+  key: "private-key",
 };
+const ORDER = Object.keys(CLASSES);
 
 // Letters, marks and decimal digits: a phrase match may not touch one.
 const WORD = /[\p{L}\p{M}\p{Nd}]/u;
@@ -94,13 +95,17 @@ const decodeEntity = (entity) => {
   return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "�";
 };
 
-const decodePercent = (run) =>
-  Buffer.from(
+// UTF-8, or latin1 when the bytes are not valid UTF-8 (`Pe%F1a`).
+const decodePercent = (run) => {
+  const bytes = Buffer.from(
     run
       .slice(1)
       .split("%")
       .map((hex) => parseInt(hex, 16)),
-  ).toString("utf8");
+  );
+  const utf8 = bytes.toString("utf8");
+  return utf8.includes("\ufffd") ? bytes.toString("latin1") : utf8;
+};
 
 // HTML entities and URL encoding, repeated so a double-encoded value decodes too.
 const decode = (s) => {
@@ -125,7 +130,9 @@ const fold = (s, form, { ignorable, nfkc }) => {
   s = rewrite(s, /[“”„‟″]/g, () => '"');
   s = rewrite(s, /[\p{Pd}−]/gu, () => "-");
   s = rewrite(s, /\p{Changes_When_Lowercased}/gu, (ch) => ch.toLowerCase());
-  if (form === 3) s = rewrite(s, /[-_/.+]/g, () => " ");
+  // The full case folds lowercasing leaves out: STRASSE is Straße.
+  s = rewrite(s, /[ßς]/g, (ch) => (ch === "ß" ? "ss" : "σ"));
+  if (form === 3) s = rewrite(s, /[-_/.+=:,;~&]/g, () => " ");
   return rewrite(s, /\s+/gu, () => " ");
 };
 
@@ -219,16 +226,20 @@ const scan = (text, values, classes) => {
   const folded = VARIANTS.map((variant) => ({ variant, s: fold(decoded, variant.form, variant) }));
   for (const cls of classes) {
     for (const value of values[cls] ?? []) {
-      if (typeof value !== "string" || value.trim() === "") continue;
+      if (typeof value !== "string") continue;
       if (cls === "key") {
         // A key value is random text: any occurrence counts, case and boundaries kept.
+        const key = value.trim();
+        if (!key) continue;
         for (const s of [raw, decoded]) {
-          for (let i = s.text.indexOf(value); i !== -1; i = s.text.indexOf(value, i + 1)) {
+          for (let i = s.text.indexOf(key); i !== -1; i = s.text.indexOf(key, i + 1)) {
             hit(cls, s.from[i]);
           }
         }
         continue;
       }
+      // A value with no letter or digit would match every separator, so it is no value.
+      if (!/[\p{L}\p{N}]/u.test(value)) continue;
       for (const { variant, s } of [{ variant: null, s: raw }, ...folded]) {
         for (const { needle, edge } of searchesFor(cls, value, variant)) {
           for (const i of occurrences(s.text, needle, edge)) hit(cls, s.from[i]);
@@ -236,20 +247,18 @@ const scan = (text, values, classes) => {
       }
     }
   }
-  const order = Object.keys(CLASSES);
   return [...hits]
     .map((key) => {
       const [line, cls] = key.split("\0");
       return { line: Number(line), class: cls };
     })
-    .sort((a, b) => a.line - b.line || order.indexOf(a.class) - order.indexOf(b.class));
+    .sort((a, b) => a.line - b.line || ORDER.indexOf(a.class) - ORDER.indexOf(b.class));
 };
 
 // The refusal code of the first class matched, in CLASSES order, or null.
 const refusalCode = (matches) => {
-  const order = Object.keys(CLASSES);
-  const first = matches.map((m) => m.class).sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
-  return first ? CLASSES[first].code : null;
+  const first = matches.map((m) => m.class).sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b))[0];
+  return first ? CLASSES[first] : null;
 };
 
-module.exports = { CLASSES, normalizeValue, refusalCode, scan };
+module.exports = { CLASSES, refusalCode, scan };

@@ -114,6 +114,7 @@ ignored_lines:
 
 const DEFAULT_ADDRESSES = `addr-mom:
   address: 123 Elm Street Apt 4, Springfield, XX 99999
+  street: 123 Elm Street
   ballot: ${BALLOT}
 `;
 
