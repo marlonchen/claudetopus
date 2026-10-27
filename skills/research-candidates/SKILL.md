@@ -7,7 +7,7 @@ description: "Objective, cited candidate research for a US election ballot, publ
 
 Builds a ballot guide for each voter address: every contest on the official ballot, every candidate at equal depth, every claim backed by a verbatim excerpt from a saved source. After the researcher reviews a short list of flagged items, the guide is published as one static page per ballot.
 
-**Status: scaffold.** None of the scripts in the table below are built yet. When a step needs a script that does not exist, say so and stop. Do not do its job by hand.
+**Status: scaffold.** Of the scripts in the table below, only `fetch-snapshot`'s plain fetch of an HTML page is built (`fetch-snapshot <election>/<ballot-id> <contest> <subject> <name> <url>`); its other modes and the other scripts are not. When a step needs a script or mode that does not exist, say so and stop. Do not do its job by hand. Before the first script runs, the researcher installs their dependencies ([README.md](README.md#dependencies)); when a script reports `deps-missing`, ask them to.
 
 All paths below are relative to the project root (the private data repo this skill is installed in).
 

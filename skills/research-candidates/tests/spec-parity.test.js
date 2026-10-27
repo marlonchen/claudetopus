@@ -1133,8 +1133,14 @@ describe("FailureCodes", () => {
     // Other kebab-case tokens the spec uses: script names, Rule markers, example ids and labels.
     const scripts = tableRows(SKILL, "## Scripts").map((row) => row[0].replaceAll("`", ""));
     const ids = exampleIds();
+    // fetch-snapshot's own output codes, listed in snapshot-format.md's Command line section.
+    const fetchCodes = [
+      ...between(SNAPSHOT, "## Command line").matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g),
+    ].map((m) => m[1]);
+    assert.ok(fetchCodes.length >= 10, `only ${fetchCodes.length} fetch-snapshot codes parsed`);
     const known = new Set([
       ...codes,
+      ...fetchCodes,
       ...scripts,
       ...ids,
       "says-only",

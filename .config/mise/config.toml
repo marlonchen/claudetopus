@@ -3,8 +3,9 @@
 # exercise whatever Node the developer (and the installed skill) actually uses.
 # The linters below are pinned to exact versions, so `mise run lint` gives the
 # same answer locally and in CI; bump them in their own PR. All three are
-# standalone binaries from aqua, so the repo still needs no package.json, no
-# node_modules, and no Python.
+# standalone binaries from aqua, so the repo root needs no package.json, no
+# node_modules, and no Python. research-candidates pins its own npm packages in
+# its package.json; the test task installs them outside the checkout.
 [tools]
 biome = "2.6.2"    # JavaScript and JSON (Markdown is rumdl's; see biome.jsonc)
 rumdl = "0.3.0"    # Markdown

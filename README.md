@@ -38,8 +38,13 @@ gh skill install ~/src/github/<user>/claudetopus <skill> --from-local --force --
 
 ## Development setup
 
-There is no `package.json` and no `node_modules` here. Every tool is either a Node
-builtin or a standalone binary provisioned by [mise](https://mise.jdx.dev).
+There is no `package.json` at the repo root and no `node_modules` anywhere in it. Every
+tool is either a Node builtin or a standalone binary provisioned by
+[mise](https://mise.jdx.dev). The one exception is research-candidates, whose scripts need
+three npm packages: its `package.json` and lockfile pin them, and `mise run test` installs
+them with its `scripts/install-deps` into a cache outside the checkout
+([skills/research-candidates/README.md](skills/research-candidates/README.md#dependencies)).
+mywiki stays zero-dependency.
 
 ### Prerequisites
 

@@ -21,7 +21,7 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
-      // These are CommonJS scripts in a repo with no package.json, so they
+      // These are CommonJS scripts with no package.json "type", so they
       // run as sloppy-mode scripts: "use strict" is load-bearing, not
       // redundant. Biome assumes ESM here, so the rule's premise is false.
       "suspicious": {
