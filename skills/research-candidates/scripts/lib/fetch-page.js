@@ -55,17 +55,21 @@ const readCapped = async (response) => {
     await response.body?.cancel();
     return null;
   }
+  if (!response.body) return Buffer.alloc(0);
+  // An explicit reader: the stream is locked to it, so it is the one that cancels.
+  const reader = response.body.getReader();
   const chunks = [];
   let size = 0;
-  for await (const chunk of response.body ?? []) {
-    size += chunk.length;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return Buffer.concat(chunks);
+    size += value.length;
     if (size > MAX_BYTES) {
-      await response.body.cancel();
+      await reader.cancel();
       return null;
     }
-    chunks.push(chunk);
+    chunks.push(value);
   }
-  return Buffer.concat(chunks);
 };
 
 const decode = (bytes, contentType) => {

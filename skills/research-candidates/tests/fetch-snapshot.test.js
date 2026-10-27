@@ -172,6 +172,32 @@ describe("fetch-snapshot saves a tiered HTML page as a write-once snapshot", () 
     assert.match(text, /Filing deadline: August 1\./);
     assert.doesNotMatch(text, /tracker|Menu|Footer/);
   });
+
+  // Value: protects=a page is decoded with the charset its content-type names; fails_when=decode ignores the charset parameter and reads every body as UTF-8, turning windows-1252 quotes and accents into U+FFFD; why_new=every other page is served as UTF-8; seam=none; no_claim=charsets named only in a meta tag
+  it("decodes the page with the charset its content-type names", async () => {
+    const data = repo();
+    const page = Buffer.from(
+      articlePage("Candidates certified", [
+        "The clerk called the list \x93final\x94 for Ren\xe9e Example on October 1.",
+        "Ballots will be mailed to voters starting October 8.",
+      ]),
+      "latin1",
+    );
+    const result = await fetchVia(
+      data,
+      {
+        "https://county.example.gov/": {
+          headers: { "content-type": "text/html; charset=windows-1252" },
+          body: page,
+        },
+      },
+      PLAIN,
+    );
+    assert.equal(result.status, 0);
+    const text = body(data.read(`${BALLOT}/sources/us-house-07/_race/county-page.md`));
+    assert.match(text, /the list \u201cfinal\u201d for Ren\u00e9e Example/);
+    assert.doesNotMatch(text, /\ufffd/);
+  });
 });
 
 describe("a page that cannot be saved is logged, never saved", () => {
@@ -197,12 +223,36 @@ describe("a page that cannot be saved is logged, never saved", () => {
     "too-large",
     "too large",
   );
+  // Value: protects=the size cap on a streamed body with no content-length; fails_when=readCapped trusts only the content-length header and buffers the whole body; why_new=the existing too-large case sends content-length, so only the header branch runs; seam=none; no_claim=memory use while streaming
+  logged(
+    "a page larger than the size cap that sends no content-length",
+    { headers: { "transfer-encoding": "chunked" }, body: "x".repeat(11 * 1024 * 1024) },
+    "too-large",
+    "too large",
+  );
   logged(
     "a page with no text",
     { body: "<html><body><script>x()</script></body></html>" },
     "no-readable-text",
     "no readable text",
   );
+  // Value: protects=a hop that cannot be reached is logged as a network error, not a crash; fails_when=fetchPage lets the fetch rejection escape, so the run ends internal-error with nothing in unfetchable.md; why_new=every other hop reaches a live server; seam=none; no_claim=timeouts or DNS failures specifically
+  it("a host that cannot be reached", async () => {
+    const data = repo();
+    const closed = await startServer({});
+    const target = closed.target;
+    await closed.close();
+    const result = await fetchSnapshot(data, PLAIN, {
+      RESEARCH_CANDIDATES_TEST_HTTP_TARGET: target,
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "us-house-07/_race network-error\n");
+    assert.match(
+      data.read(`${BALLOT}/unfetchable.md`),
+      /^- https:\/\/county\.example\.gov\/ \| us-house-07\/_race \| \d{4}-\d{2}-\d{2} \| network error\n$/,
+    );
+    assert.ok(!data.exists(`${BALLOT}/sources`));
+  });
 });
 
 describe("output holds only location code [key] lines", () => {
@@ -215,7 +265,28 @@ describe("output holds only location code [key] lines", () => {
     }
     const badBallot = await fetchSnapshot(data, ["2026-general/../x", ...PLAIN.slice(1)]);
     assert.equal(badBallot.stdout, "- bad-ballot\n");
+    // Value: protects=only an http(s) URL argument is accepted; fails_when=parseArgs drops the isHttp check or the URL parse guard; why_new=no test passed a bad URL argument; seam=none; no_claim=URLs that parse but are unreachable
+    for (const url of ["ftp://county.example.gov/", "file:///etc/passwd", "not a url"]) {
+      const badUrl = await fetchSnapshot(data, [...PLAIN.slice(0, 4), url]);
+      assert.equal(badUrl.status, 1);
+      assert.equal(badUrl.stdout, "- bad-url\n");
+    }
     assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+  });
+
+  // Value: protects=a well-formed ballot argument naming no ballot directory is refused before anything is written; fails_when=main drops the ballot-directory check, so recover or the unfetchable log creates <election>/<ballot-id>/ on the fly; why_new=every other test names the one existing ballot; seam=none; no_claim=a ballot directory without ballot.yaml
+  it("answers unknown-ballot for a ballot with no directory and creates none", async () => {
+    const data = repo();
+    const other = "2026-general/xx-elsewhere-1";
+    const result = await fetchVia(data, { "https://county.example.gov/": { body: COUNTY_PAGE } }, [
+      other,
+      ...PLAIN.slice(1),
+    ]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, `${other} unknown-ballot\n`);
+    assert.ok(!data.exists(other));
+    assert.deepEqual(data.list("2026-general"), ["xx-exampleton-1"]);
+    assert.deepEqual(result.seen, []);
   });
 });
 
@@ -247,6 +318,24 @@ describe("a pinned install stays its git tree", () => {
     );
     assert.equal(result.status, 0);
     assert.deepEqual(untracked(), before);
+  });
+});
+
+describe("deps.js: the npm dependencies load only from the install-deps cache", () => {
+  // Value: protects=a missing dependency install reports deps-missing pointing at install-deps; fails_when=load() rethrows MODULE_NOT_FOUND as internal-error or resolves modules from elsewhere; why_new=every other test runs with deps installed; seam=none; no_claim=a partly installed cache
+  it("answers deps-missing, naming install-deps, before fetching anything", async () => {
+    const data = repo();
+    const result = await fetchVia(
+      data,
+      { "https://county.example.gov/": { body: COUNTY_PAGE } },
+      PLAIN,
+      { RESEARCH_CANDIDATES_DEPS: data.file(".no-deps") },
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "scripts/install-deps deps-missing\n");
+    assert.equal(result.stderr, "");
+    assert.deepEqual(result.seen, []);
+    assert.ok(!data.exists(`${BALLOT}/sources`));
   });
 });
 
@@ -407,6 +496,47 @@ describe("source-tiers.md: the tier, owner and source come only from tiers.yaml"
     );
   });
 
+  // Value: protects=a redirect is followed only to an http(s) URL; fails_when=fetchPage drops the per-hop isHttp check; why_new=only the start URL is checked elsewhere; seam=none; no_claim=other schemes' handling by fetch itself
+  it("refuses and logs a redirect to a URL that is not http", async () => {
+    const data = repo();
+    const result = await fetchVia(
+      data,
+      {
+        "https://county.example.gov/go": {
+          status: 302,
+          headers: { location: "ftp://county.example.gov/list" },
+        },
+      },
+      [BALLOT, "us-house-07", "_race", "page", "https://county.example.gov/go"],
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "us-house-07/_race not-http\n");
+    assert.deepEqual(result.seen, ["https://county.example.gov/go"]);
+    assert.match(
+      data.read(`${BALLOT}/unfetchable.md`),
+      /^- ftp:\/\/county\.example\.gov\/list \| us-house-07\/_race \| \d{4}-\d{2}-\d{2} \| not http\n$/,
+    );
+    assert.ok(!data.exists(`${BALLOT}/sources`));
+  });
+
+  // Value: protects=the redirect hop cap; fails_when=MAX_HOPS check is removed or off by more than one, so a redirect loop runs forever or longer; why_new=no test redirects more than once; seam=none; no_claim=the exact cap value beyond 11 requests
+  it("refuses and logs a redirect loop after ten redirects", async () => {
+    const data = repo();
+    const loop = "https://county.example.gov/loop";
+    const result = await fetchVia(data, { [loop]: { status: 302, headers: { location: loop } } }, [
+      BALLOT,
+      "us-house-07",
+      "_race",
+      "page",
+      loop,
+    ]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "us-house-07/_race too-many-redirects\n");
+    assert.equal(result.seen.length, 11);
+    assert.match(data.read(`${BALLOT}/unfetchable.md`), / \| too many redirects\n$/);
+    assert.ok(!data.exists(`${BALLOT}/sources`));
+  });
+
   it("refuses and logs a redirect that changes the owner", async () => {
     const data = repo();
     const result = await fetchVia(
@@ -541,6 +671,18 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     "- match: https://county.example.gov/\n  tier: T1\n  owner: third-party\n  source: County\n",
     "tiers.yaml:1 tiers-invalid\n",
   );
+  // Value: protects=tiers.yaml must exist, parse strictly and be a list before any URL is fetched; fails_when=readYamlDocument drops uniqueKeys or the error check, loadTiers drops the isSeq check, or a missing file surfaces as internal-error; why_new=the cases above all reach per-entry checks; seam=none; no_claim=ballot.yaml parse errors
+  refusesTiers("a missing tiers.yaml", false, "tiers.yaml file-missing\n");
+  refusesTiers(
+    "a tiers.yaml with a duplicate key",
+    "- match: county.example.gov\n  tier: T1\n  tier: T2\n  owner: third-party\n  source: County\n",
+    "tiers.yaml yaml-invalid\n",
+  );
+  refusesTiers(
+    "a tiers.yaml that is a mapping, not a list",
+    "county.example.gov:\n  tier: T1\n  owner: third-party\n  source: County\n",
+    "tiers.yaml tiers-invalid\n",
+  );
 });
 
 describe("front matter is emitted, never assembled from untrusted text", () => {
@@ -586,6 +728,21 @@ describe("Rule 8: the repo guard refuses to write outside a private data repo", 
     const result = await fetchSnapshot(data, PLAIN);
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "skills/research-candidates/SKILL.md guard-skill-source-clone\n");
+  });
+
+  // Value: protects=a project root outside any git repo is refused, since its remotes cannot be checked; fails_when=guardRepo treats a failed `git remote` as no remotes and lets the run write; why_new=every other guard test runs inside a git repo; seam=none; no_claim=a git repo with no remotes
+  it("refuses outside a git repo", async () => {
+    const data = repo();
+    fs.rmSync(data.file(".git"), { recursive: true, force: true });
+    const result = await fetchVia(
+      data,
+      { "https://county.example.gov/": { body: COUNTY_PAGE } },
+      PLAIN,
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, ". guard-not-git-repo\n");
+    assert.deepEqual(data.list(BALLOT), ["ballot.yaml"]);
+    assert.deepEqual(result.seen, []);
   });
 
   const refusesRemote = (name, options, code) =>
