@@ -24,9 +24,9 @@
 
 **What:** Stop trusting agent-chosen snapshot metadata:
 
-- [ ] Give `tiers.yaml` entries an owner (a candidate id for a campaign site, or `third-party`). `fetch-snapshot` copies it into the snapshot from the host match, like the tier. `review-list` lists every `s`-tagged claim whose snapshot owner is not the candidate it sits under (the CRITICAL from cycle 3). **Spec written (2026-10-26):** `owner` and `source` are `tiers.yaml` fields copied into each snapshot, and review-list.md's attribution rule reads `owner` (source-tiers.md, snapshot-format.md); building it remains.
-- [ ] Derive or check `source:` against the matched `tiers.yaml` entry (for example a `name:` field) instead of accepting a free-form name. **Spec written (2026-10-26):** the entry's `source` is copied, and `fetch-snapshot` takes no option that sets it; building it remains.
-- [ ] Reject control characters and `---` in every front-matter value and write front matter with a real YAML emitter, so a `source:` with a newline cannot inject `public_url:` (snapshot-format.md:7, 38).
+- [ ] Give `tiers.yaml` entries an owner (a candidate id for a campaign site, or `third-party`). `fetch-snapshot` copies it into the snapshot from the host match, like the tier. **Built in `fetch-snapshot` (ticket 02):** owner copied from the match, fixed across redirects, and refused under a rival or `_race`; the `review-list` half remains. `review-list` lists every `s`-tagged claim whose snapshot owner is not the candidate it sits under (the CRITICAL from cycle 3). **Spec written (2026-10-26):** `owner` and `source` are `tiers.yaml` fields copied into each snapshot, and review-list.md's attribution rule reads `owner` (source-tiers.md, snapshot-format.md); building it remains.
+- [x] Derive or check `source:` against the matched `tiers.yaml` entry (for example a `name:` field) instead of accepting a free-form name. **Built (ticket 02):** `fetch-snapshot` copies the final hop's entry `source`, with no option that sets it.
+- [x] Reject control characters and `---` in every front-matter value and write front matter with a real YAML emitter, so a `source:` with a newline cannot inject `public_url:` (snapshot-format.md:7, 38). **Built (ticket 02):** the `yaml` emitter writes front matter; `unsafe-value` refuses the rest.
 - [ ] At publish, re-check every `public_url` and `url` against `tiers.yaml` and the privacy rules.
 
 **Why:** An advocacy group's or an opponent's page filed under a candidate becomes a "Says:" claim labeled "Candidate's own words", with an attribution the agent chose and no human check.
@@ -189,6 +189,51 @@
 **Depends on / blocked by:** `check` and `review-list` shipped, and the first ballot published.
 
 **Priority:** P3
+
+### fetch-snapshot lock and deps edge cases from the ticket-02 review
+
+**What:** Close three rare cases the cycle-3 /ship review found in `scripts/lib/snapshot-store.js` and `scripts/lib/deps.js`:
+
+- [ ] `.lock.break` is judged stale by age alone and removed by path, so a breaker paused for over 5s mid-break (laptop sleep) can lose it and then remove a live `.lock`. Check its pid with `isStale`, and remove a stale break lock only after confirming its text and inode.
+- [ ] `readLock` stats and reads the lock through two path lookups, so on a filesystem that reuses inode numbers (ext4) `seen` can mix a dead lock's age with a live lock's text. Open once and `fstat` plus read the same fd.
+- [ ] `deps.js` real-paths only the cache side; under `NODE_PRESERVE_SYMLINKS` a symlinked cache gives a false `deps-missing`. Real-path both sides.
+
+Since the PR #8 review a lock is judged by age alone (no pid check, so sandboxed agents in other pid namespaces are safe), and a crashed run's lock delays the next run by up to 30s.
+
+**Why:** Each can let two discovery agents hold a ballot's lock at once (one's recovery then deletes the other's unfinished save, leaving a manifest line with no file) or block every script.
+
+**Context:** /ship run on feat/fetch-snapshot-tracer (2026-10-27), cycle-3 state-machines and adversarial review. The owner deferred them to ship (D6), since no real research runs before ticket 03's privacy refusals land; fix them in that PR. The realistic races (empty lock wedging the ballot, rename-and-put-back takeover) were fixed and are covered by tests.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** None
+
+### fetch-snapshot hardening deferred from the ticket-02 review
+
+**What:** Lower-severity findings from the same review, deferred under land mode (D1):
+
+- [ ] Tier path prefixes match case-sensitively on the raw pathname (no percent-decoding), so `/Opinion/` or `/%40jane` can miss a stricter entry.
+- [ ] `RESEARCH_CANDIDATES_TEST_HTTP_TARGET`, `_TEST_CRASH` and `_DEPS` are honoured in production; gate them so an agent-controlled environment cannot use them (or give the agents' fetch tool a clean environment, ticket 14).
+- [ ] Charset comes only from the Content-Type header: sniff the BOM and `<meta charset>`. Add a test for an unknown charset's UTF-8 fallback.
+- [ ] Decide whether a T1/T2 hop may be plain `http:` or follow an https-to-http redirect.
+- [ ] Strip C0/C1 controls and bidi overrides from snapshot bodies.
+- [ ] `recover` turns any per-partial error into `internal-error` on every run; locate it and use `lstat` for the target check. Refuse symlinks under `sources/`.
+- [ ] fsync the `.partial/` and target directories, and check `writeSync`'s byte count, so a power loss cannot leave a manifest line with no file.
+- [x] The owner check only covers this contest's subjects; decide whether a campaign site may be filed under a candidate of another contest. **Decided (PR #8 review):** yes. Its content can bear on that subject, and `owner` still records whose words it holds (snapshot-format.md).
+- [ ] `html-text.js` walks the DOM recursively; walk iteratively so deep nesting cannot overflow the stack.
+- [ ] `unsafe-value` refuses URLs containing `---`; `searchParams.delete` re-encodes the rest of the query.
+- [ ] `install-deps`: a leftover non-empty cache directory throws on rename; the fast path trusts any `node_modules`; `RESEARCH_CANDIDATES_DEPS` is not keyed to the lockfile; transitive modules still resolve through parent `node_modules`.
+- [ ] Rule 8 guard: a repo with no remotes passes, `GH_HOST` changes which server `gh` asks, and a gitfile or inherited `GIT_DIR` can point the top-level check at another repo.
+- [ ] Narrow the body-read `catch` to network and timeout errors, and cancel the reader.
+- [ ] Tests: the untested state-matrix cells (`.gstack/tmp/state-machines.*.md` lists them), a two-waiter takeover test, bad-redirect, and install-deps failure paths. The test task needs the network on a cold cache.
+
+**Why:** None is reachable in normal use today, but each weakens a guarantee the spec makes (tier strictness, write-once, Rule 5 output, the lockfile pin) or turns a recoverable error into `internal-error`.
+
+**Context:** /ship run on feat/fetch-snapshot-tracer (2026-10-27): specialists, red team and adversarial passes. Several overlap tickets 03, 14 and 18; pick them up with those.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
 
 ## Completed
 

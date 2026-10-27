@@ -1133,8 +1133,14 @@ describe("FailureCodes", () => {
     // Other kebab-case tokens the spec uses: script names, Rule markers, example ids and labels.
     const scripts = tableRows(SKILL, "## Scripts").map((row) => row[0].replaceAll("`", ""));
     const ids = exampleIds();
+    // fetch-snapshot's own output codes, listed in snapshot-format.md's Command line section.
+    const fetchCodes = [
+      ...between(SNAPSHOT, "## Command line").matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g),
+    ].map((m) => m[1]);
+    assert.ok(fetchCodes.length >= 10, `only ${fetchCodes.length} fetch-snapshot codes parsed`);
     const known = new Set([
       ...codes,
+      ...fetchCodes,
       ...scripts,
       ...ids,
       "says-only",
@@ -3114,7 +3120,7 @@ describe("SnapshotOwner", () => {
     assert.match(SNAPSHOT, /`fetch-snapshot` takes no option that sets them/);
     assert.match(
       TIERS,
-      /copies the tier, `statements_only`, `owner` and `source` of the longest match/,
+      /copies the tier, `statements_only`, `owner` and `source` of the most specific match/,
     );
     const rule = REVIEW.split("\n").find((l) => l.includes("misattribution risk"));
     assert.ok(rule, "review-list.md lost its attribution rule");
@@ -3135,7 +3141,7 @@ describe("SnapshotOwner", () => {
   it("redirects, the loader and ids keep owner sound, and misfiled claims are reviewed", () => {
     assert.match(
       TIERS,
-      /Across redirects, the tier is the strictest any hop's longest match gives, `owner` must be the same at every hop, and `source` is the final URL's/,
+      /Across redirects, the tier is the strictest any hop's most specific match gives, `owner` must be the same at every hop, and `source` is the final URL's/,
     );
     assert.match(TIERS, /refused and logged with the reason `owner changes across redirects`/);
     assert.match(

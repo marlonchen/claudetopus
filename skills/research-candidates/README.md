@@ -2,7 +2,7 @@
 
 Candidate research skill for Claude Code. For each voter address it builds a ballot guide where every claim is backed by a verbatim excerpt from a saved source, then publishes one static, phone-friendly page per ballot.
 
-See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place; none of the scripts in SKILL.md's script table are built yet, and the fonts directory [page.md](references/page.md) embeds from is not bundled yet.
+See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place. Of the scripts in SKILL.md's script table, only `fetch-snapshot`'s plain fetch of an HTML page is built, still without its Rule 7 privacy refusals or its Wayback copies (`archives.tsv`); its other modes, the other scripts and the fonts directory [page.md](references/page.md) embeds from are not.
 
 This directory is the skill's *source*. The research data it works on (addresses, ballots, snapshots, review lists, articles) belongs in a separate **private** repo and must never be committed here: this repo is public.
 
@@ -29,7 +29,17 @@ Pin a commit of this repo you have read that is on its default branch (`main`; p
 
 Never install it at user scope (`--scope user`): Rule 8 lets it run only in the private data repo, so everywhere else it would only load and refuse. To try local changes before they are pushed, see [Install a skill](../../README.md#install-a-skill), and never run `--from-local` into the real data repo: use a throwaway private repo with made-up addresses, so unreviewed code never runs next to real ones.
 
-Then, from inside the data repo, ask Claude Code to "research my ballot" or "add an address".
+Then install the scripts' dependencies (next section), and from inside the data repo ask Claude Code to "research my ballot" or "add an address".
+
+## Dependencies
+
+The scripts need Node.js 20.19 or later and three npm packages, pinned to exact versions in [package.json](package.json) and [package-lock.json](package-lock.json): Readability and linkedom, which reduce an HTML page to readable text, and yaml, which reads the data files and writes snapshot front matter. Install them from the data repo after each install or upgrade of the skill:
+
+```bash
+node .claude/skills/research-candidates/scripts/install-deps
+```
+
+This runs `npm ci --ignore-scripts` from the skill's lockfile, which checks every package against the lockfile's integrity hashes and runs no package install scripts, into `~/.cache/research-candidates/<lockfile hash>/` (`$XDG_CACHE_HOME` if set; `RESEARCH_CANDIDATES_DEPS` names another directory). Nothing is written under the installed skill, because publish refuses any file there that the pinned commit's tree lacks. Never run `npm install` inside `.claude/skills/research-candidates`. It prints `- deps-installed`, or `- npm-ci-failed` with npm's own messages on stderr. A new lockfile gets a new cache directory, so an upgrade never runs against the old packages; when a script reports `scripts/install-deps deps-missing`, run the command above.
 
 ## Publishing
 

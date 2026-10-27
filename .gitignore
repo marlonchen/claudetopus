@@ -173,6 +173,7 @@ vite.config.ts.timestamp-*
 /*/*/snapshots.sha256
 /*/*/search-log/
 /*/*/.partial/
+/*/*/.lock/
 # Skill source in this repo is never data.
 !/skills/*/sources/
 !/skills/*/articles/
@@ -183,6 +184,7 @@ vite.config.ts.timestamp-*
 !/skills/*/snapshots.sha256
 !/skills/*/search-log/
 !/skills/*/.partial/
+!/skills/*/.lock/
 !/skills/*/ballot.yaml
 !/skills/*/private.yaml
 !/skills/*/unfetchable.md

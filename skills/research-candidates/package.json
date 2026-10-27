@@ -1,0 +1,14 @@
+{
+  "name": "research-candidates",
+  "private": true,
+  "description": "Runtime dependencies of the research-candidates scripts. Install them with scripts/install-deps, never into this directory.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "dependencies": {
+    "@mozilla/readability": "0.6.0",
+    "linkedom": "0.18.13",
+    "yaml": "2.9.1"
+  }
+}

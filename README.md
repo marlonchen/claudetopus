@@ -38,15 +38,21 @@ gh skill install ~/src/github/<user>/claudetopus <skill> --from-local --force --
 
 ## Development setup
 
-There is no `package.json` and no `node_modules` here. Every tool is either a Node
-builtin or a standalone binary provisioned by [mise](https://mise.jdx.dev).
+There is no `package.json` at the repo root and no `node_modules` anywhere in it. Every
+tool is either a Node builtin or a standalone binary provisioned by
+[mise](https://mise.jdx.dev). The one exception is research-candidates, whose scripts need
+three npm packages: its `package.json` and lockfile pin them, and `mise run test` installs
+them with its `scripts/install-deps` into a cache outside the checkout
+([skills/research-candidates/README.md](skills/research-candidates/README.md#dependencies)).
+mywiki stays zero-dependency.
 
 ### Prerequisites
 
 **Node.js 20+** on your `PATH`. It is deliberately *not* pinned in mise: the mywiki
 evidence checker is zero-dependency by design and is meant to run on whatever Node a
 developer already has, so `mise run test` should exercise that same Node rather than a
-second copy managed here.
+second copy managed here. The first `mise run test` also needs network access, so `npm ci`
+can fetch research-candidates' packages into its cache.
 
 ### 1. Install mise
 
@@ -115,7 +121,7 @@ mise tasks   # list them all
 | `mise run format:js` | Biome |
 | `mise run format:md` | rumdl |
 | `mise run format:yaml` | yamlfmt |
-| `mise run test` | `node --test` over `skills/*/tests/*.test.js`, failing if it finds none |
+| `mise run test` | Each skill's `scripts/install-deps`, then `node --test` over `skills/*/tests/*.test.js`, failing if it finds none |
 
 Two deliberate scoping rules, both worth knowing before you widen a task:
 
@@ -143,8 +149,8 @@ leg asserts that `mise exec -- node --version` really is the version it advertis
 a Node in `.config/mise/config.toml` later cannot quietly collapse four legs into one.
 
 Nothing runs in CI that you cannot run locally — these are the same two commands the
-`pre-commit` hook runs. One caveat worth knowing: the three linters track `latest`, so a red
-lint job can come from an upstream tool release rather than from the diff under review.
+`pre-commit` hook runs. The three linters are pinned to exact versions in
+`.config/mise/config.toml`, so an upstream tool release cannot turn the lint job red on its own.
 
 ## Commit messages
 
@@ -174,7 +180,7 @@ fix: handle missing raw.config
   workflows/ci.yml   # runs lint + test on pull requests and pushes to main
 skills/
   mywiki/            # the skill: SKILL.md, references, scripts, tests
-  research-candidates/  # scaffold: SKILL.md, references, tests; no scripts yet
+  research-candidates/  # scaffold: SKILL.md, references, tests; scripts: fetch-snapshot, install-deps
 biome.jsonc          # JavaScript lint + format config
 .rumdl.toml          # Markdown lint config
 .yamlfmt             # YAML lint + format config

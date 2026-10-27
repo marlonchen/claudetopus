@@ -13,4 +13,10 @@ if [ ${#files[@]} -eq 0 ]; then
     exit 1
 fi
 
+# A skill with npm dependencies installs them from its lockfile into a cache
+# outside the skill directory (see its scripts/install-deps); mywiki has none.
+for install in skills/*/scripts/install-deps; do
+    node "$install"
+done
+
 node --test "${files[@]}"
