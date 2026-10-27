@@ -10,7 +10,7 @@ const { CLASSES, refusalCode, scan } = require("../scripts/lib/privacy");
 const VALUES = {
   "ballot-id": ["xx-exampleton-1"],
   "private-string": ["Springfield Township", "Pct 12", "BS-0412", "Precinct 2024", "Ballot A"],
-  address: ["123 Elm Street Apt 4, Springfield, XX 99999", "123 Elm Street Apt 4"],
+  address: ["123 Elm Street Apt 4, Springfield, XX 99999", "123 Elm Street"],
   zip: ["99999"],
   label: ["addr-mom"],
   key: ["k3yV4lue0123456789"],
@@ -106,6 +106,23 @@ describe("privacy matcher: digit runs, ZIPs and the ballot id", () => {
     assert.deepEqual(classes("12 pct"), ["private-string"]);
     assert.deepEqual(classes("page 12"), []);
     assert.deepEqual(classes("/12/"), []);
+  });
+
+  it("reads query and path punctuation as spaces (?pct=12)", () => {
+    for (const text of [
+      "?pct=12",
+      "/pct:12/",
+      "?Pct%3D12",
+      "/pct~12",
+      "?a=1;pct=12",
+      "?precinct=2024",
+      "?ballot=xx,exampleton,1",
+      "?t=springfield&township",
+      "?addr=123+Elm+Street",
+    ]) {
+      assert.notDeepEqual(classes(text), [], text);
+    }
+    assert.deepEqual(classes("?page=12"), []);
   });
 
   it("matches a run of 4+ digits alone, but a year-shaped run only beside its words", () => {

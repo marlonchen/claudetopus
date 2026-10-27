@@ -121,8 +121,9 @@ const loadTiers = (root) => {
   return entries.map(({ at, ...entry }) => entry);
 };
 
-// addresses.yaml: { <label>: { address, ballot } }. The street line is the
-// address up to its first comma; its ZIPs are its standalone 5-digit tokens.
+// addresses.yaml: { <label>: { address, street, ballot } }. The street line is
+// the researcher's own, since URLs often spell it without the unit; the ZIPs
+// are the address's standalone 5-digit tokens.
 const loadAddresses = (root) => {
   const { doc, lineCounter } = readYamlDocument(
     path.join(root, "addresses.yaml"),
@@ -137,15 +138,15 @@ const loadAddresses = (root) => {
     if (typeof label !== "string" || label.trim() === "" || !entry || typeof entry !== "object") {
       throw new Failure(at, "addresses-invalid");
     }
-    const { address, ballot } = entry;
-    if (typeof address !== "string" || address.trim() === "") {
+    const { address, street, ballot } = entry;
+    if ([address, street].some((value) => typeof value !== "string" || value.trim() === "")) {
       throw new Failure(at, "addresses-invalid");
     }
     if (ballot !== undefined && ballot !== null && typeof ballot !== "string") {
       throw new Failure(at, "addresses-invalid");
     }
     const zips = [...address.normalize("NFKC").matchAll(/(?<![0-9])[0-9]{5}(?![0-9])/g)];
-    return { label, address, street: address.split(",")[0], zips: zips.map((m) => m[0]) };
+    return { label, address, street, zips: zips.map((m) => m[0]) };
   });
 };
 

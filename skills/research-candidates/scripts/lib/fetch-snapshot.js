@@ -15,7 +15,7 @@ const path = require("node:path");
 const { BALLOT_ID_PATTERN, ELECTION_PATTERN, ID_PATTERN } = require("./constants");
 const { loadBallot, loadPrivateValues, loadTiers } = require("./data-files");
 const { load } = require("./deps");
-const { cleanUrl, fetchPage, isHttp } = require("./fetch-page");
+const { cleanUrl, fetchPage, isHttp, spellings } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
 const { Failure, runCommand } = require("./output");
 const { refusalCode, scan } = require("./privacy");
@@ -115,14 +115,17 @@ const main = (argv) =>
     const target = checkTarget(root, args);
     const where = `${args.contest}/${args.subject}`;
     const values = loadPrivateValues(root, args.ballot);
-    const privateCode = (text) => refusalCode(scan(text, values, URL_CLASSES));
-    // Before tiers.yaml is read, so a private URL never reaches the tier lookup.
-    const refused = privateCode(args.given);
-    if (refused) throw new Failure(where, refused);
+    // A privacy refusal stops the command here or inside fetchPage, so it can
+    // never reach logUnfetchable.
+    const checkPrivate = (text) => {
+      const code = refusalCode(scan(text, values, URL_CLASSES));
+      if (code) throw new Failure(where, code);
+    };
+    // Every spelling, before tiers.yaml is read, so a private URL never reaches the tier lookup.
+    checkPrivate(spellings(args.url, args.given));
     const entries = loadTiers(root);
 
-    const page = await fetchPage(entries, args.url, privateCode);
-    if (page.refused?.private) throw new Failure(where, page.refused.code);
+    const page = await fetchPage(entries, args.url, checkPrivate);
     if (page.refused) {
       logUnfetchable(ballotDir, page.url, where, page.refused.reason);
       throw new Failure(where, page.refused.code);

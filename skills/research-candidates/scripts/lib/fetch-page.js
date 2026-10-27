@@ -98,9 +98,9 @@ const decode = (bytes, contentType) => {
 
 const refuse = (url, code, reason) => ({ url, refused: { code, reason } });
 
-// Every spelling of a hop's URL the privacy check reads: as given (the
-// argument or the Location header), parsed, and with its host in Unicode, since
-// parsing turns a Unicode host into punycode.
+// Every spelling of a URL the privacy check reads: as given (the argument or
+// the Location header), parsed, and with its host in Unicode, since parsing
+// turns a Unicode host into punycode.
 const spellings = (url, given) =>
   [
     given,
@@ -108,18 +108,24 @@ const spellings = (url, given) =>
     url.href.replace(url.host, domainToUnicode(url.hostname) + (url.port ? `:${url.port}` : "")),
   ].join("\n");
 
+// Fetch reads header bytes as latin1, so a Location sent as raw UTF-8 arrives
+// as mojibake. Read it as UTF-8, as browsers do, when its bytes are valid UTF-8.
+const fromHeader = (value) => {
+  if (!/[\x80-\xff]/.test(value)) return value;
+  const utf8 = Buffer.from(value, "latin1").toString("utf8");
+  return utf8.includes("\ufffd") ? value : utf8;
+};
+
 // Returns { url, html, tiers } for a saved page, or { url, refused: { code,
 // reason } } with the URL to log (the refused hop, or the final URL) and the
-// unfetchable.md reason. `privateCode(text)` gives a privacy refusal's code or
-// null; it runs on every hop before anything else, and a privacy refusal has no
-// reason, since it is never logged.
-const fetchPage = async (entries, startUrl, privateCode) => {
+// unfetchable.md reason. The caller has privacy-checked `startUrl`;
+// `checkPrivate(text)` throws on a private value, and runs on each redirect's
+// Location before it is parsed and on every spelling once it is, so no URL is
+// requested, tier-matched or returned for logging unchecked.
+const fetchPage = async (entries, startUrl, checkPrivate) => {
   const matches = [];
   let url = startUrl;
-  let given = startUrl.href;
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
-    const privacy = privateCode(spellings(url, given));
-    if (privacy) return { url, refused: { code: privacy, private: true } };
     if (!isHttp(url)) return refuse(url, "not-http", "not http");
     matches.push(matchUrl(entries, url));
     const combined = combineHops(matches);
@@ -133,15 +139,16 @@ const fetchPage = async (entries, startUrl, privateCode) => {
     }
     if (response.status >= 300 && response.status < 400 && response.headers.has("location")) {
       await response.body?.cancel();
-      given = response.headers.get("location");
+      const location = response.headers.get("location");
+      const given = fromHeader(location);
       // A bad redirect logs only the hop before it, but its text is still checked.
-      const redirectPrivacy = privateCode(given);
-      if (redirectPrivacy) return { url, refused: { code: redirectPrivacy, private: true } };
+      checkPrivate(`${location}\n${given}`);
       try {
         url = new URL(given, url);
       } catch {
         return refuse(url, "bad-redirect", "bad redirect");
       }
+      checkPrivate(spellings(url, given));
       continue;
     }
     if (response.status !== 200) {
@@ -166,4 +173,4 @@ const fetchPage = async (entries, startUrl, privateCode) => {
   return refuse(url, "too-many-redirects", "too many redirects");
 };
 
-module.exports = { cleanUrl, fetchPage, isHttp };
+module.exports = { cleanUrl, fetchPage, isHttp, spellings };

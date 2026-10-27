@@ -6,7 +6,7 @@
 // private value matched and the class of value, never the value or the text.
 //
 // Text is checked in three forms: raw; decoded and folded; and folded again
-// with - _ / . + read as spaces. The two folded forms are each built in four
+// with - _ / . + = : , ; ~ & read as spaces. The two folded forms are each built in four
 // variants (default-ignorable code points removed or read as spaces, NFKC on
 // or off), since each fold catches a spelling the others miss and can hide
 // another. In every variant the ignorable fold and NFKC come first, then the
@@ -125,7 +125,7 @@ const fold = (s, form, { ignorable, nfkc }) => {
   s = rewrite(s, /[“”„‟″]/g, () => '"');
   s = rewrite(s, /[\p{Pd}−]/gu, () => "-");
   s = rewrite(s, /\p{Changes_When_Lowercased}/gu, (ch) => ch.toLowerCase());
-  if (form === 3) s = rewrite(s, /[-_/.+]/g, () => " ");
+  if (form === 3) s = rewrite(s, /[-_/.+=:,;~&]/g, () => " ");
   return rewrite(s, /\s+/gu, () => " ");
 };
 

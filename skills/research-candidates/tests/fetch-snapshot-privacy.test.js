@@ -30,9 +30,11 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
     const cases = [
       ["https://county.example.gov/xx_exampleton_1/", "private-ballot-id"],
       ["https://county.example.gov/?a=123%20Elm%20Street%20Apt%204", "private-address"],
+      ["https://county.example.gov/lookup?addr=123+Elm+Street", "private-address"],
       ["https://county.example.gov/lookup?zip=99999-0001", "private-zip"],
       ["https://county.example.gov/addr-mom", "private-label"],
       ["https://county.example.gov/springfield-township/", "private-string"],
+      ["https://county.example.gov/lookup?precinct=12", "private-string"],
       ["https://county.example.gov/style/bs0412", "private-string"],
       ["https://county.example.gov/q?k=s3cr3t-fec-key", "private-key"],
     ];
@@ -52,6 +54,17 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
     assertRefused(untiered, await fetchVia(untiered, {}, args(url)), "private-string");
     const broken = repo({ tiers: "- match: [unclosed\n" });
     assertRefused(broken, await fetchVia(broken, {}, args(url)), "private-string");
+    // A punycode host holds the value only in its Unicode spelling.
+    const punycode = repo({
+      tiers: "- match: [unclosed\n",
+      private: DEFAULT_PRIVATE.replace("private_strings:\n", "$&  - Peña Hall\n"),
+    });
+    const host = new URL("https://peña-hall.example.net/").host;
+    assertRefused(
+      punycode,
+      await fetchVia(punycode, {}, args(`https://${host}/`)),
+      "private-string",
+    );
   });
 
   // Value: protects=every redirect hop is checked before it is requested or logged; fails_when=fetchPage checks only the first URL, or checks after the tier lookup or the not-http refusal; why_new=new; seam=cli; no_claim=none
@@ -87,6 +100,50 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
     assertRefused(data, result, "private-string", ["https://county.example.gov/go"]);
   });
 
+  // Value: protects=the URL a redirect names is checked in every spelling once parsed, even on the last hop; fails_when=the parsed check runs only at the top of the next hop, so the 11th URL reaches the too-many-redirects log line unchecked; why_new=PR #9 review; seam=cli; no_claim=none
+  it("checks the URL the last allowed redirect names before logging too-many-redirects", async () => {
+    const hops = (last) =>
+      Object.fromEntries(
+        Array.from({ length: 11 }, (_, i) => [
+          `https://county.example.gov/r${i}`,
+          { status: 302, headers: { location: i < 10 ? `/r${i + 1}` : last } },
+        ]),
+      );
+    const seen = Array.from({ length: 11 }, (_, i) => `https://county.example.gov/r${i}`);
+    const plain = repo();
+    const refused = await fetchVia(plain, hops("/r11"), args(seen[0]));
+    assert.equal(refused.stdout, "us-house-07/_race too-many-redirects\n");
+    for (const [options, last, code] of [
+      // The parser drops the tab, so only the parsed spelling holds the id.
+      [{}, "https://county.example.gov/xx-exam\tpleton-1/", "private-ballot-id"],
+      [
+        { private: DEFAULT_PRIVATE.replace("private_strings:\n", "$&  - Peña Hall\n") },
+        `https://${new URL("https://peña-hall.example.net/").host}/`,
+        "private-string",
+      ],
+    ]) {
+      const data = repo(options);
+      assertRefused(data, await fetchVia(data, hops(last), args(seen[0])), code, seen);
+    }
+  });
+
+  // Value: protects=a Location sent as raw UTF-8 is read as UTF-8; fails_when=fetchPage checks only fetch's latin1 reading, so the mojibake spelling passes and is requested; why_new=PR #9 review; seam=cli; no_claim=latin1 percent-escapes in the URL
+  it("reads a raw UTF-8 Location header as UTF-8", async () => {
+    const data = repo({
+      private: DEFAULT_PRIVATE.replace("private_strings:\n", "$&  - Peña Hall\n"),
+    });
+    // Node writes header strings as latin1, so these are the UTF-8 bytes on the wire.
+    const location = Buffer.from("https://county.example.gov/peña-hall/", "utf8").toString(
+      "latin1",
+    );
+    const result = await fetchVia(
+      data,
+      redirectTo(location),
+      args("https://county.example.gov/go"),
+    );
+    assertRefused(data, result, "private-string", ["https://county.example.gov/go"]);
+  });
+
   // Value: protects=private values are read from private.yaml and addresses.yaml, which must parse; fails_when=a missing or malformed file is read as no values; why_new=new; seam=cli; no_claim=ballot-check's own checks of these files
   it("refuses to fetch without readable private.yaml and addresses.yaml", async () => {
     const url = "https://county.example.gov/";
@@ -96,6 +153,10 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
       [{ addresses: false }, "addresses.yaml file-missing"],
       [{ private: "private_strings: Precinct 12\n" }, `${BALLOT}/private.yaml private-invalid`],
       [{ addresses: "addr-mom:\n  ballot: x\n" }, "addresses.yaml:1 addresses-invalid"],
+      [
+        { addresses: "addr-mom:\n  address: 123 Elm Street, Springfield, XX 99999\n" },
+        "addresses.yaml:1 addresses-invalid",
+      ],
       [{ addresses: "- 123 Elm Street\n" }, "addresses.yaml addresses-invalid"],
     ]) {
       const data = repo(options);

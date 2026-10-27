@@ -60,11 +60,12 @@ ignored_lines:          # sample-ballot lines that are not contests (instruction
 
 ```yaml
 addr-mom:                 # the label: distinctive, never mom or home (SKILL.md step 6.3)
-  address: 123 Elm Street Apt 4, Springfield, XX 99999   # one line, street line first
+  address: 123 Elm Street Apt 4, Springfield, XX 99999   # the full address, on one line
+  street: 123 Elm Street   # house number and street name, without the unit
   ballot: 2026-general/xx-exampleton-1   # empty until step 2
 ```
 
-The scripts take the street line to be the address up to its first comma, and its ZIP codes to be its standalone 5-digit tokens, so write the address on one line with a comma after the street.
+`street` is required: lookup URLs usually carry the house number and street name without the unit, so it is matched on its own as the street line. The scripts take the address's ZIP codes to be its standalone 5-digit tokens.
 
 Contest types: `candidate`, `retention` (one judge or official, yes/no), and `measure`.
 
