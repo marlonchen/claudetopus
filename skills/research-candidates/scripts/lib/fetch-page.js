@@ -74,13 +74,24 @@ const readCapped = async (response) => {
   }
 };
 
+// windows-1252 bytes 0x80-0x9f (WHATWG Encoding), which latin1, iso-8859-1 and
+// us-ascii labels also name. Node 20's TextDecoder decodes them as C1 controls.
+const CP1252_HIGH = "€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f" + "\u0090‘’“”•–—˜™š›œ\u009džŸ";
+
 const decode = (bytes, contentType) => {
   const charset = /charset=["']?([^;"'\s]+)/i.exec(contentType)?.[1];
+  let decoder;
   try {
-    return new TextDecoder(charset || "utf-8").decode(bytes);
+    decoder = new TextDecoder(charset || "utf-8");
   } catch {
-    return new TextDecoder("utf-8").decode(bytes);
+    decoder = new TextDecoder("utf-8");
   }
+  if (decoder.encoding === "windows-1252") {
+    return Buffer.from(bytes)
+      .toString("latin1")
+      .replace(/[\x80-\x9f]/g, (c) => CP1252_HIGH[c.charCodeAt(0) - 0x80]);
+  }
+  return decoder.decode(bytes);
 };
 
 const refuse = (url, code, reason) => ({ url, refused: { code, reason } });
