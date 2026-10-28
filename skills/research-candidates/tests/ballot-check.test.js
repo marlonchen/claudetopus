@@ -927,4 +927,54 @@ describe("ballot-check: private text", () => {
     const result = await failsWith(data, ["tiers.yaml:5 private-string match"]);
     assert.doesNotMatch(result.stdout, /exampleton-2|Lakeside/i);
   });
+
+  for (const [name, value] of [
+    ["a \\u escape", '"XX Pre\\u0063inct 12 court"'],
+    ["a \\x escape", '"XX Precinct\\x2012 court"'],
+    ["a line continuation", '"XX Preci\\\n      nct 12 court"'],
+  ]) {
+    it(`fails a private string ${name} hides from the text, located by the value's first line`, async () => {
+      const data = setup({
+        ballot: edit("jurisdiction: XX supreme court", `jurisdiction: ${value}`),
+      });
+      const result = await failsWith(data, [
+        `ballot.yaml:${yamlLine(data, 'jurisdiction: "XX Pre')} private-string jurisdiction`,
+      ]);
+      assert.doesNotMatch(result.stdout, /precinct/i);
+    });
+  }
+
+  it("fails an alias, which could copy a hidden printed title into a jurisdiction", async () => {
+    const data = setup({
+      ballot: edit(
+        "    title: Representative in Congress, 7th District\n",
+        "    title: &t Representative in Congress, 7th District\n    display_title: US House\n",
+      ).replace("jurisdiction: XX supreme court", "jurisdiction: *t"),
+    });
+    const result = await failsWith(data, [`ballot.yaml:${yamlLine(data, "&t")} ballot-invalid`]);
+    assert.doesNotMatch(result.stdout, /internal-error/);
+  });
+
+  it("fails an alias used before its anchor as ballot-invalid, never internal-error", async () => {
+    const data = setup({
+      ballot: edit("jurisdiction: XX congressional district 7", "jurisdiction: *t").replace(
+        "jurisdiction: XX supreme court",
+        "jurisdiction: &t XX supreme court",
+      ),
+    });
+    const result = await failsWith(data, [`ballot.yaml:${yamlLine(data, "*t")} ballot-invalid`]);
+    assert.equal(result.stderr, "");
+  });
+
+  it("fails a ZIP code from addresses.yaml in a jurisdiction or an ignored_lines entry", async () => {
+    const data = setup({
+      ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 99999 court"),
+      priv: `${PRIVATE}  - Return to 99999\n`,
+    });
+    const result = await failsWith(data, [
+      `ballot.yaml:${yamlLine(data, "99999")} private-zip jurisdiction`,
+      "private.yaml private-zip ignored_lines",
+    ]);
+    assert.doesNotMatch(result.stdout, /99999/);
+  });
 });

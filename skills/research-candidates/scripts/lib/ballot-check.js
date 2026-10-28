@@ -97,15 +97,28 @@ const idMatches = (id, state, county) => {
 const personKey = (name) => normalizeLine(name).toLowerCase();
 
 // ballot.yaml, validated. Returns { failures, contests (for matchBallot),
-// slug, slugAt, people: [{ id, name, at }], hash, parsed: { doc, lineCounter, text } }.
+// slug, slugAt, people: [{ id, name, at }], hash, parsed: { doc, lineCounter, text, data } }.
 const checkBallotYaml = (root, ballot) => {
   const [election, ballotId] = ballot.split("/");
   const { doc, lineCounter, text } = readYamlDocument(
     path.join(root, ballot, "ballot.yaml"),
     "ballot.yaml",
   );
+  // An alias copies a value the text never spells out where it is used (a hidden
+  // printed title into a jurisdiction), so neither aliases nor anchors are allowed.
+  const YAML = load("yaml");
+  let aliased = null;
+  YAML.visit(doc, (_, node) => {
+    if (!YAML.isAlias(node) && !node?.anchor) return undefined;
+    aliased = node;
+    return YAML.visit.BREAK;
+  });
+  if (aliased) {
+    const line = aliased.range ? lineCounter.linePos(aliased.range[0]).line : 1;
+    throw new Failure(`ballot.yaml:${line}`, "ballot-invalid");
+  }
   const data = doc.toJS();
-  const parsed = { doc, lineCounter, text };
+  const parsed = { doc, lineCounter, text, data };
   const failures = [];
   // The line of the deepest node on `keys` that exists.
   const at = (keys) => {

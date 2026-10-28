@@ -340,6 +340,18 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     `${COUNTY}- match: x.example.com\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
     "tiers.yaml:8 private-zip source\n",
   );
+  it("ends another ballot's private.yaml failure, read for the Tiers rule, with check-each-ballot", async () => {
+    const data = repo({ tiers: COUNTY });
+    data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: [unclosed\n");
+    const result = await fetchVia(
+      data,
+      { "https://county.example.gov/": { body: COUNTY_PAGE } },
+      PLAIN,
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "- yaml-invalid\n- check-each-ballot\n");
+    assert.deepEqual(result.seen, []);
+  });
   refusesTiers("a missing tiers.yaml", false, "tiers.yaml file-missing\n");
   refusesTiers(
     "a tiers.yaml with a duplicate key",

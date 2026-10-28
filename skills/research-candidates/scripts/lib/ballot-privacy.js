@@ -11,7 +11,7 @@ const { addressValues, tiersPrivacy } = require("./data-files");
 const { Failure } = require("./output");
 const { CLASSES, YEAR, digitRuns, isEmptyValue, scan } = require("./privacy");
 
-const TEXT_CLASSES = ["address", "label", "private-string"];
+const TEXT_CLASSES = ["address", "zip", "label", "private-string"];
 // The fields discovery searches with, or the page builds anchors from.
 const SEARCHED = ["id", "jurisdiction", "search_terms"];
 
@@ -41,23 +41,50 @@ const keysByLine = (doc, lineCounter, keys) => {
   return byLine;
 };
 
-// The ballot.yaml text with the printed title of each contest that has a
-// display_title blanked out, keeping every line where it was.
-const withoutHiddenTitles = (text, doc) => {
+// The printed title nodes of contests with a display_title.
+const hiddenTitleNodes = (doc) => {
   const YAML = load("yaml");
-  let blanked = text;
   const contests = doc.get("contests", true);
-  for (const contest of YAML.isSeq(contests) ? contests.items : []) {
-    if (!YAML.isMap(contest) || !contest.has("display_title")) continue;
-    const title = contest.get("title", true);
-    if (!title?.range) continue;
-    const [start, end] = title.range;
+  return (YAML.isSeq(contests) ? contests.items : [])
+    .filter((contest) => YAML.isMap(contest) && contest.has("display_title"))
+    .map((contest) => contest.get("title", true))
+    .filter((title) => title?.range);
+};
+
+// The ballot.yaml text with the hidden printed titles blanked out, keeping
+// every line where it was.
+const withoutHiddenTitles = (text, titles) => {
+  let blanked = text;
+  for (const {
+    range: [start, end],
+  } of titles) {
     blanked =
       blanked.slice(0, start) +
       blanked.slice(start, end).replace(/[^\n]/g, " ") +
       blanked.slice(end);
   }
   return blanked;
+};
+
+// Every string scalar in ballot.yaml but the hidden printed titles, as
+// { value, first, last } lines. Its value is what discovery reads: a quoted
+// escape (`\u0063`) or a line continuation spells it differently in the text.
+const stringScalars = (doc, lineCounter, titles) => {
+  const YAML = load("yaml");
+  const lineOf = (offset) => lineCounter.linePos(offset).line;
+  const scalars = [];
+  YAML.visit(doc, {
+    Scalar(_, node) {
+      if (typeof node.value !== "string" || !node.range || titles.includes(node)) return;
+      const [start, end] = node.range;
+      scalars.push({
+        value: node.value,
+        first: lineOf(start),
+        last: lineOf(Math.max(start, end - 1)),
+      });
+    },
+  });
+  return scalars;
 };
 
 // The printed titles of contests with a display_title.
@@ -79,14 +106,27 @@ const checkPrivacy = ({ root, ballot, yaml, lists, addresses, keys }) => {
   };
 
   if (yaml) {
-    const { doc, lineCounter, text } = yaml.parsed;
+    const { doc, lineCounter, text, data } = yaml.parsed;
     const byLine = keysByLine(doc, lineCounter, keys);
-    for (const { line, class: cls } of scan(withoutHiddenTitles(text, doc), values, TEXT_CLASSES)) {
-      const key = byLine.get(line);
+    const titleNodes = hiddenTitleNodes(doc);
+    const found = scan(withoutHiddenTitles(text, titleNodes), values, TEXT_CLASSES);
+    // A value the text scan missed is located by its first line.
+    for (const { value, first, last } of stringScalars(doc, lineCounter, titleNodes)) {
+      for (const { class: cls } of scan(value, values, TEXT_CLASSES)) {
+        const seen = found.some((m) => m.class === cls && m.line >= first && m.line <= last);
+        if (!seen) found.push({ line: first, class: cls });
+      }
+    }
+    const order = Object.keys(CLASSES);
+    found.sort((a, b) => a.line - b.line || order.indexOf(a.class) - order.indexOf(b.class));
+    const located = new Set(found.map((m) => `${m.line} ${m.class}`));
+    for (const at of located) {
+      const [line, cls] = at.split(" ");
+      const key = byLine.get(Number(line));
       const hint = key === "state" || key === "county" ? "list-full-place-name" : undefined;
       failures.push(new Failure(`ballot.yaml:${line}`, CLASSES[cls], key, hint));
     }
-    const titles = { title: hiddenTitles(doc.toJS()) };
+    const titles = { title: hiddenTitles(data) };
     const contests = doc.get("contests", true);
     for (const contest of load("yaml").isSeq(contests) ? contests.items : []) {
       for (const key of SEARCHED) {

@@ -78,8 +78,14 @@ const TIERS_CLASSES = ["address", "zip", "label", "private-string"];
 // Every tiers.yaml match or source that holds a private value, as Failures
 // located by the entry's line and keyed by the field: `values` are this
 // ballot's (loadPrivateValues), and every other ballot's private_strings are
-// added. A failure in another ballot's private.yaml is located `-`.
-const tiersPrivacy = (root, ballot, values) => {
+// added. A failure in another ballot's private.yaml is located `-`. `tiers` is
+// tiers.yaml's readYamlDocument result, when the caller has already read it.
+const tiersPrivacy = (
+  root,
+  ballot,
+  values,
+  tiers = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml"),
+) => {
   const failures = [];
   const strings = [...(values["private-string"] ?? [])];
   for (const other of ballotDirs(root)) {
@@ -92,7 +98,7 @@ const tiersPrivacy = (root, ballot, values) => {
     }
   }
   const all = { ...values, "private-string": strings };
-  const { doc, lineCounter } = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml");
+  const { doc, lineCounter } = tiers;
   const YAML = load("yaml");
   for (const item of YAML.isSeq(doc.contents) ? doc.contents.items : []) {
     for (const key of ["match", "source"]) {
@@ -164,7 +170,8 @@ const loadTiers = (root, ballot, values) => {
       throw new Failure(entry.at, "tiers-overlap");
     }
   }
-  const [leak] = tiersPrivacy(root, ballot, values);
+  const [leak] = tiersPrivacy(root, ballot, values, { doc, lineCounter });
+  if (leak?.location === "-") leak.hint = "check-each-ballot";
   if (leak) throw leak;
   return entries.map(({ at, ...entry }) => entry);
 };
