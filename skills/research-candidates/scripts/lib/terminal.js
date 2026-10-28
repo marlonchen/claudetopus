@@ -2,9 +2,11 @@
 
 // The terminal guard (Rule 5): modes that print or prompt with private text
 // (`--ballot`, later `--show`) run only in the researcher's own terminal. They
-// refuse when stdout or stdin is not a TTY or CLAUDECODE is set at all, so
-// neither a Bash call from the session nor its `!` prefix can run them. The
-// data repo's settings deny them to every Bash call as well.
+// refuse when stdout or stdin is not a TTY or CLAUDECODE is set at all, which
+// stops a plain Bash call from the session and its `!` prefix. Both are
+// things a child process controls, so a command that unsets CLAUDECODE and
+// runs under a pseudo-terminal gets past this check alone; the data repo's
+// deny rules and its PreToolUse hook (session-guard.js) refuse those commands.
 
 const readline = require("node:readline");
 const { Failure } = require("./output");

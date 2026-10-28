@@ -15,35 +15,23 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const ballotImport = require("./ballot-import").main;
-const { BALLOT_ID_PATTERN, ELECTION_PATTERN, ID_PATTERN } = require("./constants");
+const { ID_PATTERN } = require("./constants");
 const { loadBallot, loadPrivateValues, loadTiers } = require("./data-files");
-const { cleanUrl, fetchPage, isHttp, spellings } = require("./fetch-page");
+const { openBallot, parseBallot, parseHttpUrl } = require("./fetch-common");
+const { cleanUrl, fetchPage, spellings } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
 const { Failure, runCommand } = require("./output");
-const { refusalCode, scan } = require("./privacy");
-const { guardRepo } = require("./repo-guard");
-const { URL_CLASSES, snapshotText, today } = require("./snapshot-file");
-const { recover, save, withLock } = require("./snapshot-store");
+const { URL_CLASSES, findRefusal } = require("./privacy");
+const { snapshotText, today } = require("./snapshot-file");
+const { save, withLock } = require("./snapshot-store");
 
 const parseArgs = (argv) => {
   if (argv.length !== 5 || argv.some((arg) => arg.startsWith("--"))) {
     throw new Failure("-", "usage");
   }
   const [ballot, contest, subject, name, url] = argv;
-  const [election, ballotId, extra] = ballot.split("/");
-  if (extra !== undefined || !ELECTION_PATTERN.test(election ?? "")) {
-    throw new Failure("-", "bad-ballot");
-  }
-  if (!BALLOT_ID_PATTERN.test(ballotId ?? "")) throw new Failure("-", "bad-ballot");
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Failure("-", "bad-url");
-  }
-  // Credentials in a URL are never fetched or recorded.
-  if (!isHttp(parsed) || parsed.username || parsed.password) throw new Failure("-", "bad-url");
-  return { ballot, contest, subject, name, given: url, url: parsed };
+  parseBallot(ballot);
+  return { ballot, contest, subject, name, given: url, url: parseHttpUrl(url) };
 };
 
 // The contest and subject must be a pair ballot.yaml lists (or _race), so the
@@ -81,12 +69,7 @@ const plainFetch = (argv) =>
   runCommand(async () => {
     const root = process.cwd();
     const args = parseArgs(argv);
-    guardRepo(root);
-    const ballotDir = path.join(root, args.ballot);
-    if (!fs.statSync(ballotDir, { throwIfNoEntry: false })?.isDirectory()) {
-      throw new Failure(args.ballot, "unknown-ballot");
-    }
-    withLock(ballotDir, () => recover(ballotDir));
+    const ballotDir = openBallot(root, args.ballot);
 
     const target = checkTarget(root, args);
     const where = `${args.contest}/${args.subject}`;
@@ -94,7 +77,7 @@ const plainFetch = (argv) =>
     // A privacy refusal stops the command here or inside fetchPage, so it can
     // never reach logUnfetchable.
     const checkPrivate = (texts) => {
-      const code = refusalCode(texts.flatMap((text) => scan(text, values, URL_CLASSES)));
+      const code = findRefusal(texts, values, URL_CLASSES);
       if (code) throw new Failure(where, code);
     };
     // Every spelling, before tiers.yaml is read, so a private URL never reaches the tier lookup.

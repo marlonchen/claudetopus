@@ -33,14 +33,21 @@ Then install the data repo's Claude Code settings (next section) and the scripts
 
 ## Data-repo settings
 
-[data-repo-settings.json](data-repo-settings.json) holds the deny rules Rules 3 and 5 rely on: the model's file edits to `sources/`, `snapshots.sha256`, `search-log/` and `ballot.ledger` under any ballot, and every Bash call holding `--show`, `--ballot` or `--file`, which print or prompt with private text and run only in the researcher's own terminal. Merge its `deny` list into the data repo's `.claude/settings.json` (copy the file there if it has none) and commit it:
+[data-repo-settings.json](data-repo-settings.json) holds what Rules 3 and 5 rely on:
+
+- **Deny rules** for the model's file edits to `sources/`, `snapshots.sha256`, `search-log/` and `ballot.ledger` under any ballot and to `downloads/`, and for Bash calls running `fetch-snapshot --ballot`, `ballot-check --show` or `publish --show`, which print or prompt with private text and run only in the researcher's own terminal.
+- **A PreToolUse hook**, [scripts/session-guard](scripts/session-guard), which reads every Bash command and every file the model writes before it runs. It refuses `--ballot` or `--show` anywhere in them, even quoted apart (`--bal''lot`), and refuses a command or file that names `CLAUDECODE`, empties the environment (`env -i`) or runs a program under a pseudo-terminal (`script`, `expect`, Python's `pty`), since those get past the scripts' terminal guard. It also refuses a Bash command naming `ballot.ledger`, `snapshots.sha256` or `downloads/`, so the model cannot plant a file for `--ballot --file` or write a ledger line itself. It prints only the tool and a code, and if it cannot run (the skill missing, bad input), the hook command exits 2 and the call is refused.
+
+Merge the `deny` list and the `hooks` entry into the data repo's `.claude/settings.json` (copy the file there if it has none) and commit it:
 
 ```bash
 cd ~/src/github/<user>/elections
 cp .claude/skills/research-candidates/data-repo-settings.json .claude/settings.json   # only when there is none yet
 ```
 
-Check the merged file again after each upgrade of the skill. The rules cover Claude Code's own file tools and Bash command text; a Bash command that writes a file some other way is not covered, which is why `snapshots.sha256` also records every snapshot's hash (Rule 3).
+Start Claude Code at the data repo's top level: Claude Code reads a rule starting with `/` from the session's starting directory, so a session started in `<election>/` loses the `downloads/` rule, and the hook is found through `$CLAUDE_PROJECT_DIR`. Check the merged file again after each upgrade of the skill.
+
+These layers stop mistakes and the plain ways around the terminal guard. They are not a wall against a session that sets out to get past them: a command that builds the flag or a file name at run time, from a variable or an encoding, still gets through, so `snapshots.sha256` records every snapshot's hash (Rule 3), and `ballot.ledger` shows what the researcher imported, not proof against a hostile session.
 
 ## Dependencies
 

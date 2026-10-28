@@ -96,6 +96,9 @@ const decode = (bytes, contentType) => {
   return decoder.decode(bytes);
 };
 
+// A PDF's bytes start with its header.
+const isPdf = (bytes) => Buffer.from(bytes.subarray(0, 5)).toString("latin1") === "%PDF-";
+
 const refuse = (url, code, reason) => ({ url, refused: { code, reason } });
 
 // Every spelling of a URL the privacy check reads: as given (the argument or
@@ -116,7 +119,8 @@ const fromHeader = (value) => {
 };
 
 // Returns { url, hops, html, tiers } for a saved page (`pdf` holding the bytes
-// in place of `html` for a PDF, which only `options.pdf` accepts), or { url,
+// in place of `html` for a PDF, which only `options.pdf` accepts: one sent as
+// application/pdf, or as an octet stream whose bytes start %PDF-), or { url,
 // refused: { code, reason } } with the URL to log (the refused hop, or the
 // final URL) and the unfetchable.md reason. `hops` is every URL requested, in
 // order. The caller has privacy-checked `startUrl`; `checkPrivate(texts)`
@@ -163,7 +167,9 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
     }
     const contentType = response.headers.get("content-type") || "";
     const pdf = options.pdf && /^\s*application\/pdf\b/i.test(contentType);
-    if (!pdf && !/^\s*(text\/html|application\/xhtml\+xml)\b/i.test(contentType)) {
+    // County sites often send a PDF as a download; its first bytes decide.
+    const octets = options.pdf && /^\s*(application|binary)\/octet-stream\b/i.test(contentType);
+    if (!pdf && !octets && !/^\s*(text\/html|application\/xhtml\+xml)\b/i.test(contentType)) {
       await response.body?.cancel();
       return refuse(url, "not-html", "not html");
     }
@@ -175,10 +181,11 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
       return refuse(url, "network-error", "network error");
     }
     if (!bytes) return refuse(url, "too-large", "too large");
-    if (pdf) return { url, hops, pdf: bytes, tiers: combined };
+    if (octets && !isPdf(bytes)) return refuse(url, "not-html", "not html");
+    if (pdf || octets) return { url, hops, pdf: bytes, tiers: combined };
     return { url, hops, html: decode(bytes, contentType), tiers: combined };
   }
   return refuse(url, "too-many-redirects", "too many redirects");
 };
 
-module.exports = { cleanUrl, fetchPage, isHttp, spellings };
+module.exports = { cleanUrl, decode, fetchPage, isHttp, isPdf, spellings };

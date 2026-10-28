@@ -227,14 +227,21 @@ const runCli = (script, args, { cwd, env = {} }) =>
   });
 
 // Runs argv on a new pseudo-terminal, so stdin and stdout are both TTYs, as in
-// the researcher's own terminal. Once the output shows "[y/N] " it types
-// `answer` and Enter, once. Prints everything the terminal showed; exits with
-// the child's code.
+// the researcher's own terminal, unless `pipe` is "stdin" or "stdout": that
+// one is a pipe instead. Once the output shows "[y/N] " it types `answer` and
+// Enter, once. Prints everything the terminal (and a piped stdout) showed;
+// exits with the child's code.
 const PTY_RUNNER = `
 import os, select, subprocess, sys, time
-answer = sys.argv[1]
+answer, pipe = sys.argv[1], sys.argv[2]
 master, slave = os.openpty()
-child = subprocess.Popen(sys.argv[2:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+child = subprocess.Popen(
+    sys.argv[3:],
+    stdin=subprocess.DEVNULL if pipe == "stdin" else slave,
+    stdout=subprocess.PIPE if pipe == "stdout" else slave,
+    stderr=slave,
+    close_fds=True,
+)
 os.close(slave)
 out = b""
 asked = False
@@ -255,7 +262,12 @@ while time.time() < deadline:
     if not asked and b"[y/N] " in out:
         os.write(master, answer.encode() + b"\\r")
         asked = True
+# A child still waiting (on a prompt never shown) fails rather than hangs.
+if child.poll() is None:
+    child.kill()
 child.wait()
+if child.stdout:
+    out += child.stdout.read()
 sys.stdout.buffer.write(out)
 sys.exit(child.returncode)
 `;
@@ -263,13 +275,13 @@ sys.exit(child.returncode)
 // Run a command in scripts/ on a pseudo-terminal (PTY_RUNNER), with CLAUDECODE
 // unset unless `env` sets it. Resolves with its exit code and what the
 // terminal showed, without escape sequences and with line ends as "\n".
-const runInTty = (script, args, { cwd, env = {}, answer = "y" }) =>
+const runInTty = (script, args, { cwd, env = {}, answer = "y", pipe = "none" }) =>
   new Promise((resolve) => {
     const base = { ...process.env, ...env };
     if (!Object.hasOwn(env, "CLAUDECODE")) delete base.CLAUDECODE;
     const child = spawn(
       "python3",
-      ["-c", PTY_RUNNER, answer, process.execPath, path.join(SCRIPTS_DIR, script), ...args],
+      ["-c", PTY_RUNNER, answer, pipe, process.execPath, path.join(SCRIPTS_DIR, script), ...args],
       { cwd, env: base },
     );
     let stdout = "";
@@ -304,6 +316,7 @@ module.exports = {
   DEFAULT_BALLOT,
   DEFAULT_PRIVATE,
   DEFAULT_TIERS,
+  SCRIPTS_DIR,
   articlePage,
   git,
   makeDataRepo,

@@ -6,9 +6,6 @@
 const { load } = require("./deps");
 const { Failure } = require("./output");
 
-// The classes a fetched URL may not hold (Rule 7, snapshot-format.md).
-const URL_CLASSES = ["ballot-id", "address", "zip", "label", "private-string", "key"];
-
 // Local date, as for `fetched:`.
 const today = () => {
   const d = new Date();
@@ -34,4 +31,4 @@ const snapshotText = (fields, text) => {
   return `---\n${yaml}---\n${text}\n`;
 };
 
-module.exports = { URL_CLASSES, hasControl, snapshotText, today };
+module.exports = { snapshotText, today };

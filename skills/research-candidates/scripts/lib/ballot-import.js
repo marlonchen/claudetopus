@@ -15,19 +15,21 @@
 // which can carry a precinct. Nothing in this mode is written to
 // unfetchable.md. Every saved snapshot gets a ballot.ledger line, written
 // after its manifest line and before the file lands.
+//
+// The two forms differ only in their source (fromUrl, fromFile): what each
+// checks before the prompt, what the prompt shows, and how it gets the text.
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { BALLOT_ID_PATTERN, ELECTION_PATTERN } = require("./constants");
 const { loadPrivateValues, loadTiers } = require("./data-files");
-const { fetchPage, isHttp, spellings } = require("./fetch-page");
+const { openBallot, parseBallot, parseHttpUrl } = require("./fetch-common");
+const { cleanUrl, decode, fetchPage, isPdf, spellings } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
 const { Failure, runCommand } = require("./output");
-const { pdfFileText, pdfText } = require("./pdf-text");
-const { refusalCode, scan } = require("./privacy");
-const { guardRepo } = require("./repo-guard");
-const { URL_CLASSES, snapshotText, today } = require("./snapshot-file");
-const { appendLine, checkLog, recover, save, withLock } = require("./snapshot-store");
+const { pdfText } = require("./pdf-text");
+const { URL_CLASSES, findRefusal } = require("./privacy");
+const { snapshotText, today } = require("./snapshot-file");
+const { MANIFEST, appendLine, checkLog, save, withLock } = require("./snapshot-store");
 const { confirm, requireTerminal } = require("./terminal");
 const { matchUrl } = require("./tiers");
 
@@ -42,32 +44,68 @@ const parseArgs = (argv) => {
     throw new Failure("-", "usage");
   }
   const [ballot, role] = rest;
-  const [election, ballotId, extra] = ballot.split("/");
-  if (extra !== undefined || !ELECTION_PATTERN.test(election ?? "")) {
-    throw new Failure("-", "bad-ballot");
-  }
-  if (!BALLOT_ID_PATTERN.test(ballotId ?? "")) throw new Failure("-", "bad-ballot");
+  parseBallot(ballot);
   if (!ROLES.includes(role)) throw new Failure("-", "bad-role");
   const given = rest[rest.length - 1];
-  let url;
+  return { ballot, role, given, url: parseHttpUrl(given), file: file ? rest[2] : null };
+};
+
+// Text up to its query or fragment: what --ballot sends that the record drops
+// is allowed to hold a private value, the rest is not.
+const beforeQuery = (text) => text.split(/[?#]/)[0];
+
+// A --ballot URL: checked whole for API keys and up to its query for the
+// rest, on every spelling and every redirect; a refusal there points to --file.
+const fromUrl = (args, values) => {
+  const checkPrivate = (texts) => {
+    const key = findRefusal(texts, values, ["key"]);
+    if (key) throw new Failure(WHERE, key);
+    const code = findRefusal(texts.map(beforeQuery), values, URL_CLASSES);
+    if (code) throw new Failure(WHERE, code, undefined, "use-ballot-file");
+  };
+  checkPrivate(spellings(args.url, args.given));
+  return {
+    prompt: `Fetch ${args.given} as ${args.role}? [y/N] `,
+    acquire: async (entries) => {
+      const page = await fetchPage(entries, args.url, checkPrivate, { pdf: true, t1: true });
+      if (page.refused) throw new Failure(WHERE, page.refused.code);
+      const url = cleanUrl(page.url);
+      url.search = "";
+      return {
+        method: page.pdf ? "pdf" : "html",
+        text: page.pdf ? pdfText(page.pdf, WHERE) : htmlToText(page.html),
+        url,
+        tiers: page.tiers,
+        from: "url",
+        // hops[0] is args.url: every URL requested, none unseen.
+        query: page.hops.some((hop) => hop.search !== "") ? "query" : "none",
+      };
+    },
+  };
+};
+
+// A saved HTML file's text: the charset its <meta> names, else UTF-8, which
+// must then be valid; a guess would garble the names ballot-check matches.
+const htmlFileText = (bytes) => {
+  const head = Buffer.from(bytes.subarray(0, 1024)).toString("latin1");
+  const charset = /<meta[^>]+charset\s*=\s*["']?([\w-]+)/i.exec(head)?.[1];
+  if (charset) return decode(bytes, `text/html; charset=${charset}`);
   try {
-    url = new URL(given);
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    throw new Failure("-", "bad-url");
+    throw new Failure(WHERE, "bad-file");
   }
-  if (!isHttp(url) || url.username || url.password) throw new Failure("-", "bad-url");
-  return { ballot, role, given, url, file: file ? rest[2] : null };
 };
 
 // The file to import: a regular file under downloads/ (after symlinks are
-// resolved), PDF or HTML by both its extension and its first bytes.
-const checkFile = (root, file) => {
-  const downloads = path.join(root, "downloads");
+// resolved), PDF or HTML by both its extension and its first bytes. It is
+// read once, here, so the file saved is the file checked.
+const readDownload = (root, file) => {
   let real;
   let top;
   try {
     real = fs.realpathSync(path.resolve(root, file));
-    top = fs.realpathSync(downloads);
+    top = fs.realpathSync(path.join(root, "downloads"));
   } catch {
     throw new Failure(WHERE, "file-not-in-downloads");
   }
@@ -75,17 +113,51 @@ const checkFile = (root, file) => {
   if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
     throw new Failure(WHERE, "file-not-in-downloads");
   }
-  if (!fs.statSync(real).isFile()) throw new Failure(WHERE, "bad-file");
+  let bytes;
+  let fd;
+  try {
+    fd = fs.openSync(real, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  } catch {
+    // Unreadable, or swapped for a symlink since it was resolved.
+    throw new Failure(WHERE, "bad-file");
+  }
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw new Failure(WHERE, "bad-file");
+    bytes = fs.readFileSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   const ext = path.extname(real).toLowerCase();
-  const pdf = fs.readFileSync(real).subarray(0, 5).toString("latin1") === "%PDF-";
-  if (ext === ".pdf" && pdf) return { path: real, method: "pdf" };
-  if ((ext === ".html" || ext === ".htm") && !pdf) return { path: real, method: "html" };
+  // An HTML file starts with a tag once a UTF-8 BOM and whitespace are skipped.
+  const html = /^(\xef\xbb\xbf)?\s*</.test(Buffer.from(bytes.subarray(0, 64)).toString("latin1"));
+  if (ext === ".pdf" && isPdf(bytes)) return { path: real, method: "pdf", bytes };
+  if ((ext === ".html" || ext === ".htm") && html) return { path: real, method: "html", bytes };
   throw new Failure(WHERE, "bad-file");
 };
 
-// Text up to its query or fragment: what --ballot sends that the record drops
-// is allowed to hold a private value, the rest is not.
-const beforeQuery = (text) => text.split(/[?#]/)[0];
+// A --file import. Only the origin of <url> is recorded, so only it is
+// checked; the page URL is matched against tiers.yaml (local, never sent or
+// printed) and read for a query, but its path may hold the precinct that sent
+// the researcher to --file.
+const fromFile = (root, args, values) => {
+  const origin = new URL(`${args.url.origin}/`);
+  const code = findRefusal(spellings(origin, origin.href), values, URL_CLASSES);
+  if (code) throw new Failure(WHERE, code);
+  const file = readDownload(root, args.file);
+  return {
+    prompt: `Save ${path.relative(root, file.path)} as ${args.role}, from ${origin.href}? [y/N] `,
+    acquire: async (_entries, tiers) => ({
+      method: file.method,
+      text:
+        file.method === "pdf" ? pdfText(file.bytes, WHERE) : htmlToText(htmlFileText(file.bytes)),
+      url: origin,
+      tiers,
+      from: "file",
+      // The download URL is unknown: a query on the page URL is known, its absence is not.
+      query: args.url.search !== "" ? "query" : "unknown",
+    }),
+  };
+};
 
 const main = (argv) =>
   runCommand(async () => {
@@ -93,92 +165,43 @@ const main = (argv) =>
     requireTerminal();
     const root = process.cwd();
     const args = parseArgs(argv);
-    guardRepo(root);
-    const ballotDir = path.join(root, args.ballot);
-    if (!fs.statSync(ballotDir, { throwIfNoEntry: false })?.isDirectory()) {
-      throw new Failure(args.ballot, "unknown-ballot");
-    }
-    withLock(ballotDir, () => recover(ballotDir));
-
+    const ballotDir = openBallot(root, args.ballot);
     const values = loadPrivateValues(root, args.ballot);
-    const findPrivate = (texts, classes) =>
-      refusalCode(texts.flatMap((text) => scan(text, values, classes)));
-    // A URL is checked whole for API keys and up to its query for the rest;
-    // a refusal there points to --file. A --file URL is recorded only as its
-    // origin, which is checked for everything.
-    const checkPrivate = (texts) => {
-      const key = findPrivate(texts, ["key"]);
-      if (key) throw new Failure(WHERE, key);
-      const code = findPrivate(texts.map(beforeQuery), URL_CLASSES);
-      if (code) throw new Failure(WHERE, code, undefined, "use-ballot-file");
-    };
-    const origin = new URL(`${args.url.origin}/`);
-    if (args.file) {
-      const code = findPrivate(spellings(origin, origin.href), URL_CLASSES);
-      if (code) throw new Failure(WHERE, code);
-    } else {
-      checkPrivate(spellings(args.url, args.given));
-    }
+    const source = args.file ? fromFile(root, args, values) : fromUrl(args, values);
 
     const entries = loadTiers(root);
-    const first = matchUrl(entries, args.file ? origin : args.url);
+    const first = matchUrl(entries, args.url);
     if (!first) throw new Failure(WHERE, "domain-not-in-tiers");
     if (first.tier !== "T1") throw new Failure(WHERE, "not-t1");
-    const file = args.file ? checkFile(root, args.file) : null;
+    // Also checked under the lock below; checked here so a save that would
+    // fail sends nothing.
+    const ledger = path.join(ballotDir, LEDGER);
+    checkLog(path.join(ballotDir, MANIFEST), "manifest-invalid");
+    checkLog(ledger, "ledger-invalid");
 
-    const asked = file
-      ? `Save ${path.relative(root, file.path)} as ${args.role}, from ${origin.href}? [y/N] `
-      : `Fetch ${args.given} as ${args.role}? [y/N] `;
-    if (!(await confirm(asked))) throw new Failure(WHERE, "not-confirmed");
+    if (!(await confirm(source.prompt))) throw new Failure(WHERE, "not-confirmed");
+    const got = await source.acquire(entries, first);
+    if (!got.text) throw new Failure(WHERE, "no-readable-text");
 
-    let method;
-    let text;
-    let url;
-    let tiers;
-    let query;
-    if (file) {
-      method = file.method;
-      text =
-        method === "pdf"
-          ? pdfFileText(file.path, WHERE)
-          : htmlToText(fs.readFileSync(file.path, "utf8"));
-      url = origin;
-      tiers = first;
-      query = false;
-    } else {
-      const page = await fetchPage(entries, args.url, checkPrivate, { pdf: true, t1: true });
-      if (page.refused) throw new Failure(WHERE, page.refused.code);
-      method = page.pdf ? "pdf" : "html";
-      text = page.pdf ? pdfText(page.pdf, WHERE) : htmlToText(page.html);
-      url = new URL(page.url.href);
-      url.search = "";
-      url.hash = "";
-      tiers = page.tiers;
-      query = [args.url, ...page.hops].some((hop) => hop.search !== "");
-    }
-    if (!text) throw new Failure(WHERE, "no-readable-text");
-
+    const date = today();
     const fileText = snapshotText(
       {
-        source: tiers.source,
-        url: url.href,
-        fetched: today(),
-        method,
-        tier: tiers.tier,
-        statements_only: tiers.statements_only,
+        source: got.tiers.source,
+        url: got.url.href,
+        fetched: date,
+        method: got.method,
+        tier: got.tiers.tier,
+        statements_only: got.tiers.statements_only,
         subject: "_ballot",
-        owner: tiers.owner,
+        owner: got.tiers.owner,
         role: args.role,
       },
-      text,
+      got.text,
     );
-    const ledgerLine = (rel) =>
-      [rel, args.role, file ? "file" : "url", query ? "query" : "none", today()].join("\t");
-    const ledger = path.join(ballotDir, LEDGER);
     const rel = withLock(ballotDir, () => {
       checkLog(ledger, "ledger-invalid");
       return save(ballotDir, "_ballot", args.role.replaceAll("_", "-"), fileText, (saved) =>
-        appendLine(ledger, `${ledgerLine(saved)}\n`),
+        appendLine(ledger, `${[saved, args.role, got.from, got.query, date].join("\t")}\n`),
       );
     });
     return [`${rel} saved`];
