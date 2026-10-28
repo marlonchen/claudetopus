@@ -12,22 +12,14 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const {
-  BALLOT_ID_PATTERN,
-  ELECTION_PATTERN,
-  ID_PATTERN,
-  LEDGER,
-  OFFICE_TYPES,
-  ROLES,
-  SECTIONS,
-} = require("./constants");
-const { isDir, readYamlDocument } = require("./data-files");
+const { ID_PATTERN, LEDGER, OFFICE_TYPES, ROLES, SECTIONS } = require("./constants");
+const { ballotEntries, isDir, loadPrivate, readYamlDocument } = require("./data-files");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { matchBallot } = require("./ballot-match");
 const { normalizeLine } = require("./normalize");
 const { Failure, Failures, runCommand } = require("./output");
-const { readManifest, sha256 } = require("./snapshot-store");
+const { readManifest, sha256, withLock } = require("./snapshot-store");
 const { requireTerminal } = require("./terminal");
 
 const VIEW = "ballot-view.md";
@@ -35,6 +27,10 @@ const BALLOT_DIR = "sources/_ballot";
 const STATUSES = ["on_ballot", "withdrawn_still_printed", "certified_write_in"];
 // Operating-system and editor leftovers (snapshot-format.md, Manifest).
 const LEFTOVER = /^(\.DS_Store|Thumbs\.db|.*\.swp)$/;
+// The names fetch-snapshot --ballot gives _ballot snapshots; any other name is
+// never printed, since a file dropped there can be named after private text.
+const SNAPSHOT_NAME = new RegExp(`${ID_PATTERN.source.slice(0, -1)}\\.md$`);
+const STATE = /^[A-Z]{2}$/;
 const LEDGER_LINE =
   /^(sources\/_ballot\/[^\t/]+\.md)\t([a-z_]+)\t(url|file)\t(query|none|unknown)\t([0-9]{4}-[0-9]{2}-[0-9]{2})$/;
 
@@ -75,16 +71,21 @@ const ballotIdPrefix = (state, county) => {
   return `${state.toLowerCase()}-${words}`;
 };
 
-const idMatches = (id, state, county) =>
-  typeof state === "string" &&
-  typeof county === "string" &&
-  new RegExp(`^${ballotIdPrefix(state, county)}-[1-9][0-9]?$`).test(id);
+const idMatches = (id, state, county) => {
+  if (typeof state !== "string" || !STATE.test(state) || typeof county !== "string") return false;
+  const prefix = `${ballotIdPrefix(state, county)}-`;
+  return id.startsWith(prefix) && /^[1-9][0-9]?$/.test(id.slice(prefix.length));
+};
+
+// Names compare after normalization and in any case: counties print one
+// person's name in their own case ("JANE EXAMPLE", "Jane Example").
+const personKey = (name) => normalizeLine(name).toLowerCase();
 
 // ballot.yaml, validated. Returns { failures, contests (for matchBallot),
-// slug, people: [{ id, name, at }] }.
+// slug, slugAt, people: [{ id, name, at }], hash }.
 const checkBallotYaml = (root, ballot) => {
   const [election, ballotId] = ballot.split("/");
-  const { doc, lineCounter } = readYamlDocument(
+  const { doc, lineCounter, text } = readYamlDocument(
     path.join(root, ballot, "ballot.yaml"),
     "ballot.yaml",
   );
@@ -102,9 +103,10 @@ const checkBallotYaml = (root, ballot) => {
     const key = [...keys].reverse().find((k) => typeof k === "string");
     failures.push(new Failure(at(keys), code, key));
   };
+  // Located by the key's line and never keyed: the key is the researcher's text.
   const unknownKeys = (value, allowed, keys) => {
     for (const key of Object.keys(value))
-      if (!allowed.includes(key)) fail([...keys, key], "ballot-invalid");
+      if (!allowed.includes(key)) failures.push(new Failure(at([...keys, key]), "ballot-invalid"));
   };
 
   if (!isMap(data)) throw new Failure("ballot.yaml", "ballot-invalid");
@@ -112,14 +114,10 @@ const checkBallotYaml = (root, ballot) => {
   if (data.election !== election) {
     fail(["election"], isText(data.election) ? "election-mismatch" : "ballot-invalid");
   }
-  if (typeof data.state !== "string" || !/^[A-Z]{2}$/.test(data.state))
-    fail(["state"], "ballot-invalid");
+  const stated = typeof data.state === "string" && STATE.test(data.state);
+  if (!stated) fail(["state"], "ballot-invalid");
   if (!isText(data.county)) fail(["county"], "ballot-invalid");
-  if (
-    typeof data.state === "string" &&
-    isText(data.county) &&
-    !idMatches(ballotId, data.state, data.county)
-  ) {
+  if (stated && isText(data.county) && !idMatches(ballotId, data.state, data.county)) {
     fail(["county"], "ballot-id-mismatch");
   }
   if (typeof data.slug !== "string" || !/^[a-z0-9]{6}$/.test(data.slug))
@@ -131,7 +129,14 @@ const checkBallotYaml = (root, ballot) => {
   }
   if (!Array.isArray(data.contests) || data.contests.length === 0) {
     fail(["contests"], "ballot-invalid");
-    return { failures, contests: [], slug: data.slug, slugAt: at(["slug"]), people: [] };
+    return {
+      failures,
+      contests: [],
+      slug: data.slug,
+      slugAt: at(["slug"]),
+      people: [],
+      hash: sha256(text),
+    };
   }
   if (!isCount(data.contest_count)) fail(["contest_count"], "ballot-invalid");
   else if (data.contest_count !== data.contests.length)
@@ -147,7 +152,7 @@ const checkBallotYaml = (root, ballot) => {
       continue;
     }
     const type = contest.type;
-    if (!Object.hasOwn(TYPE_KEYS, type)) {
+    if (typeof type !== "string" || !Object.hasOwn(TYPE_KEYS, type)) {
       fail([...keys, "type"], "ballot-invalid");
       continue;
     }
@@ -230,7 +235,9 @@ const checkBallotYaml = (root, ballot) => {
             entries.push({ ...entry, party, printed: isPrinted });
           }
         }
-        if (!isCount(contest.printed_count)) fail([...keys, "printed_count"], "ballot-invalid");
+        // 0 when every candidate is a certified write-in.
+        if (!Number.isInteger(contest.printed_count) || contest.printed_count < 0)
+          fail([...keys, "printed_count"], "ballot-invalid");
         else if (contest.printed_count !== printed)
           fail([...keys, "printed_count"], "printed-count-mismatch");
       }
@@ -253,89 +260,75 @@ const checkBallotYaml = (root, ballot) => {
       });
     }
   }
-  return { failures, contests, slug: data.slug, slugAt: at(["slug"]), people };
+  return { failures, contests, slug: data.slug, slugAt: at(["slug"]), people, hash: sha256(text) };
 };
 
 // Every other ballot directory's ballot.yaml, for the cross-ballot id and slug
 // rules, and every directory under an <election> directory, for the ballot
-// id rules. Failures here are located `-`: no other ballot's id is printed.
+// id rules. Failures here are located `-`, since no other ballot's id is
+// printed; the last one carries the hint to run ballot-check on each ballot,
+// which locates its own failures. `names` lists [id, name] pairs.
 const otherBallots = (root, ballot) => {
-  const failures = [];
+  const codes = [];
   const others = [];
-  for (const election of fs.readdirSync(root).sort()) {
-    if (!ELECTION_PATTERN.test(election) || !isDir(path.join(root, election))) continue;
-    for (const id of fs.readdirSync(path.join(root, election)).sort()) {
-      const rel = `${election}/${id}`;
-      if (id.startsWith(".") || !isDir(path.join(root, rel)) || rel === ballot) continue;
-      if (!BALLOT_ID_PATTERN.test(id)) {
-        failures.push(new Failure("-", "ballot-id-invalid"));
-        continue;
-      }
-      if (!fs.existsSync(path.join(root, rel, "ballot.yaml"))) continue;
-      let data;
-      try {
-        data = readYamlDocument(path.join(root, rel, "ballot.yaml"), "-").doc.toJS();
-      } catch (error) {
-        if (!(error instanceof Failure)) throw error;
-        failures.push(new Failure("-", error.code));
-        continue;
-      }
-      if (!isMap(data) || !Array.isArray(data.contests)) {
-        failures.push(new Failure("-", "ballot-invalid"));
-        continue;
-      }
-      if (!idMatches(id, data.state, data.county))
-        failures.push(new Failure("-", "ballot-id-mismatch"));
-      const names = new Map();
-      for (const contest of data.contests) {
-        const listed = [
-          ...(Array.isArray(contest?.candidates) ? contest.candidates : []),
-          contest?.official,
-        ];
-        for (const p of listed)
-          if (typeof p?.id === "string" && typeof p.name === "string") names.set(p.id, p.name);
-      }
-      others.push({ slug: data.slug, names });
+  for (const { ballot: rel, valid } of ballotEntries(root)) {
+    if (rel === ballot) continue;
+    if (!valid) {
+      codes.push("ballot-id-invalid");
+      continue;
     }
+    if (!fs.existsSync(path.join(root, rel, "ballot.yaml"))) continue;
+    let data;
+    try {
+      data = readYamlDocument(path.join(root, rel, "ballot.yaml"), "-").doc.toJS();
+    } catch (error) {
+      if (!(error instanceof Failure)) throw error;
+      codes.push(error.code);
+      continue;
+    }
+    if (!isMap(data) || !Array.isArray(data.contests)) {
+      codes.push("ballot-invalid");
+      continue;
+    }
+    if (!idMatches(rel.split("/")[1], data.state, data.county)) codes.push("ballot-id-mismatch");
+    const names = [];
+    for (const contest of data.contests) {
+      const listed = [
+        ...(Array.isArray(contest?.candidates) ? contest.candidates : []),
+        contest?.official,
+      ];
+      for (const p of listed)
+        if (typeof p?.id === "string" && typeof p.name === "string") names.push([p.id, p.name]);
+    }
+    others.push({ slug: data.slug, names });
   }
+  const failures = codes.map(
+    (code, n) =>
+      new Failure("-", code, undefined, n === codes.length - 1 ? "check-each-ballot" : undefined),
+  );
   return { failures, others };
-};
-
-// private.yaml: lists of strings under private_strings and ignored_lines.
-const loadPrivate = (root, ballot) => {
-  const data =
-    readYamlDocument(path.join(root, ballot, "private.yaml"), "private.yaml").doc.toJS() ?? {};
-  const lists = { private_strings: [], ignored_lines: [] };
-  if (!isMap(data)) throw new Failure("private.yaml", "private-invalid");
-  for (const [key, value] of Object.entries(data)) {
-    if (!Object.hasOwn(lists, key)) throw new Failure("private.yaml", "private-invalid", key);
-    const list = value ?? [];
-    if (!Array.isArray(list) || !list.every((s) => typeof s === "string")) {
-      throw new Failure("private.yaml", "private-invalid", key);
-    }
-    lists[key] = list;
-  }
-  return lists;
 };
 
 // The authoritative sample ballot: every file under sources/_ballot/ must have
 // a ballot.ledger line and the role it records, and exactly one is a
-// sample ballot, whose hash matches snapshots.sha256. Returns { failures,
-// sample: { path, body, firstLine } | null }.
+// sample ballot, whose hash matches snapshots.sha256. A file whose name
+// fetch-snapshot could not have given is located `sources/_ballot/-`.
+// Returns { failures, sample: { path, bytes, body, firstLine } | null }.
 const findSampleBallot = (ballotDir) => {
   const failures = [];
   const ledger = new Map();
   const ledgerFile = path.join(ballotDir, LEDGER);
   if (fs.existsSync(ledgerFile)) {
-    const text = fs.readFileSync(ledgerFile, "utf8");
-    const lines = text.split("\n");
-    if (text && !text.endsWith("\n"))
-      failures.push(new Failure(`${LEDGER}:${lines.length}`, "ledger-invalid"));
-    for (const [n, line] of lines.slice(0, -1).entries()) {
+    const lines = fs.readFileSync(ledgerFile, "utf8").split("\n");
+    // A last line with no newline is still read, so its file is not also unledgered.
+    const ended = lines.at(-1) === "";
+    if (ended) lines.pop();
+    for (const [n, line] of lines.entries()) {
       const m = LEDGER_LINE.exec(line);
-      if (!m || !ROLES.includes(m[2]))
+      const valid = m && ROLES.includes(m[2]);
+      if (valid) ledger.set(m[1], m[2]);
+      if (!valid || (!ended && n === lines.length - 1))
         failures.push(new Failure(`${LEDGER}:${n + 1}`, "ledger-invalid"));
-      else ledger.set(m[1], m[2]);
     }
   }
   const dir = path.join(ballotDir, BALLOT_DIR);
@@ -343,6 +336,10 @@ const findSampleBallot = (ballotDir) => {
   for (const entry of isDir(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
     const rel = `${BALLOT_DIR}/${entry.name}`;
     if (entry.isFile() && LEFTOVER.test(entry.name)) continue;
+    if (!SNAPSHOT_NAME.test(entry.name)) {
+      failures.push(new Failure(`${BALLOT_DIR}/-`, "ballot-not-in-ledger"));
+      continue;
+    }
     if (!entry.isFile() || !ledger.has(rel)) {
       failures.push(new Failure(rel, "ballot-not-in-ledger"));
       continue;
@@ -379,10 +376,9 @@ const findSampleBallot = (ballotDir) => {
   return { failures, sample };
 };
 
-// Control characters would act on the researcher's terminal; show them as U+FFFD.
-const printable = (text) =>
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: replacing them is the point
-  text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "\ufffd");
+// Control and format characters would act on the researcher's terminal, or
+// reorder what it shows (U+202E); show them as U+FFFD.
+const printable = (text) => text.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "\ufffd");
 
 const parseArgs = (argv) => {
   const show = argv[0] === "--show";
@@ -392,6 +388,83 @@ const parseArgs = (argv) => {
   return { show, ballot: rest[0] };
 };
 
+// The view, then the hashes of what it was checked against, so a later gate
+// can tell a view that ballot.yaml or the sample ballot no longer agree with.
+const viewText = (yaml, sample, spans) =>
+  [
+    `link: ${sample.path}`,
+    `sha256: ${yaml.hash}  ballot.yaml`,
+    `sha256: ${sha256(sample.bytes)}  ${sample.path}`,
+    ...spans,
+    "",
+  ].join("\n");
+
+const check = (root, ballot, ballotDir, show) => {
+  const view = path.join(ballotDir, VIEW);
+  // A view from an earlier pass, or a write a crash cut short, must never
+  // outlive a failing ballot.yaml.
+  fs.rmSync(view, { force: true });
+  for (const name of fs.readdirSync(ballotDir))
+    if (name.startsWith(`${VIEW}.tmp-`)) fs.rmSync(path.join(ballotDir, name), { force: true });
+
+  // A file that cannot be read at all is one failure; the others still run.
+  const failures = [];
+  const orElse = (read, fallback) => {
+    try {
+      return read();
+    } catch (error) {
+      if (!(error instanceof Failure)) throw error;
+      failures.push(error);
+      return fallback;
+    }
+  };
+  const yaml = orElse(() => checkBallotYaml(root, ballot), null);
+  const privateLists = orElse(() => loadPrivate(root, ballot, "private.yaml"), null);
+  const cross = otherBallots(root, ballot);
+  failures.push(...(yaml?.failures ?? []), ...cross.failures);
+  if (typeof yaml?.slug === "string" && cross.others.some((other) => other.slug === yaml.slug)) {
+    failures.push(new Failure(yaml.slugAt, "slug-duplicate", "slug"));
+  }
+  // Every name each id is given, by every ballot read so far.
+  const names = new Map();
+  const give = (id, name) => {
+    if (!names.has(id)) names.set(id, new Set());
+    names.get(id).add(personKey(name));
+  };
+  for (const other of cross.others) for (const [id, name] of other.names) give(id, name);
+  for (const { id, name, at } of yaml?.people ?? []) {
+    if ([...(names.get(id) ?? [])].some((given) => given !== personKey(name)))
+      failures.push(new Failure(at, "id-name-conflict", "id"));
+    give(id, name);
+  }
+
+  const found = findSampleBallot(ballotDir);
+  failures.push(...found.failures);
+  let spans = [];
+  const lines = failures.map((f) => f.line);
+  // Matching needs both files; without them it would only add noise.
+  if (found.sample && yaml && privateLists) {
+    const match = matchBallot({
+      ...found.sample,
+      contests: yaml.contests,
+      privateStrings: privateLists.private_strings,
+      ignoredLines: privateLists.ignored_lines,
+    });
+    spans = match.spans;
+    lines.push(...match.failures.map((f) => f.line));
+    for (const { line, text } of match.unaccounted) {
+      const unaccounted = new Failure(`${found.sample.path}:${line}`, "line-unaccounted").line;
+      lines.push(show ? `${unaccounted}\n    ${printable(text)}` : unaccounted);
+    }
+  }
+  if (lines.length) throw new Failures(lines);
+
+  const tmp = `${view}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, viewText(yaml, found.sample, spans));
+  fs.renameSync(tmp, view);
+  return [`${VIEW} written`];
+};
+
 const main = (argv) =>
   runCommand(async () => {
     // Before anything is read, so no private text reaches a session.
@@ -399,61 +472,9 @@ const main = (argv) =>
     const { show, ballot } = parseArgs(argv);
     const root = process.cwd();
     const ballotDir = openBallot(root, ballot);
-    const view = path.join(ballotDir, VIEW);
-    // A view from an earlier pass must never outlive a failing ballot.yaml.
-    fs.rmSync(view, { force: true });
-
-    // A file that cannot be read at all is one failure; the others still run.
-    const failures = [];
-    const orElse = (read, fallback) => {
-      try {
-        return read();
-      } catch (error) {
-        if (!(error instanceof Failure)) throw error;
-        failures.push(error);
-        return fallback;
-      }
-    };
-    const yaml = orElse(() => checkBallotYaml(root, ballot), null);
-    const privateLists = orElse(() => loadPrivate(root, ballot), null);
-    const cross = otherBallots(root, ballot);
-    failures.push(...(yaml?.failures ?? []), ...cross.failures);
-    if (typeof yaml?.slug === "string" && cross.others.some((other) => other.slug === yaml.slug)) {
-      failures.push(new Failure(yaml.slugAt, "slug-duplicate", "slug"));
-    }
-    const names = new Map();
-    for (const other of cross.others) for (const [id, name] of other.names) names.set(id, name);
-    for (const { id, name, at } of yaml?.people ?? []) {
-      if (names.has(id) && names.get(id) !== name)
-        failures.push(new Failure(at, "id-name-conflict", "id"));
-      names.set(id, name);
-    }
-
-    const found = findSampleBallot(ballotDir);
-    failures.push(...found.failures);
-    let spans = [];
-    const lines = failures.map((f) => f.line);
-    // Matching needs both files; without them it would only add noise.
-    if (found.sample && yaml && privateLists) {
-      const match = matchBallot({
-        ...found.sample,
-        contests: yaml.contests,
-        privateStrings: privateLists.private_strings,
-        ignoredLines: privateLists.ignored_lines,
-      });
-      spans = match.spans;
-      lines.push(...match.failures.map((f) => f.line));
-      for (const { line, text } of match.unaccounted) {
-        const unaccounted = new Failure(`${found.sample.path}:${line}`, "line-unaccounted").line;
-        lines.push(show ? `${unaccounted}\n    ${printable(text)}` : unaccounted);
-      }
-    }
-    if (lines.length) throw new Failures(lines);
-
-    const tmp = `${view}.tmp-${process.pid}`;
-    fs.writeFileSync(tmp, `link: ${found.sample.path}\n${spans.map((s) => `${s}\n`).join("")}`);
-    fs.renameSync(tmp, view);
-    return [`${VIEW} written`];
+    // Under the ballot lock, so a --ballot import never saves between the
+    // ledger read and the view write.
+    return withLock(ballotDir, () => check(root, ballot, ballotDir, show));
   });
 
 module.exports = { ballotIdPrefix, main };

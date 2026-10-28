@@ -31,7 +31,6 @@ const PRIVATE = `private_strings:
   - Precinct 12
 ignored_lines:
   - OFFICIAL SAMPLE BALLOT
-  - Vote for one
   - "Yes"
   - "No"
 `;
@@ -82,6 +81,7 @@ const ballotCheck = (data, args = [BALLOT]) =>
 const lines = (result) => result.stdout.split("\n").filter(Boolean);
 
 const VIEW = "2026-general/xx-exampleton-1/ballot-view.md";
+const SAMPLE = `${BALLOT}/sources/_ballot/sample-ballot.md`;
 
 describe("ballot-check: a ballot that matches its sample ballot", () => {
   it("passes and writes ballot-view.md with only the matched spans, in ballot order", async () => {
@@ -93,7 +93,10 @@ describe("ballot-check: a ballot that matches its sample ballot", () => {
       data.read(VIEW),
       [
         "link: sources/_ballot/sample-ballot.md",
+        `sha256: ${sha256(data.read(`${BALLOT}/ballot.yaml`))}  ballot.yaml`,
+        `sha256: ${sha256(data.read(SAMPLE))}  sources/_ballot/sample-ballot.md`,
         "Representative in Congress, 7th District",
+        "Vote for one",
         "Jane Example Example Party",
         "John Sample Sample Party",
         "Shall Justice Pat Example of the Supreme Court be retained in office?",
@@ -101,7 +104,14 @@ describe("ballot-check: a ballot that matches its sample ballot", () => {
         "",
       ].join("\n"),
     );
-    assert.doesNotMatch(data.read(VIEW), /Precinct|OFFICIAL|Vote for/);
+    assert.doesNotMatch(data.read(VIEW), /Precinct|OFFICIAL/);
+  });
+
+  it("removes a view write a crash cut short", async () => {
+    const data = setup({ ballot: edit("contest_count: 2", "contest_count: 3") });
+    data.write(`${VIEW}.tmp-1`, "Jane Example Example Party\n");
+    assert.equal((await ballotCheck(data)).status, 1);
+    assert.ok(!data.exists(`${VIEW}.tmp-1`));
   });
 });
 
@@ -216,6 +226,23 @@ describe("ballot-check: listed to official", () => {
     assert.match(data.read(VIEW), /^Jane O'Example \(Example Party\)$/m);
   });
 
+  it("reports a name run into a longer hyphenated name as not found", async () => {
+    const data = setup({ body: SAMPLE_BODY.replace("John Sample\n", "John Sample-Jones\n") });
+    const result = await ballotCheck(data);
+    assert.ok(
+      lines(result).includes(
+        `ballot.yaml:${yamlLine(data, "name: John Sample")} name-not-found name`,
+      ),
+      result.stdout,
+    );
+  });
+
+  it("accounts for a private_strings entry the way the publish scan folds it", async () => {
+    const body = SAMPLE_BODY.replace("Precinct 12", "STRASSE 12");
+    const priv = PRIVATE.replace("  - Precinct 12", "  - Straße 12");
+    assert.equal((await ballotCheck(setup({ body, priv }))).status, 0);
+  });
+
   it("skips the printed-ballot check for a certified write-in", async () => {
     const ballot = edit(
       "        status: on_ballot\n  - id: supreme",
@@ -255,21 +282,56 @@ describe("ballot-check: counts", () => {
 
   it("reads a Vote for count written as a word, in capitals, with 'not more than'", async () => {
     const data = setup({
-      ballot: edit("vote_for: 1", "vote_for: 2").replace("printed_count: 2", "printed_count: 2"),
+      ballot: edit("vote_for: 1", "vote_for: 2"),
       body: SAMPLE_BODY.replace("Vote for one", "VOTE FOR NOT MORE THAN TWO"),
-      priv: PRIVATE.replace("Vote for one", "VOTE FOR NOT MORE THAN TWO"),
     });
     assert.equal((await ballotCheck(data)).status, 0);
   });
 
-  it("fails a candidate contest with no Vote for line", async () => {
-    const data = setup({ body: SAMPLE_BODY.replace("Vote for one\n", "") });
+  it("reads a Vote for phrase in brackets, after a colon, or on the title's line", async () => {
+    for (const [from, to] of [
+      ["Vote for one", "(Vote for 1)"],
+      ["Vote for one", "Vote for: 1"],
+      ["7th District\nVote for one", "7th District Vote for one"],
+    ]) {
+      const data = setup({ body: SAMPLE_BODY.replace(from, to) });
+      const result = await ballotCheck(data);
+      assert.equal(result.status, 0, `${to}\n${result.stdout}`);
+    }
+  });
+
+  it("skips a Vote for line that gives no count, and one that does not start its line", async () => {
+    const body = SAMPLE_BODY.replace(
+      "Vote for one",
+      "Vote for a write-in by writing the name\nTo vote for 2, see page 3\nVote for one",
+    );
+    const priv = `${PRIVATE}  - Vote for a write-in by writing the name\n  - To vote for 2, see page 3\n`;
+    assert.equal((await ballotCheck(setup({ body, priv }))).status, 0);
+  });
+
+  it("reads a contest with no Vote for line as electing one", async () => {
+    const body = SAMPLE_BODY.replace("Vote for one\n", "");
+    assert.equal((await ballotCheck(setup({ body }))).status, 0);
+    const data = setup({ body, ballot: edit("vote_for: 1", "vote_for: 2") });
     const result = await ballotCheck(data);
     assert.ok(
       lines(result).includes(
         `ballot.yaml:${yamlLine(data, "title: Rep")} vote-for-not-found vote_for`,
       ),
+      result.stdout,
     );
+  });
+
+  it("accepts a printed_count of 0 when every candidate is a certified write-in", async () => {
+    const ballot = edit("printed_count: 2", "printed_count: 0").replaceAll(
+      "status: on_ballot",
+      "status: certified_write_in",
+    );
+    const body = SAMPLE_BODY.replace(
+      "Jane Example\nExample Party\nJohn Sample\nSample Party\n",
+      "",
+    );
+    assert.equal((await ballotCheck(setup({ ballot, body }))).status, 0);
   });
 });
 
@@ -349,6 +411,17 @@ describe("ballot-check --show", () => {
       `sources/_ballot/sample-ballot.md:${at} line-unaccounted\n    Hidden �[2JLine`,
     );
   });
+
+  it("replaces format characters that reorder the terminal's text", async () => {
+    const body = SAMPLE_BODY.replace("Shall Justice", "Hidden \u202eLine\nShall Justice");
+    const data = setup({ body });
+    const result = await runInTty("ballot-check", ["--show", BALLOT], {
+      cwd: data.root,
+      env: data.env,
+    });
+    assert.match(result.stdout, /Hidden \ufffdLine/);
+    assert.doesNotMatch(result.stdout, /\u202e/);
+  });
 });
 
 describe("ballot-check: the sample ballot must be in ballot.ledger", () => {
@@ -383,6 +456,24 @@ describe("ballot-check: the sample ballot must be in ballot.ledger", () => {
     const data = setup();
     data.write(`${BALLOT}/ballot.ledger`, `${data.read(`${BALLOT}/ballot.ledger`)}not a line\n`);
     assert.deepEqual(lines(await ballotCheck(data)), ["ballot.ledger:2 ledger-invalid"]);
+  });
+
+  it("reads a last ledger line with no newline, and fails it once", async () => {
+    const data = setup();
+    const ledger = `${BALLOT}/ballot.ledger`;
+    data.write(ledger, data.read(ledger).trimEnd());
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot.ledger:1 ledger-invalid"]);
+  });
+
+  it("never prints a _ballot file name fetch-snapshot could not have given", async () => {
+    const data = setup();
+    data.write(`${BALLOT}/sources/_ballot/x\nballot-view.md written`, "x");
+    data.write(`${BALLOT}/sources/_ballot/sample 123 Elm St.pdf`, "x");
+    const result = await ballotCheck(data);
+    assert.deepEqual(lines(result), [
+      "sources/_ballot/- ballot-not-in-ledger",
+      "sources/_ballot/- ballot-not-in-ledger",
+    ]);
   });
 
   it("fails two sample ballots", async () => {
@@ -461,6 +552,45 @@ describe("ballot-check: ballot.yaml fields", () => {
     assert.doesNotMatch(result.stdout, /exampleton-2/);
   });
 
+  it("fails an id another ballot gives a different name, whatever the ballots' order", async () => {
+    const data = setup();
+    data.write(
+      "2025-general/xx-exampleton-1/ballot.yaml",
+      DEFAULT_BALLOT.replace("2026-general", "2025-general")
+        .replace("k3x9qa", "aa1aa1")
+        .replace("name: Jane Example", "name: Jane Q. Example"),
+    );
+    data.write(
+      "2026-general/xx-exampleton-2/ballot.yaml",
+      DEFAULT_BALLOT.replace("k3x9qa", "bb2bb2"),
+    );
+    const result = await ballotCheck(data);
+    assert.deepEqual(lines(result), [
+      `ballot.yaml:${yamlLine(data, "id: jane-example")} id-name-conflict id`,
+    ]);
+  });
+
+  it("gives one person one id when counties print the name in another case or quote", async () => {
+    const data = setup();
+    data.write(
+      "2026-general/xx-exampleton-2/ballot.yaml",
+      DEFAULT_BALLOT.replace("k3x9qa", "zz9zz9")
+        .replace("name: Jane Example", "name: JANE  EXAMPLE")
+        .replace("name: John Sample", "name: John O’Sample"),
+    );
+    const ballot = edit("name: John Sample", "name: John O'Sample");
+    const body = SAMPLE_BODY.replace("John Sample", "John O'Sample");
+    data.write(`${BALLOT}/ballot.yaml`, ballot);
+    data.write(SAMPLE, data.read(SAMPLE).replace("John Sample", "John O'Sample"));
+    data.write(
+      `${BALLOT}/snapshots.sha256`,
+      `${sha256(data.read(SAMPLE))}  sources/_ballot/sample-ballot.md\n`,
+    );
+    assert.ok(body);
+    const result = await ballotCheck(data);
+    assert.equal(result.status, 0, result.stdout);
+  });
+
   it("accepts the same id with the same name on another ballot, under another election", async () => {
     const data = setup();
     data.write(
@@ -477,7 +607,7 @@ describe("ballot-check: ballot.yaml fields", () => {
       DEFAULT_BALLOT.replace("k3x9qa", "zz9zz9"),
     );
     const result = await ballotCheck(data);
-    assert.deepEqual(lines(result), ["- ballot-id-invalid"]);
+    assert.deepEqual(lines(result), ["- ballot-id-invalid", "- check-each-ballot"]);
     assert.doesNotMatch(result.stdout, /w04/);
   });
 
@@ -487,7 +617,24 @@ describe("ballot-check: ballot.yaml fields", () => {
       "2026-general/xx-otherton-1/ballot.yaml",
       DEFAULT_BALLOT.replace("k3x9qa", "zz9zz9"),
     );
-    assert.deepEqual(lines(await ballotCheck(data)), ["- ballot-id-mismatch"]);
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      "- ballot-id-mismatch",
+      "- check-each-ballot",
+    ]);
+  });
+
+  it("reports, never crashes on, a state another ballot or this one gives as any text", async () => {
+    const data = setup();
+    data.write(
+      "2026-general/xx-otherton-1/ballot.yaml",
+      DEFAULT_BALLOT.replace("k3x9qa", "zz9zz9").replace("state: XX", 'state: "(("'),
+    );
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      "- ballot-id-mismatch",
+      "- check-each-ballot",
+    ]);
+    const own = await ballotCheck(setup({ ballot: edit("state: XX", 'state: "X("') }));
+    assert.deepEqual(lines(own), ["ballot.yaml:2 ballot-invalid state"]);
   });
 
   it("fails a ballot id its own state and county do not build", async () => {
@@ -531,12 +678,17 @@ describe("ballot-check: ballot.yaml fields", () => {
     }
   });
 
-  it("fails an unknown key, a bad status and a missing office_type, by field", async () => {
+  it("fails an unknown key by its line alone, a bad status and a missing office_type, by field", async () => {
     const { result } = await fails(
       edit("vote_for: 1", "vote_for: 1\n    not_reserched: all"),
-      (d) => `ballot.yaml:${yamlLine(d, "not_reserched")} ballot-invalid not_reserched`,
+      (d) => `ballot.yaml:${yamlLine(d, "not_reserched")} ballot-invalid`,
     );
-    assert.doesNotMatch(result.stdout, /Exampleton|Jane/);
+    assert.doesNotMatch(result.stdout, /Exampleton|Jane|reserched/);
+    const forged = await fails(
+      edit("vote_for: 1", 'vote_for: 1\n    "Pat Voter\\nballot-view.md written": 1'),
+      (d) => `ballot.yaml:${yamlLine(d, "Pat Voter")} ballot-invalid`,
+    );
+    assert.doesNotMatch(forged.result.stdout, /Pat Voter|written/);
     await fails(
       edit("status: on_ballot", "status: running"),
       (d) => `ballot.yaml:${yamlLine(d, "status: running")} ballot-invalid status`,
@@ -547,11 +699,23 @@ describe("ballot-check: ballot.yaml fields", () => {
     );
   });
 
-  it("fails a private.yaml with another key or a non-string entry", async () => {
-    for (const priv of ["private_strings: [12]\n", "private_strings: []\nignore_lines: []\n"]) {
+  it("fails a private.yaml with another key, a non-string entry or nothing, never naming a key", async () => {
+    for (const priv of [
+      "private_strings: [12]\n",
+      "private_strings: []\nignore_lines: []\n",
+      "Lincoln Elementary Gym: 1\n",
+      "",
+    ]) {
       const result = await ballotCheck(setup({ priv }));
-      assert.match(lines(result)[0], /^private\.yaml private-invalid/);
+      assert.equal(lines(result)[0], "private.yaml private-invalid", priv);
     }
+  });
+
+  it("fails a contest type that is not one of the three", async () => {
+    await fails(
+      edit("type: candidate", "type: [candidate]"),
+      (d) => `ballot.yaml:${yamlLine(d, "[candidate]")} ballot-invalid type`,
+    );
   });
 
   it("still reports every ballot.yaml and ledger failure when private.yaml cannot be read", async () => {

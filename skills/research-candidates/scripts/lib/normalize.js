@@ -27,20 +27,24 @@ const pointBefore = (s, i) => {
   return i >= 2 && low >= 0xdc00 && low <= 0xdfff ? s.slice(i - 2, i) : s[i - 1];
 };
 
-// Start offsets of `needle` in `hay` within [from, to) as whole words: no
-// letter or digit touches either end of a needle that starts or ends with one.
-const wholeWords = (hay, needle, from = 0, to = hay.length) => {
+// Start offsets of `needle` in `hay` within [from, to) that sit on boundaries
+// `edge` allows: no `edge` character touches either end of a needle that
+// starts or ends with one. The privacy matcher passes its own edge class.
+const occurrences = (hay, needle, edge = WORD, from = 0, to = hay.length) => {
   const found = [];
   if (!needle) return found;
-  const startsWord = WORD.test(pointAt(needle, 0));
-  const endsWord = WORD.test(pointBefore(needle, needle.length));
+  const startsWord = edge.test(pointAt(needle, 0));
+  const endsWord = edge.test(pointBefore(needle, needle.length));
   for (let i = hay.indexOf(needle, from); i !== -1 && i + needle.length <= to; ) {
-    const clearBefore = !startsWord || !WORD.test(pointBefore(hay, i));
-    const clearAfter = !endsWord || !WORD.test(pointAt(hay, i + needle.length));
+    const clearBefore = !startsWord || !edge.test(pointBefore(hay, i));
+    const clearAfter = !endsWord || !edge.test(pointAt(hay, i + needle.length));
     if (clearBefore && clearAfter) found.push(i);
     i = hay.indexOf(needle, i + 1);
   }
   return found;
 };
 
-module.exports = { WORD, normalizeLine, pointAt, pointBefore, wholeWords };
+// Whole-word starts: no letter or digit touches either end.
+const wholeWords = (hay, needle, from, to) => occurrences(hay, needle, WORD, from, to);
+
+module.exports = { WORD, normalizeLine, occurrences, wholeWords };

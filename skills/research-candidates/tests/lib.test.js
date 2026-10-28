@@ -217,6 +217,9 @@ describe("ballot-format.md, Command line: the Vote for count", () => {
     assert.equal(voteForCount("VOTE FOR ONE"), 1);
     assert.equal(voteForCount("Vote for not more than two"), 2);
     assert.equal(voteForCount("Vote for ten"), 10);
+    assert.equal(voteForCount("(Vote for 1)"), 1);
+    assert.equal(voteForCount("Vote for: 2"), 2);
+    assert.equal(voteForCount("7th District Vote for one"), 1);
   });
   it("gives none for a line that names no count", () => {
     assert.equal(voteForCount("Vote for the candidate of your choice"), null);

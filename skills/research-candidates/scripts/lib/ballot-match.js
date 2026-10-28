@@ -4,13 +4,14 @@
 // (ballot-format.md, Ballot check). Each raw line is normalized on its own,
 // then the non-empty lines are joined with single spaces, so a title or a
 // candidate entry may wrap. Titles are placed in ballot.yaml order, each after
-// the previous one; a contest's names are searched for only between its title
-// and the next placed title. A line is accounted for when every letter and
-// digit on it is inside a matched span, when it equals an ignored_lines entry,
-// or when it is made up wholly of private_strings entries.
+// the previous one; a contest's Vote for phrase and names are searched for only
+// between its title and the next placed title. A line is accounted for when
+// every letter and digit on it is inside a matched span, when it equals an
+// ignored_lines entry, or when it is made up wholly of private_strings entries.
 
 const { Failure } = require("./output");
 const { WORD, normalizeLine, wholeWords } = require("./normalize");
+const { privateForm } = require("./privacy");
 
 const NUMBER_WORDS = [
   "one",
@@ -24,30 +25,31 @@ const NUMBER_WORDS = [
   "nine",
   "ten",
 ];
+// A Vote for phrase that gives a count; a phrase with none ("Vote for the
+// candidate of your choice") is no Vote for line.
 const VOTE_FOR = new RegExp(
-  `^vote for (?:(?:not more than|no more than|up to) )?([0-9]+|${NUMBER_WORDS.join("|")})(?![\\p{L}\\p{Nd}-])`,
-  "iu",
+  `(?<![\\p{L}\\p{M}\\p{Nd}])vote for:? (?:(?:not more than|no more than|up to) )?([0-9]+|${NUMBER_WORDS.join("|")})(?![\\p{L}\\p{Nd}-])`,
+  "giu",
 );
 
-// The count a "Vote for" line gives, or null when it starts so but gives none.
-const voteForCount = (line) => {
-  const m = VOTE_FOR.exec(line);
-  if (!m) return null;
+const countOf = (m) => {
   const word = NUMBER_WORDS.indexOf(m[1].toLowerCase());
   return word === -1 ? Number(m[1]) : word + 1;
 };
 
-// Private-string accounting compares case-folded text with the publish scan's
-// separators read as spaces, so "BS 0412" is made up of the entry BS-0412.
-const privateFold = (text) =>
-  normalizeLine(text)
-    .toLowerCase()
-    .replace(/[-_/.+=:,;~&]/g, " ")
-    .replace(/ +/g, " ")
-    .trim();
+// The count the first Vote for phrase in `text` gives, or null when there is none.
+const voteForCount = (text) => {
+  const m = [...text.matchAll(VOTE_FOR)][0];
+  return m ? countOf(m) : null;
+};
+
+// A name run into a longer word by a hyphen or apostrophe ("Mary Smith" in
+// "Mary Smith-Jones") still matches, but is not the name the entry gives, so a
+// missing party after it reads as name-not-found.
+const GLUED = /^['-][\p{L}\p{M}\p{Nd}]/u;
 
 const madeOfEntries = (line, entries) => {
-  let rest = privateFold(line);
+  let rest = privateForm(line);
   for (const entry of entries) {
     for (const i of wholeWords(rest, entry).reverse()) {
       rest = `${rest.slice(0, i)} ${rest.slice(i + entry.length)}`;
@@ -91,18 +93,26 @@ const matchBallot = ({ body, firstLine, contests, privateStrings, ignoredLines }
   for (const [n, { contest, title }] of placed.entries()) {
     const region = [title[1], placed[n + 1]?.title[0] ?? joined.length];
 
+    // The first Vote for phrase that starts a line, or follows the title with
+    // nothing but punctuation between ("7th District (Vote for 1)"). With none,
+    // the contest elects one.
     if (contest.vote_for !== undefined) {
-      const line = norm.find(
-        (text, j) =>
-          lineRange[j] &&
-          lineRange[j][0] >= region[0] &&
-          lineRange[j][0] < region[1] &&
-          /^vote for\b/i.test(text),
-      );
-      if (line === undefined)
+      let phrase = null;
+      VOTE_FOR.lastIndex = region[0];
+      for (let m = VOTE_FOR.exec(joined); m && m.index < region[1]; m = VOTE_FOR.exec(joined)) {
+        if (m.index + m[0].length > region[1]) break;
+        const line = lineRange.find((range) => range && range[0] <= m.index && m.index < range[1]);
+        if (!WORD.test(joined.slice(Math.max(line[0], region[0]), m.index))) {
+          phrase = m;
+          break;
+        }
+      }
+      if (phrase) {
+        spans.push([phrase.index, phrase.index + phrase[0].length]);
+        if (countOf(phrase) !== contest.vote_for)
+          failures.push(new Failure(contest.at, "vote-for-mismatch", "vote_for"));
+      } else if (contest.vote_for !== 1) {
         failures.push(new Failure(contest.at, "vote-for-not-found", "vote_for"));
-      else if (voteForCount(line) !== contest.vote_for) {
-        failures.push(new Failure(contest.at, "vote-for-mismatch", "vote_for"));
       }
     }
 
@@ -120,7 +130,7 @@ const matchBallot = ({ body, firstLine, contests, privateStrings, ignoredLines }
       for (const i of wholeWords(joined, entry.name, within[0], within[1])) {
         const end = i + entry.name.length;
         if (!free(i, end)) continue;
-        named = true;
+        if (!GLUED.test(joined.slice(end, end + 2))) named = true;
         if (!entry.party) {
           found = [i, end];
           break;
@@ -145,7 +155,7 @@ const matchBallot = ({ body, firstLine, contests, privateStrings, ignoredLines }
   for (const [s, e] of spans) covered.fill(1, s, e);
   const ignored = new Set(ignoredLines.map(normalizeLine));
   const entries = privateStrings
-    .map(privateFold)
+    .map(privateForm)
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
   const unaccounted = [];
