@@ -264,7 +264,7 @@ describe("each command's output codes are the ones its reference lists", () => {
   // codes) is fetch-snapshot's, or shared by both.
   const BALLOT_CHECK = ["ballot-check.js", "ballot-match.js", "ballot-privacy.js"];
   // check's own modules (article-format.md, Command line).
-  const CHECK = ["check.js", "article.js", "snapshot-hash.js"];
+  const CHECK = ["check.js", "article.js", "figures.js", "snapshot-hash.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");

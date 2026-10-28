@@ -67,6 +67,8 @@
 
 **Context:** Step 11 adversarial finding 3, /ship run 5. Deferred by the owner (D8).
 
+**Built (ticket 08), first half:** a claimed figure must both round half-up to the claim's shown decimals and lie within 1% of the excerpt's value (owner decision, 2026-10-28), so "$1 million" no longer matches 500,000 (article-format.md, Figures). Still open: matching the field the claim names, so "$5M from PACs" can still pass on a "total: 5000000" field.
+
 **Effort:** S
 **Priority:** P1
 **Depends on:** `check`.
@@ -75,7 +77,7 @@
 
 **What:** Requirements for the scripts, each to become a test:
 
-- [ ] `claim-format` allows exactly one inline code span (the trailing tag) and one link (the trailing snapshot link), so no figure hides in link text or code (article-format.md:46, 66).
+- [x] `claim-format` allows exactly one inline code span (the trailing tag) and one link (the trailing snapshot link), so no figure hides in link text or code (article-format.md, Figures; built in ticket 08, `check`).
 - [x] Join pdftotext hyphenated line breaks before collapsing whitespace, and accept an excerpt that matches either the joined or the unjoined form (article-format.md, Matching; built in ticket 07, `check`).
 - [ ] Refuse an excerpt that crosses a blank-line record boundary in an `api` snapshot (snapshot-format.md:36).
 - [ ] `publish` recomputes every mechanical review item key, unfetchable entries included, and requires each to be accepted (review-list.md:48, SKILL.md:118).

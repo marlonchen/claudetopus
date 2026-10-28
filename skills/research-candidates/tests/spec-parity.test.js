@@ -2602,7 +2602,8 @@ const parseFigure = (text) => {
   const decimals = (m[2] ?? "").length;
   return { digits: BigInt(m[1] + (m[2] ?? "")), decimals, power: FIGURE_MULTIPLIERS[m[3]] ?? 0 };
 };
-// Does the excerpt's value, rounded half-up to the decimals the claim shows, equal the claim?
+// Does the excerpt's value, rounded half-up to the decimals the claim shows, equal the claim,
+// and is the claim within 1% of it?
 const figureMatches = (claim, excerpt) => {
   const c = parseFigure(claim);
   const e = parseFigure(excerpt);
@@ -2610,14 +2611,21 @@ const figureMatches = (claim, excerpt) => {
   const exp = e.power - c.power + c.decimals - e.decimals;
   const num = exp >= 0 ? e.digits * 10n ** BigInt(exp) : e.digits;
   const den = exp >= 0 ? 1n : 10n ** BigInt(-exp);
-  return (2n * num + den) / (2n * den) === c.digits;
+  if ((2n * num + den) / (2n * den) !== c.digits) return false;
+  // And within 1%: |claim - excerpt| * 100 <= excerpt, both at the smaller power of ten.
+  const ce = c.power - c.decimals;
+  const ee = e.power - e.decimals;
+  const low = Math.min(ce, ee);
+  const cv = c.digits * 10n ** BigInt(ce - low);
+  const ev = e.digits * 10n ** BigInt(ee - low);
+  return (cv > ev ? cv - ev : ev - cv) * 100n <= ev;
 };
 
 // Added by /ship test coverage audit (run 9).
-// Value: protects=the Figures rule's worked examples hold under its own half-up rule with
+// Value: protects=the Figures rule's worked examples hold under its own half-up and 1% rule with
 //   K/M/million/billion multipliers; fails_when=an example or the multiplier list is edited so
 //   the stated match no longer computes; why_new=no test read Figures; seam=none;
-//   no_claim=check's figure parser (not built yet; spec text only)
+//   no_claim=check's figure parser (tests/figures.test.js)
 describe("FigureExamples", () => {
   it("the Figures rule's worked examples match under half-up rounding", () => {
     const rule = between(ARTICLE, "## Figures");
@@ -2634,7 +2642,10 @@ describe("FigureExamples", () => {
     assert.ok(!figureMatches("$1.23 million", excerpt));
     // Half-up, not half-even, and K is a multiplier: 12450 shows as $12.5K.
     assert.ok(figureMatches("$12.5K", "12450") && !figureMatches("$12.4K", "12450"));
-    assert.ok(figureMatches("$2 billion", "1.5 billion") && figureMatches("3M", "2,500,000"));
+    // The 1% bound: rounding alone would pass these.
+    assert.match(rule, /and the claim is within 1% of the excerpt's value/);
+    assert.ok(!figureMatches("$2 billion", "1.5 billion") && !figureMatches("3M", "2,500,000"));
+    assert.ok(!figureMatches("$1 million", "500000") && figureMatches("$1 million", "1004000"));
   });
 });
 

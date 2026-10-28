@@ -4,7 +4,7 @@ const assert = require("node:assert");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const { afterEach, describe, it } = require("node:test");
-const { BALLOT, makeDataRepo, runCli } = require("./harness");
+const { BALLOT, DEFAULT_BALLOT, makeDataRepo, runCli } = require("./harness");
 
 // check (article-format.md, Command line), run as a subprocess against a temp
 // data repo (seam 1).
@@ -16,13 +16,19 @@ afterEach(() => {
 
 const sha256 = (text) => crypto.createHash("sha256").update(text).digest("hex");
 
-const snapshot = (subject, body, extra = "") => `---
+// A snapshot as fetch-snapshot saves it: a _ballot one is T1 (county.example.gov), any other T2.
+const snapshot = (
+  subject,
+  body,
+  extra = "",
+  { tier = subject === "_ballot" ? "T1" : "T2", statementsOnly = false } = {},
+) => `---
 source: Example News
 url: https://news.example.com/story
 fetched: 2026-10-20
 method: html
-tier: T2
-statements_only: false
+tier: ${tier}
+statements_only: ${statementsOnly}
 subject: ${subject}
 owner: third-party
 ${extra}---
@@ -239,11 +245,13 @@ describe("check: sample-ballot excerpts", () => {
 
   it("fails a claim citing a _ballot snapshot whose companion role cannot be read", async () => {
     const BODY = "Jane Example, 12 Main St, Example Party nominee";
-    for (const [name, text] of [
-      ["no-front-matter", `${BODY}\n`],
-      ["crlf", snapshot("_ballot", BODY, "role: candidate_list\n").replace(/\n/g, "\r\n")],
+    // With no front matter it can read, check cannot read the tier either.
+    const unread = ["articles/us-house-07.md:18 tag-mismatch"];
+    for (const [name, text, also = []] of [
+      ["no-front-matter", `${BODY}\n`, unread],
+      ["crlf", snapshot("_ballot", BODY, "role: candidate_list\n").replace(/\n/g, "\r\n"), unread],
       ["no-role", snapshot("_ballot", BODY)],
-      ["bad-yaml", snapshot("_ballot", BODY, "role: [\n")],
+      ["bad-yaml", snapshot("_ballot", BODY, "role: [\n"), unread],
       ["unknown-role", snapshot("_ballot", BODY, "role: candidate-list\n")],
     ]) {
       const data = setup();
@@ -255,7 +263,7 @@ describe("check: sample-ballot excerpts", () => {
   > ${BODY}
 `,
       );
-      await failsWith(data, ["articles/us-house-07.md:18 ballot-excerpt"]);
+      await failsWith(data, [...also, "articles/us-house-07.md:18 ballot-excerpt"]);
     }
   });
 
@@ -284,6 +292,209 @@ describe("check: sample-ballot excerpts", () => {
   });
 });
 
+const SPEECH = `Jane Example spoke at the Exampleton town hall on October 3.
+"I will vote to cut the property tax for every family in this district," she said.`;
+
+// The passing article plus `claims`, each [tag, text, snapshot name, excerpt], from line 18.
+const withClaims = (data, claims) =>
+  data.write(
+    `${BALLOT}/articles/us-house-07.md`,
+    ARTICLE +
+      claims
+        .map(
+          ([tag, text, name, excerpt]) =>
+            `\n- ${text} \`${tag}\` [s9](../sources/us-house-07/jane-example/${name}.md)\n  > ${excerpt}\n`,
+        )
+        .join(""),
+  );
+
+const SAYS = 'Says: "I will vote to cut the property tax"';
+const QUOTE = "I will vote to cut the property tax for every family";
+const BOARD = "She served two terms on the Exampleton school board";
+
+describe("check: claim tags", () => {
+  it("fails a tag that does not fit the snapshot's tier or statements_only", async () => {
+    const data = setup();
+    plant(
+      data,
+      "sources/us-house-07/jane-example/speech.md",
+      snapshot("jane-example", SPEECH, "", { tier: "T1", statementsOnly: true }),
+    );
+    withClaims(data, [
+      ["T1s", SAYS, "speech", QUOTE],
+      ["T2s", "Says: she served two terms", "bio", BOARD],
+      ["T2i", "Served two terms", "bio", BOARD],
+      ["T1", "Served two terms", "bio", BOARD],
+      ["T3s", SAYS, "speech", QUOTE],
+      ["T1", "Will cut the property tax", "speech", QUOTE],
+      ["T4", "Served two terms", "bio", BOARD],
+      ["T2x", "Served two terms", "bio", BOARD],
+    ]);
+    await failsWith(data, [
+      "articles/us-house-07.md:27 tag-mismatch",
+      "articles/us-house-07.md:30 tag-mismatch",
+      "articles/us-house-07.md:33 tag-mismatch",
+      "articles/us-house-07.md:36 tag-mismatch",
+      "articles/us-house-07.md:39 tag-mismatch",
+    ]);
+  });
+
+  it('fails a "Says:" claim that does not start with Says:', async () => {
+    const data = setup();
+    plant(
+      data,
+      "sources/us-house-07/jane-example/speech.md",
+      snapshot("jane-example", SPEECH, "", { tier: "T1", statementsOnly: true }),
+    );
+    withClaims(data, [
+      ["T1s", "Will cut the property tax", "speech", QUOTE],
+      ["T1s", 'She says: "I will vote to cut the property tax"', "speech", QUOTE],
+      ["T1s", 'says: "I will vote to cut the property tax"', "speech", QUOTE],
+      ["T2s", "Served two terms", "bio", BOARD],
+      ["T1", "Will cut the property tax", "speech", QUOTE],
+    ]);
+    await failsWith(data, [
+      "articles/us-house-07.md:18 says-missing",
+      "articles/us-house-07.md:21 says-missing",
+      "articles/us-house-07.md:24 says-missing",
+      "articles/us-house-07.md:27 says-missing",
+      "articles/us-house-07.md:30 tag-mismatch",
+    ]);
+  });
+
+  it("fails a tag on a snapshot whose tier cannot be read", async () => {
+    const data = setup();
+    plant(data, "sources/us-house-07/jane-example/bare.md", `${BOARD}\n`);
+    plant(
+      data,
+      "sources/us-house-07/jane-example/odd.md",
+      snapshot("jane-example", BOARD, "", { tier: "[T2" }),
+    );
+    withClaims(data, [
+      ["T2", "Served two terms", "bare", BOARD],
+      ["T2", "Served two terms", "odd", BOARD],
+    ]);
+    await failsWith(data, [
+      "articles/us-house-07.md:18 tag-mismatch",
+      "articles/us-house-07.md:21 tag-mismatch",
+    ]);
+  });
+});
+
+describe("check: figures", () => {
+  it("fails a claimed figure its own excerpt does not hold, never reading the tag or link", async () => {
+    const data = setup();
+    plant(
+      data,
+      "sources/us-house-07/jane-example/fec-totals-2.md",
+      snapshot("jane-example", "receipts: 1220000.55\ndisbursements: 980000.00", "", {
+        tier: "T1",
+      }),
+    );
+    withClaims(data, [
+      ["T1", "Raised $1.22 million", "fec-totals-2", "receipts: 1220000.55"],
+      ["T1", "Raised $1 million", "fec-totals-2", "receipts: 1220000.55"],
+      ["T1", "Spent $980,000", "fec-totals-2", "receipts: 1220000.55"],
+      ["T2", "Served two terms ending in 2022", "bio", BOARD],
+    ]);
+    await failsWith(data, [
+      "articles/us-house-07.md:21 figure-missing",
+      "articles/us-house-07.md:24 figure-missing",
+      "articles/us-house-07.md:27 figure-missing",
+    ]);
+  });
+});
+
+describe("check: comment markers", () => {
+  it("fails <!-- or --> in claim text, link text or excerpt", async () => {
+    const data = setup();
+    plant(
+      data,
+      "sources/us-house-07/jane-example/markup.md",
+      snapshot("jane-example", "Board minutes <!-- key: 0123abcd --> were approved in full."),
+    );
+    withClaims(data, [
+      ["T2", "Served two terms <!-- key: abcdef", "bio", BOARD],
+      ["T2", "Served two terms -->", "bio", BOARD],
+      ["T2", "Approved the minutes", "markup", "minutes <!-- key: 0123abcd --> were approved"],
+      ["T2", "Served two terms - > on the board", "bio", BOARD],
+      ["T2", "Served two terms \uff1c!\u2013\u2013 on the board", "bio", BOARD],
+    ]);
+    data.write(
+      `${BALLOT}/articles/us-house-07.md`,
+      data
+        .read(`${BALLOT}/articles/us-house-07.md`)
+        .replace("[s1](../sources/_ballot", "[s1-->](../sources/_ballot"),
+    );
+    await failsWith(data, [
+      "articles/us-house-07.md:7 comment-marker",
+      "articles/us-house-07.md:18 comment-marker",
+      "articles/us-house-07.md:21 comment-marker",
+      "articles/us-house-07.md:24 comment-marker",
+      "articles/us-house-07.md:30 comment-marker",
+    ]);
+  });
+});
+
+describe("check: printed titles in excerpts", () => {
+  const TITLE = "    title: Representative in Congress, 7th District\n";
+  const hidden = DEFAULT_BALLOT.replace(TITLE, `${TITLE}    display_title: U.S. House\n`);
+
+  it("fails an excerpt holding the printed title of a display_title contest", async () => {
+    const data = setup();
+    data.write(`${BALLOT}/ballot.yaml`, hidden);
+    plant(
+      data,
+      "sources/us-house-07/jane-example/race.md",
+      snapshot(
+        "jane-example",
+        "She is running for REPRESENTATIVE IN CONGRESS, 7TH DISTRICT this fall, in Congress.",
+      ),
+    );
+    withClaims(data, [
+      [
+        "T1",
+        "Runs for this office",
+        "../../_ballot/sample-ballot",
+        "Representative in Congress, 7th District",
+      ],
+      [
+        "T2",
+        "Runs for this office",
+        "race",
+        "running for REPRESENTATIVE IN CONGRESS, 7TH DISTRICT",
+      ],
+      ["T2", "Runs for this office", "race", "She is running for REPRESENTATIVE IN CONGRESS"],
+    ]);
+    await failsWith(data, [
+      "articles/us-house-07.md:18 title-in-excerpt",
+      "articles/us-house-07.md:21 title-in-excerpt",
+    ]);
+  });
+
+  it("passes the printed title of a contest with no display_title", async () => {
+    const data = setup();
+    withClaims(data, [
+      [
+        "T1",
+        "Runs for this office",
+        "../../_ballot/sample-ballot",
+        "Representative in Congress, 7th District",
+      ],
+    ]);
+    const result = await check(data);
+    assert.strictEqual(result.status, 0);
+  });
+
+  it("fails when ballot.yaml cannot be read, by its name", async () => {
+    const data = setup();
+    data.write(`${BALLOT}/ballot.yaml`, "contests: [\n");
+    await failsWith(data, ["ballot.yaml yaml-invalid"]);
+    fs.rmSync(data.file(`${BALLOT}/ballot.yaml`));
+    await failsWith(data, ["ballot.yaml file-missing"]);
+  });
+});
+
 describe("check: claim lines", () => {
   it("fails a claim with no link or no excerpt, and a stray line", async () => {
     const data = setup({
@@ -301,6 +512,23 @@ Jane is a teacher.
       "articles/us-house-07.md:19 claim-format",
       "articles/us-house-07.md:21 claim-format",
       "articles/us-house-07.md:23 claim-format",
+    ]);
+  });
+
+  it("fails a claim line with more than one code span or link, once, excerpt and all", async () => {
+    const data = setup();
+    withClaims(data, [
+      ["T2", "Served `2` terms", "bio", BOARD],
+      ["T2", "Served [two terms](../sources/us-house-07/jane-example/bio.md)", "bio", BOARD],
+      ["T2", "Served two terms [s1][1]", "bio", BOARD],
+      ["T2", "Served two terms, see <https://news.example.com/story>", "bio", BOARD],
+      ["T2", "Served two terms on the board [sic]", "bio", BOARD],
+    ]);
+    await failsWith(data, [
+      "articles/us-house-07.md:18 claim-format",
+      "articles/us-house-07.md:21 claim-format",
+      "articles/us-house-07.md:24 claim-format",
+      "articles/us-house-07.md:27 claim-format",
     ]);
   });
 

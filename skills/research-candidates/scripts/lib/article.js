@@ -19,6 +19,10 @@ const HEADING = /^(#{1,4}) (\S.*)$/;
 // - <claim text> `<tag>` [<label>](<target>)
 const CLAIM = /^- (\S.*?) `([^`]+)` \[([^\]]+)\]\(([^()\s]+)\)$/;
 const EXCERPT = /^ +> (\S.*)$/;
+// Claim text that holds a second code span or link: a backtick, an inline or
+// reference link, or an autolink. Text the figure check strips would otherwise
+// hide a figure from it (article-format.md, Figures).
+const EXTRA_SPAN = /`|\]\(|\]\[|<[a-z][a-z0-9+.-]*:|<[^\s<>@]+@/i;
 
 const parseArticle = (text) => {
   const lines = text.split("\n");
@@ -41,6 +45,10 @@ const parseArticle = (text) => {
     if (pending) {
       const claim = pending;
       pending = null;
+      if (excerpt && claim.malformed) {
+        fail(claim.line);
+        continue;
+      }
       if (excerpt) {
         claim.excerpt = excerpt[1];
         claim.excerptLine = n;
@@ -91,6 +99,7 @@ const parseArticle = (text) => {
         section,
         issue,
       };
+      if (EXTRA_SPAN.test(claim[1])) pending.malformed = true;
       continue;
     }
     fail(n);

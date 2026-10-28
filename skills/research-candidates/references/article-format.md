@@ -70,9 +70,9 @@ Matching is case-sensitive, and an excerpt starts and ends on word boundaries: n
 
 ## Figures
 
-Before `check` looks for figures in the claim text, it strips link targets, link text and inline code, so snapshot names and contest ids (`us-house-07`, `fec-totals-2.md`) are never read as claimed figures.
+Before `check` looks for figures in the claim text, it strips link targets, link text and inline code, so snapshot names and contest ids (`us-house-07`, `fec-totals-2.md`) are never read as claimed figures. A claim line holds exactly one inline code span (the tag) and one link (the snapshot), so no figure hides in a second one: claim text with a backtick, an inline or reference link (`](`, `][`) or an autolink fails `claim-format`. A contest id written in the claim text itself is read as figures like any other text.
 
-Each figure left in the claim must match a figure in that claim's own excerpt, not just any number in the snapshot. Both sides are canonicalized first: drop `$` and thousands commas, read `K`, `M`, `million` and `billion` as multipliers, and read `%` as a percentage. A claimed figure matches when the excerpt's value, rounded half-up to the decimal places the claim shows, equals it: "$1.22 million" matches `receipts: 1220000.55`, and "$1,220,001" matches it too.
+Each figure left in the claim must match a figure in that claim's own excerpt, not just any number in the snapshot. Every run of digits is a figure, years, counts and bill numbers included. Both sides are normalized as for matching and canonicalized first: drop `$` and thousands commas, read `K`, `M`, `million` and `billion` as multipliers (`K` and `M` only written right after the number, the words in any case after at most one space), and read `%` as a percentage, which matches only a percentage. A claimed figure matches when the excerpt's value, rounded half-up to the decimal places the claim shows, equals it, and the claim is within 1% of the excerpt's value: "$1.22 million" matches `receipts: 1220000.55`, and "$1,220,001" matches it too. Rounding alone would let "$1 million" stand for 500,000 or "$3M" for 2,500,000; the 1% bound fails both.
 
 ## Command line
 
@@ -87,9 +87,14 @@ It checks, for every claim (Claim lines):
 - the claim line has its tag and its link, and the next line is its excerpt; any other line of the article that is not a heading, a section state or blank fails too (`claim-format`);
 - the link resolves, relative to the article, to an existing snapshot file under `sources/` whose every part `fetch-snapshot` could have named (`claim-format`);
 - a claim citing the sample ballot (the `link:` line of `ballot-view.md`) quotes one whole span of `ballot-view.md`, and a claim citing any other `role: sample_ballot` snapshot, or citing one while there is no `ballot-view.md`, fails, and so does a claim citing a `_ballot` snapshot whose front matter does not give a companion role (`candidate_list`, `pamphlet`, `write_in_list` or `withdrawal_notice`), so a sample ballot whose role cannot be read is never matched like an ordinary source (`ballot-excerpt`);
-- any other excerpt is 20 to 400 characters once normalized (`excerpt-length`) and is found in its own snapshot's body (`excerpt-not-found`).
+- any other excerpt is 20 to 400 characters once normalized (`excerpt-length`) and is found in its own snapshot's body (`excerpt-not-found`);
+- the claim text, link text and excerpt hold no `<!--` or `-->`, read both raw and normalized, so a fullwidth or dash-folded marker counts too (`comment-marker`);
+- the tag fits the cited snapshot's front matter (source-tiers.md, Claim tags): its tier is the snapshot's `tier`, a plain tag is `T1` to `T3` on a snapshot that is not `statements_only`, and `T2i` cites a T2 snapshot; a tag outside the table, or a snapshot whose tier cannot be read, fails too (`tag-mismatch`);
+- a claim with an `s` tag starts with `Says:` (`says-missing`); the `says-only` rule is `coverage`'s;
+- every figure in the claim text is in its own excerpt (Figures, `figure-missing`);
+- no excerpt holds the printed `title` of a contest with a `display_title` in `ballot.yaml`, matched as the publish privacy scan matches it (SKILL.md step 6.3), sample-ballot spans included (`title-in-excerpt`).
 
-Its other codes: `usage` (a contest that is not an id), `bad-ballot`, `unknown-ballot`, `file-missing` (an article for a contest given does not exist), the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked`, `deps-missing` and `internal-error`.
+Its other codes: `usage` (a contest that is not an id), `bad-ballot`, `unknown-ballot`, `file-missing` (an article for a contest given does not exist, or `ballot.yaml`, located `ballot.yaml`), `yaml-invalid` (`ballot.yaml` does not parse, located `ballot.yaml`), the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked`, `deps-missing` and `internal-error`.
 
 ## Failure codes
 

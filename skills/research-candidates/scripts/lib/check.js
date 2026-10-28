@@ -12,16 +12,22 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { parseArticle } = require("./article");
 const { EXCERPT_LENGTH, ID_PATTERN, ROLES, VIEW } = require("./constants");
+const { readYamlDocument } = require("./data-files");
+const { figuresBacked } = require("./figures");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { bodyText, findExcerpt, normalizeLine } = require("./normalize");
 const { Failure, Failures, runCommand } = require("./output");
+const { scan } = require("./privacy");
 const { isSnapshotPath, verifyManifest } = require("./snapshot-hash");
 const { FRONT_MATTER } = require("./snapshot-file");
 const { withLock } = require("./snapshot-store");
 
 // The _ballot roles the compile agent reads whole (ballot-format.md, Ballot view).
 const COMPANION_ROLES = ROLES.filter((role) => role !== "sample_ballot");
+// source-tiers.md: a snapshot's tier, and a claim tag as its tier and mark.
+const TIERS = ["T1", "T2", "T3", "T4"];
+const CLAIM_TAG = /^(T[1-4])([si])?$/;
 // articles/<contest>.md, for a contest id.
 const ARTICLE_NAME = new RegExp(`${ID_PATTERN.source.slice(0, -1)}\\.md$`);
 
@@ -55,6 +61,21 @@ const readView = (ballotDir) => {
   return { link, spans };
 };
 
+// The printed titles of contests with a display_title (ballot-format.md), or
+// a Failure when ballot.yaml cannot be read. ballot-check validates the rest.
+const hiddenTitles = (ballotDir) => {
+  let data;
+  try {
+    data = readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS();
+  } catch (error) {
+    if (error instanceof Failure) return error;
+    throw error;
+  }
+  return (Array.isArray(data?.contests) ? data.contests : [])
+    .filter((c) => c?.display_title !== undefined && typeof c.title === "string")
+    .map((c) => c.title);
+};
+
 // The ballot-relative path a claim's link target names, or null when it is not
 // a relative link to a snapshot path under sources/.
 const resolveTarget = (target) => {
@@ -64,10 +85,11 @@ const resolveTarget = (target) => {
   return isSnapshotPath(rel) ? rel : null;
 };
 
-// Each cited snapshot, read once: { ballot, body } or null when it is missing
-// or not a regular file. `ballot` is true for a _ballot snapshot whose front
-// matter does not give a companion role, so a sample ballot whose role cannot
-// be read is never matched like an ordinary source.
+// Each cited snapshot, read once: { ballot, tier, statementsOnly, body } or
+// null when it is missing or not a regular file. `ballot` is true for a
+// _ballot snapshot whose front matter does not give a companion role, so a
+// sample ballot whose role cannot be read is never matched like an ordinary
+// source. `tier` is null when the front matter does not give one.
 const snapshotReader = (ballotDir) => {
   const cache = new Map();
   return (rel) => {
@@ -77,32 +99,61 @@ const snapshotReader = (ballotDir) => {
     if (fs.lstatSync(file, { throwIfNoEntry: false })?.isFile()) {
       const text = fs.readFileSync(file, "utf8");
       const front = FRONT_MATTER.exec(text);
-      let role = null;
-      if (front && rel.startsWith("sources/_ballot/")) {
-        try {
-          role = load("yaml").parse(front[1] ?? "")?.role ?? null;
-        } catch {
-          role = null;
-        }
+      let fields = {};
+      try {
+        fields = (front && load("yaml").parse(front[1] ?? "")) || {};
+      } catch {
+        fields = {};
       }
-      const ballot = rel.startsWith("sources/_ballot/") && !COMPANION_ROLES.includes(role);
-      read = { ballot, body: bodyText(front ? text.slice(front[0].length) : text) };
+      const role = rel.startsWith("sources/_ballot/") ? fields.role : null;
+      read = {
+        ballot: rel.startsWith("sources/_ballot/") && !COMPANION_ROLES.includes(role),
+        tier: TIERS.includes(fields.tier) ? fields.tier : null,
+        statementsOnly: fields.statements_only === true,
+        body: bodyText(front ? text.slice(front[0].length) : text),
+      };
     }
     cache.set(rel, read);
     return read;
   };
 };
 
+// Does `tag` fit the snapshot (source-tiers.md, Claim tags)? A plain tag is T1
+// to T3 on a snapshot that is not statements_only, an `s` tag any tier, and an
+// `i` tag T2 only; every tag's tier is the snapshot's own.
+const tagFits = (tag, snapshot) => {
+  const m = CLAIM_TAG.exec(tag);
+  if (!m || !snapshot.tier || m[1] !== snapshot.tier) return false;
+  if (m[2] === "s") return true;
+  if (snapshot.statementsOnly) return false;
+  return m[2] === "i" ? m[1] === "T2" : m[1] !== "T4";
+};
+
 // The failures of one claim, located `at` (its claim line), in report order.
-const claimFailures = (claim, at, view, readSnapshot) => {
+const claimFailures = (claim, at, { view, titles, readSnapshot }) => {
   const rel = resolveTarget(claim.target);
   const snapshot = rel && readSnapshot(rel);
   if (!snapshot) return [new Failure(at, "claim-format")];
+  const failures = [];
+  // Read raw and normalized, so a fullwidth or dash-folded marker counts too.
+  const marked = [claim.text, claim.label, claim.excerpt].some((text) =>
+    [text, normalizeLine(text)].some((t) => t.includes("<!--") || t.includes("-->")),
+  );
+  if (marked) failures.push(new Failure(at, "comment-marker"));
+  // Matched as the publish privacy scan matches it (SKILL.md step 6.3).
+  if (scan(claim.excerpt, { title: titles }, ["title"]).length)
+    failures.push(new Failure(at, "title-in-excerpt"));
+  if (!tagFits(claim.tag, snapshot)) failures.push(new Failure(at, "tag-mismatch"));
+  if (CLAIM_TAG.exec(claim.tag)?.[2] === "s" && !claim.text.startsWith("Says:"))
+    failures.push(new Failure(at, "says-missing"));
+  // The parser keeps the tag and link out of the text, so their snapshot names
+  // and ids are never read as claimed figures.
+  if (!figuresBacked(claim.text, claim.excerpt)) failures.push(new Failure(at, "figure-missing"));
   if ((view && rel === view.link) || snapshot.ballot) {
     const whole = view && rel === view.link && view.spans.has(normalizeLine(claim.excerpt));
-    return whole ? [] : [new Failure(at, "ballot-excerpt")];
+    if (!whole) failures.push(new Failure(at, "ballot-excerpt"));
+    return failures;
   }
-  const failures = [];
   const length = [...normalizeLine(claim.excerpt)].length;
   if (length < EXCERPT_LENGTH.min || length > EXCERPT_LENGTH.max)
     failures.push(new Failure(at, "excerpt-length"));
@@ -125,8 +176,13 @@ const allContests = (ballotDir) => {
 const check = (ballotDir, given) => {
   const failureLines = verifyManifest(ballotDir).map((f) => f.line);
   const contests = given.length ? given : allContests(ballotDir);
-  const view = readView(ballotDir);
-  const readSnapshot = snapshotReader(ballotDir);
+  const titles = hiddenTitles(ballotDir);
+  if (titles instanceof Failure) failureLines.push(titles.line);
+  const context = {
+    view: readView(ballotDir),
+    titles: titles instanceof Failure ? [] : titles,
+    readSnapshot: snapshotReader(ballotDir),
+  };
   for (const contest of contests) {
     const rel = `articles/${contest}.md`;
     const file = path.join(ballotDir, rel);
@@ -141,7 +197,7 @@ const check = (ballotDir, given) => {
       new Failure(`${rel}:${line}`, code),
     ]);
     for (const claim of article.claims) {
-      for (const failure of claimFailures(claim, `${rel}:${claim.line}`, view, readSnapshot))
+      for (const failure of claimFailures(claim, `${rel}:${claim.line}`, context))
         found.push([claim.line, failure]);
     }
     found.sort((a, b) => a[0] - b[0]);
