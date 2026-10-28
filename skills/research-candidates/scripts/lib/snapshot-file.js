@@ -6,6 +6,9 @@
 const { load } = require("./deps");
 const { Failure } = require("./output");
 
+// A snapshot's front matter, as snapshotText writes it; group 1 is its YAML.
+const FRONT_MATTER = /^---\n([\s\S]*?\n)?---\n/;
+
 // Local date, as for `fetched:`.
 const today = () => {
   const d = new Date();
@@ -31,4 +34,4 @@ const snapshotText = (fields, text) => {
   return `---\n${yaml}---\n${text}\n`;
 };
 
-module.exports = { snapshotText, today };
+module.exports = { FRONT_MATTER, snapshotText, today };

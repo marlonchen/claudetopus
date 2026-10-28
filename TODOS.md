@@ -40,9 +40,9 @@
 ### Finish Unicode normalization for privacy matching
 
 **What:** SKILL.md step 6.3 now checks four variants of the decoded forms (default-ignorable characters removed or read as spaces, NFKC applied or not) and refuses on a match in any, with dashes folded by Unicode category; `fetch-snapshot` and `ballot-check` match `private_strings` the same way (run 10). Still open:
-- strip `\p{Default_Ignorable_Code_Point}` in excerpt matching in `check` (article-format.md:37);
+- **Built (ticket 07):** `check` strips `\p{Default_Ignorable_Code_Point}` in excerpt matching (article-format.md, Matching, step 2);
 - decide whether to fold confusables (Cyrillic or Greek look-alike letters) everywhere;
-- excerpt matching joins `pdftotext` hyphenated line breaks and the scan does not, so if `check` joins after collapsing whitespace, `Spring- field Township` passes `check` and the scan reads it as `spring field township`; define the join so it cannot, or add it to the scan;
+- **Defined (ticket 07):** a hyphen break is found in the snapshot's raw lines before whitespace collapses, an excerpt is never joined itself, so `Spring- field Township` matches neither form; the unjoined form (`Spring-field`) still reads as two words to the scan, so SKILL.md step 6.2 has `publish` also scan claims and excerpts with every hyphen between two letters removed. Build that in `publish` (ticket 12);
 - make `ballot-check` refuse a `private_strings`, address or label entry with no letters or digits left after normalization, since an empty entry would match every page or none;
 - **Built (ticket 03), in `scripts/lib/privacy.js` and stated in SKILL.md step 6.3:** the fold order and the value-normalization items below; NFKC-made digits (`9410³`, `①`) count for the ZIP and digit-run checks; reading ZWNJ, ZWJ and soft hyphens as spaces may split a word into a short private entry (`Spring­field Township` matching `Field Township`), and that refusal is accepted, since the matcher fails closed. Still open: confusables, the combining-mark NFD variant, the `check` items and the parity-test items.
 - fold order: in the NFKC variants, apply the ignorable fold and NFKC first, then the quote, dash and case folds, whitespace collapse and form 3's separators (or NFKC_Casefold), since NFKC run last brings back capitals (`𝐒𝐩𝐫𝐢𝐧𝐠𝐟𝐢𝐞𝐥𝐝` becomes `Springfield`) and creates separators (`／`, `․`) after they were read as spaces; collapse whitespace after the ignorable fold, so `Pat <ZWSP> Voter` still reads as `pat voter`;
@@ -76,7 +76,7 @@
 **What:** Requirements for the scripts, each to become a test:
 
 - [ ] `claim-format` allows exactly one inline code span (the trailing tag) and one link (the trailing snapshot link), so no figure hides in link text or code (article-format.md:46, 66).
-- [ ] Join pdftotext hyphenated line breaks before collapsing whitespace, and accept an excerpt that matches either the joined or the unjoined form (article-format.md:40-43; `ballot-check` normalizes per line, ballot-format.md:67).
+- [x] Join pdftotext hyphenated line breaks before collapsing whitespace, and accept an excerpt that matches either the joined or the unjoined form (article-format.md, Matching; built in ticket 07, `check`).
 - [ ] Refuse an excerpt that crosses a blank-line record boundary in an `api` snapshot (snapshot-format.md:36).
 - [ ] `publish` recomputes every mechanical review item key, unfetchable entries included, and requires each to be accepted (review-list.md:48, SKILL.md:118).
 - [ ] Settle the first-run baseline wording (review-list.md:14 vs 32), and carry a mark only when the comment's key is in the key set computed from the current article (review-list.md:26).

@@ -19,6 +19,20 @@ const KEY_ENV = ["OPENFEC_API_KEY", "OPENSTATES_API_KEY"];
 const ROLES = ["sample_ballot", "candidate_list", "pamphlet", "write_in_list", "withdrawal_notice"];
 const LEDGER = "ballot.ledger";
 
+// snapshot-format.md, Manifest: the operating-system and editor leftovers
+// that check, ballot-check and the ballot gate skip.
+const LEFTOVER = /^(\.DS_Store|Thumbs\.db|.*\.swp)$/;
+// ballot-format.md, Ballot check: the sample ballot as the compile agent reads it.
+const VIEW = "ballot-view.md";
+// article-format.md, Claim lines: an excerpt's length, apart from a sample-ballot span.
+const EXCERPT_LENGTH = { min: 20, max: 400 };
+// article-format.md, Section states: the states other than claims.
+const SECTION_STATES = [
+  "Unknown, no source found",
+  "Not researched yet",
+  "Not part of this office's job",
+];
+
 // sections.md: each contest type's sections, by name without the letter.
 const SECTIONS = {
   candidate: [
@@ -50,11 +64,15 @@ const OFFICE_TYPES = ["federal", "state", "local", "judicial"];
 module.exports = {
   BALLOT_ID_PATTERN,
   ELECTION_PATTERN,
+  EXCERPT_LENGTH,
   ID_PATTERN,
   KEY_ENV,
   LEDGER,
+  LEFTOVER,
   OFFICE_TYPES,
   ROLES,
+  SECTION_STATES,
   SECTIONS,
   SOURCE_REPO_ID,
+  VIEW,
 };

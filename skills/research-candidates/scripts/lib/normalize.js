@@ -4,7 +4,8 @@
 // the ballot check share: NFKC, default-ignorable code points removed, curly
 // quotes to straight, en and em dashes (every Pd dash and the minus sign) to
 // `-`, whitespace collapsed. ballot-check applies it to one line at a time;
-// joining pdftotext hyphenated line breaks belongs to excerpt matching.
+// excerpt matching also reads pdftotext hyphenated line breaks in a snapshot
+// body both joined and unjoined (bodyText, findExcerpt).
 
 // Letters, marks and decimal digits: a whole-word or phrase match may not touch one.
 const WORD = /[\p{L}\p{M}\p{Nd}]/u;
@@ -47,4 +48,75 @@ const occurrences = (hay, needle, edge = WORD, from = 0, to = hay.length) => {
 // Whole-word starts: no letter or digit touches either end.
 const wholeWords = (hay, needle, from, to) => occurrences(hay, needle, WORD, from, to);
 
-module.exports = { WORD, normalizeLine, occurrences, wholeWords };
+// A hyphenated line break: after NFKC (U+2011 reads as U+2010), a letter and
+// a hyphen end the line, trailing spaces aside, and the next line starts with
+// a letter, leading spaces aside. Found in each line after NFKC and with every
+// default-ignorable but the soft hyphen removed, so a hidden character next to
+// the hyphen neither makes nor hides a break, and before any other fold.
+const BREAK_END = /\p{L}\p{M}*([-\u2010\u00ad])[ \t]*$/u;
+const BREAK_NEXT = /^[ \t]*\p{L}/u;
+
+// A snapshot body as excerpts are matched against it: { text, breaks }, the
+// lines normalized and joined by single spaces, except that a hyphen break
+// keeps its hyphen as `-` with no space after, and `breaks` holds the index of
+// each such hyphen, which findExcerpt may read or skip.
+const bodyText = (body) => {
+  const lines = body
+    .split(/\r?\n/)
+    .map((line) =>
+      line.normalize("NFKC").replace(/(?!\u00ad)\p{Default_Ignorable_Code_Point}/gu, ""),
+    );
+  let text = "";
+  const breaks = new Set();
+  let glued = false;
+  for (const [i, line] of lines.entries()) {
+    const end = BREAK_END.exec(line);
+    const isBreak = end !== null && BREAK_NEXT.test(lines[i + 1] ?? "");
+    // The hyphen and the spaces after it go; the letter before it stays.
+    const part = normalizeLine(
+      isBreak ? line.slice(0, end.index + end[0].lastIndexOf(end[1])) : line,
+    );
+    if (part) {
+      if (text && !glued) text += " ";
+      text += part;
+      glued = false;
+    }
+    if (isBreak) {
+      breaks.add(text.length);
+      text += "-";
+      glued = true;
+    }
+  }
+  return { text, breaks };
+};
+
+// True when `excerpt`, normalized, is in `body` (from bodyText) on word
+// boundaries, reading each break joined or unjoined on its own. The excerpt
+// is one line and is never joined itself.
+const findExcerpt = ({ text, breaks }, excerpt) => {
+  const e = normalizeLine(excerpt);
+  if (!e) return false;
+  const startsWord = WORD.test(pointAt(e, 0));
+  const endsWord = WORD.test(pointBefore(e, e.length));
+  // Match e[j..] at text[i..]; at a break, take the hyphen or skip it.
+  const from = (i, j) => {
+    while (j < e.length) {
+      if (breaks.has(i)) {
+        if (e[j] === "-" && from(i + 1, j + 1)) return true;
+        i++;
+        continue;
+      }
+      if (text[i] !== e[j]) return false;
+      i++;
+      j++;
+    }
+    return !endsWord || !WORD.test(pointAt(text, i));
+  };
+  for (let i = text.indexOf(e[0]); i !== -1; i = text.indexOf(e[0], i + 1)) {
+    if (startsWord && WORD.test(pointBefore(text, i))) continue;
+    if (from(i, 0)) return true;
+  }
+  return false;
+};
+
+module.exports = { WORD, bodyText, findExcerpt, normalizeLine, occurrences, wholeWords };
