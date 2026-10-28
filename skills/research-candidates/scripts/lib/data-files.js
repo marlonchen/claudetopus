@@ -198,6 +198,13 @@ const loadAddresses = (root) => {
   });
 };
 
+// The privacy matcher's address, zip and label values from loadAddresses.
+const addressValues = (addresses) => ({
+  address: addresses.flatMap((a) => [a.address, a.street]),
+  zip: addresses.flatMap((a) => a.zips),
+  label: addresses.map((a) => a.label),
+});
+
 // private.yaml: lists of strings under private_strings and ignored_lines, no
 // other key. A failure is located by the file alone: a stray key can be the
 // private text itself (Rule 5).
@@ -225,20 +232,15 @@ const loadPrivate = (root, ballot, location) => {
 // by class: the ballot id and its private_strings, every address, street
 // line, label and ZIP in addresses.yaml, and the API key values set in the
 // environment. No script prints any of them (Rule 5).
-const loadPrivateValues = (root, ballot) => {
-  const strings = loadPrivate(root, ballot, `${ballot}/private.yaml`).private_strings;
-  const addresses = loadAddresses(root);
-  return {
-    "ballot-id": [ballot.split("/")[1]],
-    "private-string": strings,
-    address: addresses.flatMap((a) => [a.address, a.street]),
-    zip: addresses.flatMap((a) => a.zips),
-    label: addresses.map((a) => a.label),
-    key: KEY_ENV.map((name) => process.env[name]).filter(Boolean),
-  };
-};
+const loadPrivateValues = (root, ballot) => ({
+  "ballot-id": [ballot.split("/")[1]],
+  "private-string": loadPrivate(root, ballot, `${ballot}/private.yaml`).private_strings,
+  ...addressValues(loadAddresses(root)),
+  key: KEY_ENV.map((name) => process.env[name]).filter(Boolean),
+});
 
 module.exports = {
+  addressValues,
   ballotDirs,
   ballotEntries,
   isDir,

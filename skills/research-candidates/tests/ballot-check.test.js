@@ -880,6 +880,21 @@ describe("ballot-check: private text", () => {
     await failsWith(data, ["private.yaml ballot-id-private"]);
   });
 
+  it("reads a private digit run in any script against the ballot id's number", async () => {
+    const data = setup({
+      priv: PRIVATE.replace("  - Precinct 12\n", "  - Precinct 12\n  - Ward ١\n"),
+    });
+    await failsWith(data, ["private.yaml ballot-id-private"]);
+  });
+
+  it("ends another ballot's private.yaml failure with the check-each-ballot hint", async () => {
+    const data = setup();
+    data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: [unclosed\n");
+    const result = await failsWith(data, ["- yaml-invalid"]);
+    assert.match(result.stdout, /^- yaml-invalid\n- check-each-ballot\n?$/m);
+    assert.equal(result.stdout.match(/check-each-ballot/g).length, 1);
+  });
+
   it("warns, and still passes, when a private digit run reads as a year", async () => {
     const data = setup({
       priv: PRIVATE.replace("  - Precinct 12\n", "  - Precinct 2024\n"),

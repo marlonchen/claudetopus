@@ -108,6 +108,10 @@ describe("privacy matcher: every normalization variant, refusing on any", () => 
     }
     assert.deepEqual(classes("addr&#45mom"), ["label"]);
     assert.deepEqual(classes("addr&#x2dmom"), ["label"]);
+    // Page text reads a known name before other letters or digits; an attribute value would not.
+    assert.deepEqual(classes("Pct&nbsp12"), ["private-string"]);
+    assert.deepEqual(classes("Springfield&nbspTownship"), ["private-string"]);
+    assert.deepEqual(classes("?a=1&para=2&t=springfield-township"), ["private-string"]);
   });
 
   it("decodes latin1 percent-escapes and folds ß and final sigma", () => {

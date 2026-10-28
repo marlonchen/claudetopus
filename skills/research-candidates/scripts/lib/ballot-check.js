@@ -60,7 +60,7 @@ const TYPE_KEYS = {
 const CANDIDATE_KEYS = ["id", "name", "party", "party_name", "status"];
 const OFFICIAL_KEYS = ["id", "name"];
 // Every key ballot.yaml allows, the only ones a report line may name.
-const KEYS = new Set([
+const ALLOWED_KEYS = new Set([
   ...TOP_KEYS,
   ...CONTEST_KEYS,
   ...Object.values(TYPE_KEYS).flat(),
@@ -97,7 +97,7 @@ const idMatches = (id, state, county) => {
 const personKey = (name) => normalizeLine(name).toLowerCase();
 
 // ballot.yaml, validated. Returns { failures, contests (for matchBallot),
-// slug, slugAt, people: [{ id, name, at }], hash, source: the parsed file }.
+// slug, slugAt, people: [{ id, name, at }], hash, parsed: { doc, lineCounter, text } }.
 const checkBallotYaml = (root, ballot) => {
   const [election, ballotId] = ballot.split("/");
   const { doc, lineCounter, text } = readYamlDocument(
@@ -105,7 +105,7 @@ const checkBallotYaml = (root, ballot) => {
     "ballot.yaml",
   );
   const data = doc.toJS();
-  const source = { doc, lineCounter, text };
+  const parsed = { doc, lineCounter, text };
   const failures = [];
   // The line of the deepest node on `keys` that exists.
   const at = (keys) => {
@@ -152,7 +152,7 @@ const checkBallotYaml = (root, ballot) => {
       slugAt: at(["slug"]),
       people: [],
       hash: sha256(text),
-      source,
+      parsed,
     };
   }
   if (!isCount(data.contest_count)) fail(["contest_count"], "ballot-invalid");
@@ -284,15 +284,14 @@ const checkBallotYaml = (root, ballot) => {
     slugAt: at(["slug"]),
     people,
     hash: sha256(text),
-    source,
+    parsed,
   };
 };
 
 // Every other ballot directory's ballot.yaml, for the cross-ballot id and slug
 // rules, and every directory under an <election> directory, for the ballot
 // id rules. Failures here are located `-`, since no other ballot's id is
-// printed; the last one carries the hint to run ballot-check on each ballot,
-// which locates its own failures. `names` lists [id, name] pairs.
+// printed. `names` lists [id, name] pairs.
 const otherBallots = (root, ballot) => {
   const codes = [];
   const others = [];
@@ -327,10 +326,7 @@ const otherBallots = (root, ballot) => {
     }
     others.push({ slug: data.slug, names });
   }
-  const failures = codes.map(
-    (code, n) =>
-      new Failure("-", code, undefined, n === codes.length - 1 ? "check-each-ballot" : undefined),
-  );
+  const failures = codes.map((code) => new Failure("-", code));
   return { failures, others };
 };
 
@@ -452,7 +448,7 @@ const check = (root, ballot, ballotDir, show) => {
     yaml,
     lists: privateLists,
     addresses,
-    keys: KEYS,
+    keys: ALLOWED_KEYS,
   });
   const cross = otherBallots(root, ballot);
   failures.push(...(yaml?.failures ?? []), ...privacy.failures, ...cross.failures);
@@ -475,6 +471,10 @@ const check = (root, ballot, ballotDir, show) => {
   const found = findSampleBallot(ballotDir);
   failures.push(...found.failures);
   let spans = [];
+  // The last failure in another ballot carries the hint to run ballot-check on
+  // each ballot, which locates its own failures.
+  const elsewhere = failures.filter((f) => f.location === "-" && !f.hint);
+  if (elsewhere.length) elsewhere.at(-1).hint = "check-each-ballot";
   const lines = [...privacy.warnings, ...failures.map((f) => f.line)];
   // Matching needs both files; without them it would only add noise.
   if (found.sample && yaml && privateLists) {

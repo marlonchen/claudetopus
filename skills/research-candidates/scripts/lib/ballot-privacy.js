@@ -7,9 +7,9 @@
 // never the matched text (Rule 5).
 
 const { load } = require("./deps");
-const { tiersPrivacy } = require("./data-files");
+const { addressValues, tiersPrivacy } = require("./data-files");
 const { Failure } = require("./output");
-const { CLASSES, YEAR, isEmptyValue, scan } = require("./privacy");
+const { CLASSES, YEAR, digitRuns, isEmptyValue, scan } = require("./privacy");
 
 const TEXT_CLASSES = ["address", "label", "private-string"];
 // The fields discovery searches with, or the page builds anchors from.
@@ -75,13 +75,11 @@ const checkPrivacy = ({ root, ballot, yaml, lists, addresses, keys }) => {
   const strings = lists?.private_strings ?? [];
   const values = {
     "private-string": strings,
-    address: (addresses ?? []).flatMap((a) => [a.address, a.street]),
-    zip: (addresses ?? []).flatMap((a) => a.zips),
-    label: (addresses ?? []).map((a) => a.label),
+    ...addressValues(addresses ?? []),
   };
 
   if (yaml) {
-    const { doc, lineCounter, text } = yaml.source;
+    const { doc, lineCounter, text } = yaml.parsed;
     const byLine = keysByLine(doc, lineCounter, keys);
     for (const { line, class: cls } of scan(withoutHiddenTitles(text, doc), values, TEXT_CLASSES)) {
       const key = byLine.get(line);
@@ -109,7 +107,7 @@ const checkPrivacy = ({ root, ballot, yaml, lists, addresses, keys }) => {
     }
     if (strings.some(isEmptyValue))
       failures.push(new Failure("private.yaml", "private-empty", "private_strings"));
-    const runs = strings.flatMap((s) => s.normalize("NFKC").match(/[0-9]+/g) ?? []);
+    const runs = strings.flatMap((s) => digitRuns(s.normalize("NFKC")));
     const number = Number(ballot.split("-").pop());
     if (runs.some((run) => Number(run) === number))
       failures.push(new Failure("private.yaml", "ballot-id-private"));

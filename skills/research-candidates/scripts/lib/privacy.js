@@ -6,15 +6,16 @@
 // private value matched and the class of value, never the value or the text.
 //
 // Text is checked in three forms: raw; decoded and folded; and folded again
-// with - _ / . + = : , ; ~ & read as spaces. The two folded forms are each built in four
-// variants (default-ignorable code points removed or read as spaces, NFKC on
-// or off), since each fold catches a spelling the others miss and can hide
+// with - _ / . + = : , ; ~ & read as spaces. The two folded forms are each built in eight
+// variants (entities read as page text or as an attribute value, default-ignorable
+// code points removed or read as spaces, NFKC on or off), since each fold catches
+// a spelling the others miss and can hide
 // another. In every variant the ignorable fold and NFKC come first, then the
 // quote, dash and case folds, whitespace collapse and the third form's
 // separators, so NFKC never brings back capitals or separators after they were
 // folded. Each value is normalized exactly like the form and variant it is
-// matched against. Every normalized string keeps, for each UTF-16 unit, the
-// offset in the original text it came from, so a match is located by line.
+// matched against. Every normalized string keeps, as breakpoints, the offset
+// in the original text each UTF-16 unit came from, so a match is located by line.
 
 // The value classes a caller can ask for, in report order, with the code a
 // privacy refusal prints for each (Rule 5: only the class, never the text).
@@ -103,11 +104,15 @@ const rewrite = (s, pattern, replace) => {
   return { text: parts.join(""), segs: next };
 };
 
-// An HTML entity as browsers decode it (`entities`), numeric ones with or
-// without their `;`. A named one with no `;` decodes only where an attribute
-// value would decode it too: not before a letter, digit or `=` (`?a=1&para=2`).
-const ENTITY =
-  /&(?:#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[a-zA-Z][a-zA-Z0-9]*;|[a-zA-Z]+(?![a-zA-Z0-9=]))/g;
+// HTML entities as browsers decode them (`entities`), numeric ones with or
+// without their `;`, in each of the two ways browsers read a named one with no
+// `;`: page text decodes its longest known prefix (`Pct&nbsp12`), an attribute
+// value only when no letter, digit or `=` follows (`?a=1&para=2`). Each way
+// can hide a value the other shows, so the text is decoded both ways.
+const ENTITIES = {
+  text: /&(?:#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[a-zA-Z][a-zA-Z0-9]*;?)/g,
+  attribute: /&(?:#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[a-zA-Z][a-zA-Z0-9]*;|[a-zA-Z]+(?![a-zA-Z0-9=]))/g,
+};
 let decodeHTML;
 const decodeEntity = (entity) => {
   decodeHTML ??= load("entities").decodeHTML;
@@ -126,10 +131,15 @@ const decodePercent = (run) => {
   return utf8.includes("\ufffd") ? bytes.toString("latin1") : utf8;
 };
 
-// HTML entities and URL encoding, repeated so a double-encoded value decodes too.
-const decode = (s) => {
+// HTML entities (read as `entities`: "text" or "attribute") and URL encoding,
+// repeated so a double-encoded value decodes too.
+const decode = (s, entities) => {
   for (let round = 0; round < 4; round++) {
-    const next = rewrite(rewrite(s, ENTITY, decodeEntity), /(%[0-9a-f]{2})+/gi, decodePercent);
+    const next = rewrite(
+      rewrite(s, ENTITIES[entities], decodeEntity),
+      /(%[0-9a-f]{2})+/gi,
+      decodePercent,
+    );
     if (next.text === s.text) return next;
     s = next;
   }
@@ -156,15 +166,19 @@ const fold = (s, form, { ignorable, nfkc }) => {
 };
 
 const VARIANTS = [];
-for (const form of [2, 3]) {
-  for (const ignorable of ["remove", "space"]) {
-    for (const nfkc of [false, true]) VARIANTS.push({ form, ignorable, nfkc });
+for (const entities of Object.keys(ENTITIES)) {
+  for (const form of [2, 3]) {
+    for (const ignorable of ["remove", "space"]) {
+      for (const nfkc of [false, true]) VARIANTS.push({ entities, form, ignorable, nfkc });
+    }
   }
 }
 
 // A value normalized like the form it is matched against, or "" when nothing is left.
 const normalizeValue = (value, variant) =>
-  variant ? fold(decode(mapped(value)), variant.form, variant).text.trim() : value.trim();
+  variant
+    ? fold(decode(mapped(value), variant.entities), variant.form, variant).text.trim()
+    : value.trim();
 
 // `text` in the publish scan's third form (NFKC, ignorables removed, case
 // folded, separators read as spaces), trimmed: ballot-check's private_strings
@@ -225,8 +239,13 @@ const scan = (text, values, classes) => {
   const hit = (cls, offset) => hits.add(`${lineOf(lineStarts, offset)}\0${cls}`);
 
   const raw = mapped(text);
-  const decoded = decode(raw);
-  const folded = VARIANTS.map((variant) => ({ variant, s: fold(decoded, variant.form, variant) }));
+  const decoded = { text: decode(raw, "text"), attribute: decode(raw, "attribute") };
+  // Most text decodes the same both ways; its attribute variants would repeat the text ones.
+  const same = decoded.text.text === decoded.attribute.text;
+  const folded = VARIANTS.filter((v) => !same || v.entities === "text").map((variant) => ({
+    variant,
+    s: fold(decoded[variant.entities], variant.form, variant),
+  }));
   for (const cls of classes) {
     for (const value of values[cls] ?? []) {
       if (typeof value !== "string") continue;
@@ -234,7 +253,7 @@ const scan = (text, values, classes) => {
         // A key value is random text: any occurrence counts, case and boundaries kept.
         const key = value.trim();
         if (!key) continue;
-        for (const s of [raw, decoded]) {
+        for (const s of [raw, decoded.text, decoded.attribute]) {
           for (let i = s.text.indexOf(key); i !== -1; i = s.text.indexOf(key, i + 1)) {
             hit(cls, origin(s, i));
           }
@@ -271,6 +290,19 @@ const URL_CLASSES = ["ballot-id", "address", "zip", "label", "private-string", "
 const findRefusal = (texts, values, classes) =>
   refusalCode(texts.flatMap((text) => scan(text, values, classes)));
 
+// Every decimal digit run in `text`, in any script, as ASCII digits ("١٢" is
+// "12"): Unicode places each script's digits 0-9 in order, in runs of whole tens.
+const digitRuns = (text) =>
+  [...text.matchAll(/\p{Nd}+/gu)].map(([run]) =>
+    [...run]
+      .map((ch) => {
+        let start = ch.codePointAt(0);
+        while (DIGIT.test(String.fromCodePoint(start - 1))) start--;
+        return String((ch.codePointAt(0) - start) % 10);
+      })
+      .join(""),
+  );
+
 // True when `value` keeps no letter or digit once normalized for some variant,
 // so the scan would skip it there (ballot-check refuses such an entry).
 const isEmptyValue = (value) =>
@@ -280,6 +312,7 @@ module.exports = {
   CLASSES,
   URL_CLASSES,
   YEAR,
+  digitRuns,
   findRefusal,
   isEmptyValue,
   privateForm,
