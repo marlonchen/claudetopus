@@ -169,4 +169,4 @@ const checkPrivacy = ({ root, ballot, yaml, lists, addresses, keys }) => {
   return { failures, warnings };
 };
 
-module.exports = { checkPrivacy };
+module.exports = { checkPrivacy, hiddenTitles };

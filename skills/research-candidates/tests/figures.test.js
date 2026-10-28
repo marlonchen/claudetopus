@@ -60,6 +60,29 @@ describe("article-format.md, Figures: each claimed figure is in its own excerpt"
     assert.ok(!figuresBacked("Raised $5,000 and spent $9,000", "raised $5,000, spent $8,000"));
   });
 
+  it("reads a decimal with no leading digit", () => {
+    assert.ok(!figuresBacked("A .5% raise", "a 5% raise"));
+    assert.ok(figuresBacked("A .5% raise", "a 0.5% raise"));
+  });
+
+  it("never matches a figure written with a scale it does not read", () => {
+    for (const claim of ["$5 trillion", "$5B raised", "5 thousand votes", "5m raised", "$5k"]) {
+      assert.ok(!figuresBacked(claim, "5 people, 5 times, 5 precincts"), claim);
+      assert.ok(!figuresBacked("5 people", `${claim} in all`), `${claim} in the excerpt`);
+    }
+    assert.ok(figuresBacked("Won in the 7th District in 1990", "won in the 7th District in 1990"));
+  });
+
+  it("reads percent in words as a percentage", () => {
+    assert.ok(figuresBacked("Won 50 percent", "won 50% of the vote"));
+    assert.ok(!figuresBacked("Won 50 percent", "won 50 votes"));
+  });
+
+  it("never matches digits outside ASCII once normalized", () => {
+    assert.ok(!figuresBacked("Lost \u0665\u0660\u0660 votes", "lost 5 votes"));
+    assert.ok(!figuresBacked("Lost 500 votes", "lost \u0665\u0660\u0660 votes"));
+  });
+
   it("reads digits as normalized, so fullwidth digits count", () => {
     assert.ok(figuresBacked("Raised $１,000", "raised 1000"));
     assert.ok(!figuresBacked("Raised $２,000", "raised 1000"));

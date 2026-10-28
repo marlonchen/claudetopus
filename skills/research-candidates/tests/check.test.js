@@ -522,6 +522,9 @@ Jane is a teacher.
       ["T2", "Served [two terms](../sources/us-house-07/jane-example/bio.md)", "bio", BOARD],
       ["T2", "Served two terms [s1][1]", "bio", BOARD],
       ["T2", "Served two terms, see <https://news.example.com/story>", "bio", BOARD],
+      ["T2", 'Served <a href="https://news.example.com">two terms</a>', "bio", BOARD],
+      ["T2", "Served two terms, see https://news.example.com/story", "bio", BOARD],
+      ["T2", "Served two terms, see www.example.com", "bio", BOARD],
       ["T2", "Served two terms on the board [sic]", "bio", BOARD],
     ]);
     await failsWith(data, [
@@ -529,6 +532,9 @@ Jane is a teacher.
       "articles/us-house-07.md:21 claim-format",
       "articles/us-house-07.md:24 claim-format",
       "articles/us-house-07.md:27 claim-format",
+      "articles/us-house-07.md:30 claim-format",
+      "articles/us-house-07.md:33 claim-format",
+      "articles/us-house-07.md:36 claim-format",
     ]);
   });
 
