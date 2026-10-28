@@ -1,8 +1,8 @@
 "use strict";
 
 // The privacy matcher (SKILL.md step 6.3), shared by fetch-snapshot's URL
-// refusals (Rule 7) and, later, ballot-check and publish (which adds the
-// printed-title class). It reports where a
+// refusals (Rule 7), ballot-check's Private text and Tiers rules and, later,
+// publish. It reports where a
 // private value matched and the class of value, never the value or the text.
 //
 // Text is checked in three forms: raw; decoded and folded; and folded again
@@ -24,6 +24,7 @@ const CLASSES = {
   zip: "private-zip",
   label: "private-label",
   "private-string": "private-string",
+  title: "private-title",
   key: "private-key",
 };
 const ORDER = Object.keys(CLASSES);
@@ -270,4 +271,18 @@ const URL_CLASSES = ["ballot-id", "address", "zip", "label", "private-string", "
 const findRefusal = (texts, values, classes) =>
   refusalCode(texts.flatMap((text) => scan(text, values, classes)));
 
-module.exports = { CLASSES, URL_CLASSES, findRefusal, privateForm, refusalCode, scan };
+// True when `value` keeps no letter or digit once normalized for some variant,
+// so the scan would skip it there (ballot-check refuses such an entry).
+const isEmptyValue = (value) =>
+  [null, ...VARIANTS].some((variant) => !/[\p{L}\p{N}]/u.test(normalizeValue(value, variant)));
+
+module.exports = {
+  CLASSES,
+  URL_CLASSES,
+  YEAR,
+  findRefusal,
+  isEmptyValue,
+  privateForm,
+  refusalCode,
+  scan,
+};

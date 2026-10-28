@@ -82,7 +82,7 @@ const plainFetch = (argv) =>
     };
     // Every spelling, before tiers.yaml is read, so a private URL never reaches the tier lookup.
     checkPrivate(spellings(args.url, args.given));
-    const entries = loadTiers(root);
+    const entries = loadTiers(root, args.ballot, values);
 
     const page = await fetchPage(entries, args.url, checkPrivate);
     if (page.refused) {

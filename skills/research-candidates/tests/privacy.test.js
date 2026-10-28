@@ -244,6 +244,6 @@ describe("privacy matcher: what callers pass and get back", () => {
       "private-ballot-id",
     );
     assert.equal(refusalCode([]), null);
-    assert.throws(() => scan("x", {}, ["title"]), /unknown privacy class/);
+    assert.throws(() => scan("x", {}, ["street"]), /unknown privacy class/);
   });
 });
