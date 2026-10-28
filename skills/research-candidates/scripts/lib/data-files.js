@@ -173,4 +173,4 @@ const loadPrivateValues = (root, ballot) => {
   };
 };
 
-module.exports = { ballotDirs, loadBallot, loadPrivateValues, loadTiers };
+module.exports = { ballotDirs, isDir, loadBallot, loadPrivateValues, loadTiers, readYamlDocument };

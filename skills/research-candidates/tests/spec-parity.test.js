@@ -1138,9 +1138,15 @@ describe("FailureCodes", () => {
       ...between(SNAPSHOT, "## Command line").matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g),
     ].map((m) => m[1]);
     assert.ok(fetchCodes.length >= 10, `only ${fetchCodes.length} fetch-snapshot codes parsed`);
+    // ballot-check's own output codes, listed in ballot-format.md's Command line section.
+    const ballotCodes = [
+      ...between(BALLOT, "## Command line").matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g),
+    ].map((m) => m[1]);
+    assert.ok(ballotCodes.length >= 10, `only ${ballotCodes.length} ballot-check codes parsed`);
     const known = new Set([
       ...codes,
       ...fetchCodes,
+      ...ballotCodes,
       ...scripts,
       ...ids,
       "says-only",

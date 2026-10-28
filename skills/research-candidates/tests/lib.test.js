@@ -7,6 +7,8 @@ const { describe, it } = require("node:test");
 const constants = require("../scripts/lib/constants");
 const { githubRepo } = require("../scripts/lib/repo-guard");
 const os = require("node:os");
+const { ballotIdPrefix } = require("../scripts/lib/ballot-check");
+const { voteForCount } = require("../scripts/lib/ballot-match");
 const { withLock } = require("../scripts/lib/snapshot-store");
 const { combineHops, conflicts, matchUrl, parseMatch } = require("../scripts/lib/tiers");
 
@@ -169,6 +171,19 @@ describe("constants match the reference text they come from", () => {
     assert.ok(ballot.includes(`\`${constants.BALLOT_ID_PATTERN.source}\``));
     assert.ok(ballot.includes(`\`${constants.ID_PATTERN.source}\``));
   });
+  it("the section names and office types are sections.md's", () => {
+    const sections = read("references/sections.md");
+    const table = (heading) => {
+      const start = sections.indexOf(`## ${heading}`);
+      const text = sections.slice(start, sections.indexOf("\n## ", start + 1));
+      return [...text.matchAll(/^\| [A-Z]\. ([^|]+?) \|/gm)].map((m) => m[1]);
+    };
+    assert.deepEqual(table("Candidate contests"), constants.SECTIONS.candidate);
+    assert.deepEqual(table("Retention contests"), constants.SECTIONS.retention);
+    assert.deepEqual(table("Measures"), constants.SECTIONS.measure);
+    const types = [...sections.matchAll(/^\| `([a-z]+)` \|/gm)].map((m) => m[1]);
+    assert.deepEqual(types, constants.OFFICE_TYPES);
+  });
   it("the API key variables are the ones snapshot-format.md names", () => {
     const named = read("references/snapshot-format.md").match(
       /environment variables the scripts read \(([^)]*)\)/,
@@ -181,30 +196,100 @@ describe("constants match the reference text they come from", () => {
   });
 });
 
-describe("fetch-snapshot's output codes are the ones snapshot-format.md lists", () => {
-  it("every code the scripts can print is in the Command line section", () => {
-    const format = read("references/snapshot-format.md");
+describe("ballot-format.md, Ballot ids: the id state and county build", () => {
+  it("folds letters to ASCII, drops apostrophes and one trailing county word", () => {
+    assert.equal(ballotIdPrefix("XX", "Exampleton County"), "xx-exampleton");
+    assert.equal(ballotIdPrefix("NM", "Doña Ana County"), "nm-dona-ana");
+    assert.equal(ballotIdPrefix("AK", "Juneau City and Borough"), "ak-juneau");
+    assert.equal(ballotIdPrefix("AK", "Bethel Census Area"), "ak-bethel");
+    assert.equal(ballotIdPrefix("LA", "Orleans Parish"), "la-orleans");
+    assert.equal(ballotIdPrefix("MD", "Prince George’s County"), "md-prince-georges");
+  });
+  it("never drops city alone, so St. Louis city and St. Louis County stay apart", () => {
+    assert.equal(ballotIdPrefix("MO", "St. Louis city"), "mo-st-louis-city");
+    assert.equal(ballotIdPrefix("MO", "St. Louis County"), "mo-st-louis");
+  });
+});
+
+describe("ballot-format.md, Command line: the Vote for count", () => {
+  it("reads digits, number words and 'not more than'", () => {
+    assert.equal(voteForCount("Vote for 3"), 3);
+    assert.equal(voteForCount("VOTE FOR ONE"), 1);
+    assert.equal(voteForCount("Vote for not more than two"), 2);
+    assert.equal(voteForCount("Vote for ten"), 10);
+  });
+  it("gives none for a line that names no count", () => {
+    assert.equal(voteForCount("Vote for the candidate of your choice"), null);
+    assert.equal(voteForCount("Vote for one-third"), null);
+  });
+});
+
+describe("each command's output codes are the ones its reference lists", () => {
+  // The codes a Command line section lists.
+  const listedIn = (ref) => {
+    const format = read(`references/${ref}`);
     const start = format.indexOf("## Command line");
     const section = format.slice(start, format.indexOf("\n## ", start + 1));
-    const listed = new Set([...section.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]));
-    const libDir = path.join(SKILL_DIR, "scripts", "lib");
+    return new Set([...section.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]));
+  };
+  // The codes a lib file can print: new Failure(location, "code"), refusals
+  // ({ code: "..." }, refuse(url, "...")) and the fixed "- code" lines a command prints itself.
+  const emittedBy = (file) => {
+    const source = fs.readFileSync(path.join(SKILL_DIR, "scripts", "lib", file), "utf8");
     const emitted = new Set();
-    // install-deps is not fetch-snapshot; README.md lists its two codes.
-    for (const file of fs.readdirSync(libDir).filter((f) => f !== "install-deps.js")) {
-      const source = fs.readFileSync(path.join(libDir, file), "utf8");
-      // new Failure(location, "code"), refusals ({ code: "..." }, refuse(url, "...")) and
-      // the fixed "- code" lines a command prints itself.
-      for (const pattern of [
-        /new Failure\([^;]*?, "([a-z-]+)"/g,
-        /code: "([a-z-]+)"/g,
-        /refuse\(url, "([a-z-]+)"/g,
-        /"- ([a-z-]+)/g,
-      ]) {
-        for (const m of source.matchAll(pattern)) emitted.add(m[1]);
-      }
+    for (const pattern of [
+      /new Failure\([^;]*?, "([a-z-]+)"/g,
+      /code: "([a-z-]+)"/g,
+      /refuse\(url, "([a-z-]+)"/g,
+      /"- ([a-z-]+)/g,
+    ]) {
+      for (const m of source.matchAll(pattern)) emitted.add(m[1]);
     }
+    return emitted;
+  };
+  // ballot-check's own modules; every other lib file but install-deps (README.md lists its two
+  // codes) is fetch-snapshot's, or shared by both.
+  const BALLOT_CHECK = ["ballot-check.js", "ballot-match.js"];
+
+  it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
+    const listed = listedIn("snapshot-format.md");
+    const files = fs
+      .readdirSync(path.join(SKILL_DIR, "scripts", "lib"))
+      .filter((f) => f !== "install-deps.js" && !BALLOT_CHECK.includes(f));
+    const emitted = new Set(files.flatMap((f) => [...emittedBy(f)]));
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
     for (const code of emitted) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+  });
+
+  it("ballot-check: every code is in ballot-format.md's Command line section", () => {
+    const listed = listedIn("ballot-format.md");
+    const shared = [
+      "data-files.js",
+      "fetch-common.js",
+      "output.js",
+      "repo-guard.js",
+      "terminal.js",
+    ];
+    const own = new Set(BALLOT_CHECK.flatMap((f) => [...emittedBy(f)]));
+    assert.ok(own.size >= 15, `only ${own.size} codes found in ballot-check`);
+    for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+    // Shared codes ballot-check can reach.
+    const reachable = [
+      "usage",
+      "bad-ballot",
+      "unknown-ballot",
+      "not-a-terminal",
+      "file-missing",
+      "yaml-invalid",
+      "internal-error",
+      "guard-no-publish-yaml",
+      "guard-not-repo-root",
+    ];
+    const sharedCodes = new Set(shared.flatMap((f) => [...emittedBy(f)]));
+    for (const code of reachable) {
+      assert.ok(sharedCodes.has(code) || own.has(code), `\`${code}\` is no longer emitted`);
+      assert.ok(listed.has(code), `\`${code}\` is not listed`);
+    }
   });
 });
 
