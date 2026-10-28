@@ -19,4 +19,10 @@ for install in skills/*/scripts/install-deps; do
     node "$install"
 done
 
-node --test "${files[@]}"
+# node:test has no per-test timeout by default, so one hung test (a child
+# waiting on a prompt, a server that never answers) stalls the whole run, the
+# pre-commit hook and CI with it. Two minutes is far past any test's runtime;
+# a test that takes longer fails by name. A timed-out test still holding a
+# live handle (that child, that server) keeps its file's process running, so
+# --test-force-exit ends the run once every test has finished or timed out.
+node --test --test-timeout=120000 --test-force-exit "${files[@]}"

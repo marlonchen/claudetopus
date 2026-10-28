@@ -121,7 +121,7 @@ mise tasks   # list them all
 | `mise run format:js` | Biome |
 | `mise run format:md` | rumdl |
 | `mise run format:yaml` | yamlfmt |
-| `mise run test` | Each skill's `scripts/install-deps`, then `node --test` over `skills/*/tests/*.test.js`, failing if it finds none |
+| `mise run test` | Each skill's `scripts/install-deps`, then `node --test` over `skills/*/tests/*.test.js` with a two-minute per-test timeout (a hung test fails by name and the run still ends), failing if it finds none |
 
 Two deliberate scoping rules, both worth knowing before you widen a task:
 
