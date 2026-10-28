@@ -452,7 +452,7 @@ describe("ballot-check: ballot.yaml fields", () => {
       DEFAULT_BALLOT.replace("name: Jane Example", "name: Jane Q. Example"),
     );
     const result = await ballotCheck(data);
-    assert.ok(lines(result).includes("ballot.yaml slug-duplicate slug"), result.stdout);
+    assert.ok(lines(result).includes("ballot.yaml:4 slug-duplicate slug"), result.stdout);
     assert.ok(
       lines(result).includes(
         `ballot.yaml:${yamlLine(data, "id: jane-example")} id-name-conflict id`,
@@ -493,7 +493,7 @@ describe("ballot-check: ballot.yaml fields", () => {
   it("fails a ballot id its own state and county do not build", async () => {
     await fails(
       edit("county: Exampleton County", "county: Otherton County"),
-      "- ballot-id-mismatch",
+      "ballot.yaml:3 ballot-id-mismatch county",
     );
   });
 
@@ -552,6 +552,25 @@ describe("ballot-check: ballot.yaml fields", () => {
       const result = await ballotCheck(setup({ priv }));
       assert.match(lines(result)[0], /^private\.yaml private-invalid/);
     }
+  });
+
+  it("still reports every ballot.yaml and ledger failure when private.yaml cannot be read", async () => {
+    const data = setup({ priv: false, ballot: edit("contest_count: 2", "contest_count: 3") });
+    plant(data, "pamphlet", "pamphlet", "Voter pamphlet", { ledger: false });
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      "private.yaml file-missing",
+      `ballot.yaml:${yamlLine(data, "contest_count")} contest-count-mismatch contest_count`,
+      "sources/_ballot/pamphlet.md ballot-not-in-ledger",
+    ]);
+  });
+
+  it("never reports two missing slugs as a duplicate", async () => {
+    const data = setup({ ballot: edit("slug: k3x9qa\n", "") });
+    data.write(
+      "2026-general/xx-exampleton-2/ballot.yaml",
+      DEFAULT_BALLOT.replace("slug: k3x9qa\n", ""),
+    );
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot.yaml:1 slug-invalid slug"]);
   });
 
   it("removes a ballot-view.md an earlier pass wrote once the ballot fails", async () => {

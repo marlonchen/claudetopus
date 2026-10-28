@@ -6,7 +6,7 @@
 // `-`, whitespace collapsed. ballot-check applies it to one line at a time;
 // joining pdftotext hyphenated line breaks belongs to excerpt matching.
 
-// Letters, marks and decimal digits: a whole-word match may not touch one.
+// Letters, marks and decimal digits: a whole-word or phrase match may not touch one.
 const WORD = /[\p{L}\p{M}\p{Nd}]/u;
 
 const normalizeLine = (text) =>
@@ -43,4 +43,4 @@ const wholeWords = (hay, needle, from = 0, to = hay.length) => {
   return found;
 };
 
-module.exports = { WORD, normalizeLine, wholeWords };
+module.exports = { WORD, normalizeLine, pointAt, pointBefore, wholeWords };

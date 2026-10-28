@@ -28,11 +28,11 @@ const CLASSES = {
 };
 const ORDER = Object.keys(CLASSES);
 
-// Letters, marks and decimal digits: a phrase match may not touch one.
-const WORD = /[\p{L}\p{M}\p{Nd}]/u;
 const DIGIT = /\p{Nd}/u;
 // A digit run that reads as a year matches only beside its entry's other words.
 const YEAR = /^(19|20)[0-9]{2}$/;
+
+const { WORD, pointAt, pointBefore } = require("./normalize");
 
 const NAMED_ENTITIES = {
   amp: "&",
@@ -146,14 +146,6 @@ for (const form of [2, 3]) {
 // A value normalized like the form it is matched against, or "" when nothing is left.
 const normalizeValue = (value, variant) =>
   variant ? fold(decode(mapped(value)), variant.form, variant).text.trim() : value.trim();
-
-// The code point that starts at UTF-16 index `i`, or ends just before it.
-const pointAt = (s, i) => (i < s.length ? String.fromCodePoint(s.codePointAt(i)) : "");
-const pointBefore = (s, i) => {
-  if (i === 0) return "";
-  const low = s.charCodeAt(i - 1);
-  return i >= 2 && low >= 0xdc00 && low <= 0xdfff ? s.slice(i - 2, i) : s[i - 1];
-};
 
 // Start offsets of `needle` in `hay` that sit on boundaries `edge` allows.
 const occurrences = (hay, needle, edge) => {
