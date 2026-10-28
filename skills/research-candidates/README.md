@@ -51,7 +51,7 @@ These layers stop mistakes and the plain ways around the terminal guard. They ar
 
 ## Dependencies
 
-The scripts need Node.js 20.19 or later, poppler's `pdftotext` on `PATH` for PDF sample ballots (`brew install poppler`, or `apt install poppler-utils`), and three npm packages, pinned to exact versions in [package.json](package.json) and [package-lock.json](package-lock.json): Readability and linkedom, which reduce an HTML page to readable text, and yaml, which reads the data files and writes snapshot front matter. Install them from the data repo after each install or upgrade of the skill:
+The scripts need Node.js 20.19 or later, poppler's `pdftotext` on `PATH` for PDF sample ballots (`brew install poppler`, or `apt install poppler-utils`), and four npm packages, pinned to exact versions in [package.json](package.json) and [package-lock.json](package-lock.json): Readability and linkedom, which reduce an HTML page to readable text, yaml, which reads the data files and writes snapshot front matter, and entities, which decodes HTML entities for the privacy checks as browsers do. Install them from the data repo after each install or upgrade of the skill:
 
 ```bash
 node .claude/skills/research-candidates/scripts/install-deps

@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert");
+const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
 const { CLASSES, refusalCode, scan } = require("../scripts/lib/privacy");
 
@@ -92,6 +93,23 @@ describe("privacy matcher: every normalization variant, refusing on any", () => 
     assert.deepEqual(classes("addr%252Dmom"), ["label"]);
   });
 
+  it("decodes every entity as browsers do, numeric ones without a `;` too", () => {
+    for (const text of [
+      "Springfield&ensp;Township",
+      "Springfield&emsp;Township",
+      "Springfield&thinsp;Township",
+      "Springfield&Tab;Township",
+      "Springfield&NewLine;Township",
+      "Spring&ZeroWidthSpace;field Township",
+      // Windows-1252: &#151; is an em dash, which the dash fold reads as a hyphen.
+      "Springfield&#151;Township",
+    ]) {
+      assert.deepEqual(classes(text), ["private-string"], text);
+    }
+    assert.deepEqual(classes("addr&#45mom"), ["label"]);
+    assert.deepEqual(classes("addr&#x2dmom"), ["label"]);
+  });
+
   it("decodes latin1 percent-escapes and folds ß and final sigma", () => {
     const values = { "private-string": ["Peña Hall", "Straße Nord", "Οδος"] };
     assert.deepEqual(classes("/Pe%F1a-Hall", values), ["private-string"]);
@@ -176,6 +194,30 @@ describe("privacy matcher: what callers pass and get back", () => {
       { line: 2, class: "private-string" },
       { line: 4, class: "label" },
     ]);
+  });
+
+  it("locates a match by its line after many replacements before it", () => {
+    const text = `${"A&amp;B ’x’ Ｑ\n".repeat(50)}see addr&#45;mom\n${"ok\n".repeat(5)}SPRINGFIELD township`;
+    assert.deepEqual(scan(text, VALUES, ALL), [
+      { line: 51, class: "label" },
+      { line: 57, class: "private-string" },
+    ]);
+  });
+
+  it("scans a 10 MB page in memory proportional to its replacements", () => {
+    // A heap far below one number per UTF-16 unit for every fold (PR #9 review: 3.5 GB).
+    const script = `
+      const { scan } = require(${JSON.stringify(require.resolve("../scripts/lib/privacy"))});
+      const text = "Lorem ipsum dolor sit amet &amp; elit.\\n".repeat(260000) + "addr-mom";
+      const hits = scan(text, { label: ["addr-mom"] }, ["label"]);
+      process.stdout.write(JSON.stringify(hits));
+    `;
+    const run = spawnSync(process.execPath, ["--max-old-space-size=400", "-e", script], {
+      encoding: "utf8",
+      env: process.env,
+    });
+    assert.strictEqual(run.status, 0, run.stderr.slice(0, 500));
+    assert.deepEqual(JSON.parse(run.stdout), [{ line: 260001, class: "label" }]);
   });
 
   it("matches a key value anywhere, as written", () => {
