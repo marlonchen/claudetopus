@@ -12,7 +12,15 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { ID_PATTERN, LEDGER, OFFICE_TYPES, ROLES, SECTIONS } = require("./constants");
+const {
+  ID_PATTERN,
+  LEDGER,
+  LEFTOVER,
+  OFFICE_TYPES,
+  ROLES,
+  SECTIONS,
+  VIEW,
+} = require("./constants");
 const { checkPrivacy } = require("./ballot-privacy");
 const {
   ballotEntries,
@@ -26,14 +34,12 @@ const { openBallot, parseBallot } = require("./fetch-common");
 const { matchBallot } = require("./ballot-match");
 const { normalizeLine } = require("./normalize");
 const { Failure, Failures, runCommand } = require("./output");
+const { FRONT_MATTER } = require("./snapshot-file");
 const { readManifest, sha256, withLock } = require("./snapshot-store");
 const { requireTerminal } = require("./terminal");
 
-const VIEW = "ballot-view.md";
 const BALLOT_DIR = "sources/_ballot";
 const STATUSES = ["on_ballot", "withdrawn_still_printed", "certified_write_in"];
-// Operating-system and editor leftovers (snapshot-format.md, Manifest).
-const LEFTOVER = /^(\.DS_Store|Thumbs\.db|.*\.swp)$/;
 // The names fetch-snapshot --ballot gives _ballot snapshots; any other name is
 // never printed, since a file dropped there can be named after private text.
 const SNAPSHOT_NAME = new RegExp(`${ID_PATTERN.source.slice(0, -1)}\\.md$`);
@@ -380,7 +386,7 @@ const findSampleBallot = (ballotDir) => {
     }
     const bytes = fs.readFileSync(path.join(ballotDir, rel));
     const text = bytes.toString("utf8");
-    const front = /^---\n([\s\S]*?\n)?---\n/.exec(text);
+    const front = FRONT_MATTER.exec(text);
     let role = null;
     try {
       role = front ? load("yaml").parse(front[1] ?? "")?.role : null;

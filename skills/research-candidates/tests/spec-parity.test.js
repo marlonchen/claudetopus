@@ -2674,6 +2674,25 @@ describe("PrivateLineParts", () => {
   //   dropped, the dash fold narrows to a list, or the excerpt fold list changes without the
   //   scan; why_new=the test pinned only the quote and dash fold and missed NFKC; seam=none;
   //   no_claim=publish (not built yet; spec text only)
+  // Value: protects=a private phrase split at a pdftotext hyphen break and quoted unjoined
+  //   (`Spring-field`) passes check, so publish must read it whole; fails_when=the unjoined form
+  //   is accepted without the scan's hyphen-removed reading, or an excerpt is joined itself;
+  //   why_new=the hyphen-join gap in TODOS; seam=none; no_claim=publish (not built yet)
+  it("the scan reads claims and excerpts with hyphens removed, since check accepts the unjoined form", () => {
+    const matching = between(ARTICLE, "## Matching", "\n## ");
+    assert.match(matching, /an excerpt may take either form at each break/);
+    assert.match(matching, /An excerpt is one line, so it is never joined/);
+    assert.match(
+      matching,
+      /also scans each claim and excerpt with every hyphen between two letters removed/,
+    );
+    assert.match(
+      between(SKILL, "2. Before rendering,", "\n3. "),
+      /scan them again with every hyphen between two letters removed, and with each value searched for also matched with its own hyphens removed/,
+    );
+    assert.match(matching, /the scan also matches each value with its own hyphens removed/);
+  });
+
   it("the privacy scan checks every normalization variant and refuses on any", () => {
     const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
     const steps = between(ARTICLE, "## Matching").match(/^\d+\. .*/gm);
@@ -2681,6 +2700,7 @@ describe("PrivateLineParts", () => {
       steps.map((step) => step.split(/[,.]/)[1].trim()),
       [
         "Unicode NFKC",
+        "Remove default-ignorable code points",
         "Collapse runs of whitespace to one space",
         "Map curly quotes to straight quotes",
         "Join `pdftotext` hyphenated line breaks",

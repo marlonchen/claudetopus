@@ -57,15 +57,39 @@ The example stops partway (`…`): an article has every section and every issue 
 Excerpt matching and the ballot check normalize both sides the same way, and nothing else:
 
 1. Unicode NFKC, which also expands ligatures such as `ﬁ` and turns non-breaking and other Unicode spaces into plain spaces.
-2. Collapse runs of whitespace to one space.
-3. Map curly quotes to straight quotes, and en and em dashes to `-`.
-4. Join `pdftotext` hyphenated line breaks.
+2. Remove default-ignorable code points, such as soft hyphens and zero-width spaces.
+3. Collapse runs of whitespace to one space.
+4. Map curly quotes to straight quotes, and every dash (Unicode category Pd and the minus sign U+2212) to `-`.
+5. Join `pdftotext` hyphenated line breaks, in the snapshot body only, whatever its `method`, since HTML text can carry them too.
+
+A hyphenated line break is a body line that ends, after NFKC and any trailing spaces, in a letter or digit and a hyphen (`-`, U+2010 or a soft hyphen), where the next line starts, after any leading spaces, with a letter or digit. It is found in the body's own lines, after NFKC and with every default-ignorable character but the soft hyphen removed, and before any other step, so a hidden character next to the hyphen neither makes nor hides a break, and no space or dash the folds make can create one. `check` reads each break between two letters both ways, joined (`Spring-` and `field` on the next line read as `Springfield`) and unjoined (as `Spring-field`, the hyphen kept and the line break dropped), and an excerpt may take either form at each break. A break with a digit on either side is read unjoined only (`2014-` and `2022` on the next line read as `2014-2022`), so a range never fuses into one number; typesetting hyphenates only words, so a hyphen beside a digit is the source's own. An excerpt is one line, so it is never joined: `Spring- field` matches neither form, and neither does `2014- 2022`. `ballot-check` normalizes one line at a time and joins nothing ([ballot-format.md](ballot-format.md#ballot-check)).
+
+The unjoined form keeps a hyphen inside the word, which the privacy scan reads as a space, so `publish` also scans each claim and excerpt with every hyphen between two letters removed (SKILL.md step 6.2). The joined form can drop a hyphen the value itself holds (`Mary-` and `Jane Lane` read as `MaryJane Lane`), so the scan also matches each value with its own hyphens removed. A private phrase split at a break is then read whole in either form.
+
+Matching is case-sensitive, and an excerpt starts and ends on word boundaries: no letter, mark or digit of the body touches an end of the excerpt that is itself a letter, mark or digit, so `fit for office` is not found in `unfit for office`. A hyphen, the unjoined form's included, is a boundary.
 
 ## Figures
 
 Before `check` looks for figures in the claim text, it strips link targets, link text and inline code, so snapshot names and contest ids (`us-house-07`, `fec-totals-2.md`) are never read as claimed figures.
 
 Each figure left in the claim must match a figure in that claim's own excerpt, not just any number in the snapshot. Both sides are canonicalized first: drop `$` and thousands commas, read `K`, `M`, `million` and `billion` as multipliers, and read `%` as a percentage. A claimed figure matches when the excerpt's value, rounded half-up to the decimal places the claim shows, equals it: "$1.22 million" matches `receipts: 1220000.55`, and "$1,220,001" matches it too.
+
+## Command line
+
+```text
+check <election>/<ballot-id> [<contest>]...
+```
+
+`check` checks `articles/<contest>.md` for each contest given (once, if it is given twice), or every article under `articles/` when none is, and every file under `sources/` against `snapshots.sha256` ([snapshot-format.md](snapshot-format.md#manifest)). Once its arguments parse, it checks Rule 8 and finishes any interrupted save (snapshot-format.md, Manifest), then holds the ballot lock while it reads the manifest, the snapshots and the articles, so a save running at the same time is never half seen. Like every script, it prints only `location code [key]` lines (Rule 5), reports every failure it finds rather than the first, and exits non-zero on any. Locations are relative to the ballot directory: a claim's failure is located by its claim line (`articles/us-house-07.md:12`), a `snapshot-hash` failure by the snapshot's path or by the manifest line (`snapshots.sha256:3`). A path under `sources/` with a part `fetch-snapshot` could not have named (a directory that is not an id, `_race` or `_ballot`, a file whose name is not an id followed by .md) is located by the parts before it and `-` (`sources/us-house-07/-`), since a planted file can be named after private text; so is a link target in a failure line, which is never printed. A pass prints `snapshots.sha256 checked`, then `articles/<contest>.md checked` for each article.
+
+It checks, for every claim (Claim lines):
+
+- the claim line has its tag and its link, and the next line is its excerpt; any other line of the article that is not a heading, a section state or blank fails too (`claim-format`);
+- the link resolves, relative to the article, to an existing snapshot file under `sources/` whose every part `fetch-snapshot` could have named (`claim-format`);
+- a claim citing the sample ballot (the `link:` line of `ballot-view.md`) quotes one whole span of `ballot-view.md`, and a claim citing any other `role: sample_ballot` snapshot, or citing one while there is no `ballot-view.md`, fails, and so does a claim citing a `_ballot` snapshot whose front matter does not give a companion role (`candidate_list`, `pamphlet`, `write_in_list` or `withdrawal_notice`), so a sample ballot whose role cannot be read is never matched like an ordinary source (`ballot-excerpt`);
+- any other excerpt is 20 to 400 characters once normalized (`excerpt-length`) and is found in its own snapshot's body (`excerpt-not-found`).
+
+Its other codes: `usage` (a contest that is not an id), `bad-ballot`, `unknown-ballot`, `file-missing` (an article for a contest given does not exist), the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked`, `deps-missing` and `internal-error`.
 
 ## Failure codes
 

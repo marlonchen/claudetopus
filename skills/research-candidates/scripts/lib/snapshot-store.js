@@ -255,4 +255,16 @@ const checkLog = (file, code) => {
 // Append one line to an append-only log in one synced write.
 const appendLine = (file, line) => writeSynced(file, line, "a");
 
-module.exports = { MANIFEST, appendLine, checkLog, readManifest, recover, save, sha256, withLock };
+module.exports = {
+  HASH_LINE,
+  MANIFEST,
+  RETIRE_LINE,
+  SAFE_PATH,
+  appendLine,
+  checkLog,
+  readManifest,
+  recover,
+  save,
+  sha256,
+  withLock,
+};

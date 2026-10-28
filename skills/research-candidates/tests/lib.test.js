@@ -184,6 +184,16 @@ describe("constants match the reference text they come from", () => {
     const types = [...sections.matchAll(/^\| `([a-z]+)` \|/gm)].map((m) => m[1]);
     assert.deepEqual(types, constants.OFFICE_TYPES);
   });
+  it("the excerpt length and section states are article-format.md's", () => {
+    const article = read("references/article-format.md");
+    const { min, max } = constants.EXCERPT_LENGTH;
+    assert.match(article, new RegExp(`The excerpt is ${min} to ${max} characters`));
+    const start = article.indexOf("## Section states");
+    const states = [
+      ...article.slice(start, article.indexOf("\n## ", start + 1)).matchAll(/^- `([^`]+)`:/gm),
+    ].map((m) => m[1]);
+    assert.deepEqual(states, constants.SECTION_STATES);
+  });
   it("the API key variables are the ones snapshot-format.md names", () => {
     const named = read("references/snapshot-format.md").match(
       /environment variables the scripts read \(([^)]*)\)/,
@@ -253,12 +263,14 @@ describe("each command's output codes are the ones its reference lists", () => {
   // ballot-check's own modules; every other lib file but install-deps (README.md lists its two
   // codes) is fetch-snapshot's, or shared by both.
   const BALLOT_CHECK = ["ballot-check.js", "ballot-match.js", "ballot-privacy.js"];
+  // check's own modules (article-format.md, Command line).
+  const CHECK = ["check.js", "article.js", "snapshot-hash.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");
     const files = fs
       .readdirSync(path.join(SKILL_DIR, "scripts", "lib"))
-      .filter((f) => f !== "install-deps.js" && !BALLOT_CHECK.includes(f));
+      .filter((f) => f !== "install-deps.js" && !BALLOT_CHECK.includes(f) && !CHECK.includes(f));
     const emitted = new Set(files.flatMap((f) => [...emittedBy(f)]));
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
     for (const code of emitted) assert.ok(listed.has(code), `\`${code}\` is not listed`);
@@ -293,6 +305,13 @@ describe("each command's output codes are the ones its reference lists", () => {
       assert.ok(sharedCodes.has(code) || own.has(code), `\`${code}\` is no longer emitted`);
       assert.ok(listed.has(code), `\`${code}\` is not listed`);
     }
+  });
+
+  it("check: every code is in article-format.md's Command line section", () => {
+    const listed = listedIn("article-format.md");
+    const own = new Set(CHECK.flatMap((f) => [...emittedBy(f)]));
+    assert.ok(own.size >= 6, `only ${own.size} codes found in check`);
+    for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
 });
 
