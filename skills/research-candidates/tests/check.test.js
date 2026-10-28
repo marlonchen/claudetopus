@@ -127,6 +127,25 @@ describe("check: excerpts against their own snapshot", () => {
     await failsWith(data, ["articles/us-house-07.md:12 excerpt-not-found"]);
   });
 
+  it("reads hyphen breaks in a snapshot of any method", async () => {
+    for (const method of ["html", "pdf", "api"]) {
+      const data = setup();
+      data.write(`${BALLOT}/snapshots.sha256`, "");
+      plant(
+        data,
+        "sources/_ballot/sample-ballot.md",
+        snapshot("_ballot", SAMPLE, "role: sample_ballot\n"),
+      );
+      plant(
+        data,
+        "sources/us-house-07/jane-example/bio.md",
+        snapshot("jane-example", BIO).replace("method: html", `method: ${method}`),
+      );
+      const result = await check(data);
+      assert.strictEqual(result.status, 0, `${method}: ${result.stdout}`);
+    }
+  });
+
   it("never matches an excerpt against another snapshot the article cites", async () => {
     const data = setup();
     plant(
@@ -218,6 +237,28 @@ describe("check: sample-ballot excerpts", () => {
     await failsWith(data, ["articles/us-house-07.md:7 ballot-excerpt"]);
   });
 
+  it("fails a claim citing a _ballot snapshot whose companion role cannot be read", async () => {
+    const BODY = "Jane Example, 12 Main St, Example Party nominee";
+    for (const [name, text] of [
+      ["no-front-matter", `${BODY}\n`],
+      ["crlf", snapshot("_ballot", BODY, "role: candidate_list\n").replace(/\n/g, "\r\n")],
+      ["no-role", snapshot("_ballot", BODY)],
+      ["bad-yaml", snapshot("_ballot", BODY, "role: [\n")],
+      ["unknown-role", snapshot("_ballot", BODY, "role: candidate-list\n")],
+    ]) {
+      const data = setup();
+      plant(data, `sources/_ballot/${name}.md`, text);
+      data.write(
+        `${BALLOT}/articles/us-house-07.md`,
+        `${ARTICLE}
+- Nominee \`T1\` [s3](../sources/_ballot/${name}.md)
+  > ${BODY}
+`,
+      );
+      await failsWith(data, ["articles/us-house-07.md:18 ballot-excerpt"]);
+    }
+  });
+
   it("matches a companion _ballot snapshot like any other source", async () => {
     const data = setup();
     plant(
@@ -303,6 +344,15 @@ describe("check: arguments and articles", () => {
     assert.strictEqual(result.stdout, "articles/state-senate-12.md file-missing\n");
     assert.strictEqual(result.status, 1);
     await failsWith(data, ["articles/supreme-court-retention-a.md:1 claim-format"]);
+  });
+
+  it("checks a contest given twice once", async () => {
+    const data = setup();
+    const result = await check(data, [BALLOT, "us-house-07", "us-house-07"]);
+    assert.strictEqual(
+      result.stdout,
+      "snapshots.sha256 checked\narticles/us-house-07.md checked\n",
+    );
   });
 
   it("refuses bad arguments and runs Rule 8 first", async () => {

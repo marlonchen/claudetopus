@@ -11,7 +11,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { parseArticle } = require("./article");
-const { EXCERPT_LENGTH, ID_PATTERN, VIEW } = require("./constants");
+const { EXCERPT_LENGTH, ID_PATTERN, ROLES, VIEW } = require("./constants");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { bodyText, findExcerpt, normalizeLine } = require("./normalize");
@@ -20,16 +20,19 @@ const { isSnapshotPath, verifyManifest } = require("./snapshot-hash");
 const { FRONT_MATTER } = require("./snapshot-file");
 const { withLock } = require("./snapshot-store");
 
+// The _ballot roles the compile agent reads whole (ballot-format.md, Ballot view).
+const COMPANION_ROLES = ROLES.filter((role) => role !== "sample_ballot");
 // articles/<contest>.md, for a contest id.
 const ARTICLE_NAME = new RegExp(`${ID_PATTERN.source.slice(0, -1)}\\.md$`);
 
 const parseArgs = (argv) => {
   if (argv.length === 0 || argv.some((arg) => arg.startsWith("--")))
     throw new Failure("-", "usage");
-  const [ballot, ...contests] = argv;
+  const [ballot, ...given] = argv;
   parseBallot(ballot);
-  if (!contests.every((c) => ID_PATTERN.test(c))) throw new Failure("-", "usage");
-  return { ballot, contests };
+  if (!given.every((c) => ID_PATTERN.test(c))) throw new Failure("-", "usage");
+  // A contest given twice is checked once.
+  return { ballot, contests: [...new Set(given)] };
 };
 
 // ballot-view.md as { link, spans }, or null when there is none
@@ -61,8 +64,10 @@ const resolveTarget = (target) => {
   return isSnapshotPath(rel) ? rel : null;
 };
 
-// Each cited snapshot, read once: { role, body } or null when it is missing
-// or not a regular file.
+// Each cited snapshot, read once: { ballot, body } or null when it is missing
+// or not a regular file. `ballot` is true for a _ballot snapshot whose front
+// matter does not give a companion role, so a sample ballot whose role cannot
+// be read is never matched like an ordinary source.
 const snapshotReader = (ballotDir) => {
   const cache = new Map();
   return (rel) => {
@@ -80,7 +85,8 @@ const snapshotReader = (ballotDir) => {
           role = null;
         }
       }
-      read = { role, body: bodyText(front ? text.slice(front[0].length) : text) };
+      const ballot = rel.startsWith("sources/_ballot/") && !COMPANION_ROLES.includes(role);
+      read = { ballot, body: bodyText(front ? text.slice(front[0].length) : text) };
     }
     cache.set(rel, read);
     return read;
@@ -92,7 +98,7 @@ const claimFailures = (claim, at, view, readSnapshot) => {
   const rel = resolveTarget(claim.target);
   const snapshot = rel && readSnapshot(rel);
   if (!snapshot) return [new Failure(at, "claim-format")];
-  if ((view && rel === view.link) || snapshot.role === "sample_ballot") {
+  if ((view && rel === view.link) || snapshot.ballot) {
     const whole = view && rel === view.link && view.spans.has(normalizeLine(claim.excerpt));
     return whole ? [] : [new Failure(at, "ballot-excerpt")];
   }

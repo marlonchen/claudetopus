@@ -48,18 +48,22 @@ const occurrences = (hay, needle, edge = WORD, from = 0, to = hay.length) => {
 // Whole-word starts: no letter or digit touches either end.
 const wholeWords = (hay, needle, from, to) => occurrences(hay, needle, WORD, from, to);
 
-// A hyphenated line break: after NFKC (U+2011 reads as U+2010), a letter and
-// a hyphen end the line, trailing spaces aside, and the next line starts with
-// a letter, leading spaces aside. Found in each line after NFKC and with every
-// default-ignorable but the soft hyphen removed, so a hidden character next to
-// the hyphen neither makes nor hides a break, and before any other fold.
-const BREAK_END = /\p{L}\p{M}*([-\u2010\u00ad])[ \t]*$/u;
-const BREAK_NEXT = /^[ \t]*\p{L}/u;
+// A hyphenated line break: after NFKC (U+2011 reads as U+2010), a letter or
+// digit and a hyphen end the line, trailing spaces aside, and the next line
+// starts with a letter or digit, leading spaces aside. Found in each line after
+// NFKC and with every default-ignorable but the soft hyphen removed, so a
+// hidden character next to the hyphen neither makes nor hides a break, and
+// before any other fold.
+const BREAK_END = /([\p{L}\p{Nd}])\p{M}*([-\u2010\u00ad])[ \t]*$/u;
+const BREAK_NEXT = /^[ \t]*([\p{L}\p{Nd}])/u;
+const LETTER = /\p{L}/u;
 
 // A snapshot body as excerpts are matched against it: { text, breaks }, the
 // lines normalized and joined by single spaces, except that a hyphen break
-// keeps its hyphen as `-` with no space after, and `breaks` holds the index of
-// each such hyphen, which findExcerpt may read or skip.
+// keeps its hyphen as `-` with no space after. `breaks` holds the index of
+// each such hyphen between two letters, which findExcerpt may read or skip;
+// a break with a digit on either side is read unjoined only, so a range
+// (`2014-` `2022`) never fuses into one number.
 const bodyText = (body) => {
   const lines = body
     .split(/\r?\n/)
@@ -71,10 +75,11 @@ const bodyText = (body) => {
   let glued = false;
   for (const [i, line] of lines.entries()) {
     const end = BREAK_END.exec(line);
-    const isBreak = end !== null && BREAK_NEXT.test(lines[i + 1] ?? "");
-    // The hyphen and the spaces after it go; the letter before it stays.
+    const next = end && BREAK_NEXT.exec(lines[i + 1] ?? "");
+    const isBreak = Boolean(next);
+    // The hyphen and the spaces after it go; the letter or digit before it stays.
     const part = normalizeLine(
-      isBreak ? line.slice(0, end.index + end[0].lastIndexOf(end[1])) : line,
+      isBreak ? line.slice(0, end.index + end[0].lastIndexOf(end[2])) : line,
     );
     if (part) {
       if (text && !glued) text += " ";
@@ -82,7 +87,7 @@ const bodyText = (body) => {
       glued = false;
     }
     if (isBreak) {
-      breaks.add(text.length);
+      if (LETTER.test(end[1]) && LETTER.test(next[1])) breaks.add(text.length);
       text += "-";
       glued = true;
     }
@@ -91,8 +96,8 @@ const bodyText = (body) => {
 };
 
 // True when `excerpt`, normalized, is in `body` (from bodyText) on word
-// boundaries, reading each break joined or unjoined on its own. The excerpt
-// is one line and is never joined itself.
+// boundaries, reading each break between two letters joined or unjoined on
+// its own. The excerpt is one line and is never joined itself.
 const findExcerpt = ({ text, breaks }, excerpt) => {
   const e = normalizeLine(excerpt);
   if (!e) return false;

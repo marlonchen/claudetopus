@@ -60,10 +60,34 @@ describe("article-format.md, Matching: pdftotext hyphenated line breaks", () => 
     assert.ok(found("the Spring\u2011\nfield board", "the Spring-field board"));
   });
 
-  it("never joins a dash, a hyphen after a non-letter, or a line not starting with a letter", () => {
+  it("never joins a dash, or a line not starting with a letter or digit", () => {
     assert.ok(!found("the Spring\u2014\nfield board", "the Springfield board"));
-    assert.ok(!found("route 9-\n10 closed", "route 910 closed"));
-    assert.ok(!found("the Spring-\n2 board", "the Spring2 board"));
+    assert.ok(!found("the Spring-\n(field) board", "the Spring-(field) board"));
+  });
+
+  it("reads a break with a digit on either side unjoined only", () => {
+    for (const [body, unjoined, joined] of [
+      [
+        "served from 2014-\n2022 on the board",
+        "served from 2014-2022 on",
+        "served from 20142022 on",
+      ],
+      [
+        "closed route 9-\n10 for repairs",
+        "closed route 9-10 for repairs",
+        "closed route 910 for repairs",
+      ],
+      [
+        "the Spring-\n2 board for this year",
+        "the Spring-2 board for this",
+        "the Spring2 board for this",
+      ],
+      ["the Pct\u00ad\n12 polling place", "the Pct-12 polling place", "the Pct12 polling place"],
+    ]) {
+      assert.ok(found(body, unjoined), unjoined);
+      assert.ok(!found(body, joined), joined);
+      assert.ok(!found(body, unjoined.replace("-", "- ")), "an excerpt is never joined");
+    }
   });
 
   it("still finds a break when a hidden character sits beside the hyphen or the line end", () => {
