@@ -201,13 +201,13 @@ const writeSynced = (file, data, flag) => {
 
 // Save `text` as sources/<dir>/<name>.md, or the next free numeric suffix.
 // Returns the path relative to the ballot directory. Call holding the lock.
-const save = (ballotDir, dir, name, text) => {
+// `beforeLink(rel)`, when given, runs after the manifest line is written and
+// before the file lands (the ballot.ledger line, snapshot-format.md).
+const save = (ballotDir, dir, name, text, beforeLink) => {
   // A run that crashed since this one's first recovery left partials too.
   recover(ballotDir);
-  // A hand-written last line with no newline would swallow the line appended next.
   const manifestFile = path.join(ballotDir, MANIFEST);
-  const manifestText = fs.existsSync(manifestFile) ? fs.readFileSync(manifestFile, "utf8") : "";
-  if (manifestText && !manifestText.endsWith("\n")) throw new Failure(MANIFEST, "manifest-invalid");
+  checkLog(manifestFile, "manifest-invalid");
   const data = Buffer.from(text, "utf8");
   const hash = sha256(data);
 
@@ -227,6 +227,7 @@ const save = (ballotDir, dir, name, text) => {
 
   writeSynced(manifestFile, `${hash}  ${rel}\n`, "a");
   crashPoint("after-manifest");
+  beforeLink?.(rel);
 
   // Only a writer that skips the lock can take the path now. The manifest line
   // is already written and is never changed, so report it rather than retry;
@@ -244,4 +245,14 @@ const save = (ballotDir, dir, name, text) => {
   return rel;
 };
 
-module.exports = { recover, save, withLock };
+// Fail `code` when an append-only log's hand-written last line has no
+// newline, so a line appended next would join it.
+const checkLog = (file, code) => {
+  const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  if (text && !text.endsWith("\n")) throw new Failure(path.basename(file), code);
+};
+
+// Append one line to an append-only log in one synced write.
+const appendLine = (file, line) => writeSynced(file, line, "a");
+
+module.exports = { MANIFEST, appendLine, checkLog, recover, save, withLock };

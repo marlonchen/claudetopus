@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+"use strict";
+
+// Thin entry point; the hook lives in lib/ where Biome lints it.
+require("./lib/session-guard").main();

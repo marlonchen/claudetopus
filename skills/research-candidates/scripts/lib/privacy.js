@@ -261,4 +261,11 @@ const refusalCode = (matches) => {
   return first ? CLASSES[first] : null;
 };
 
-module.exports = { CLASSES, refusalCode, scan };
+// The classes a fetched URL may not hold (Rule 7, snapshot-format.md).
+const URL_CLASSES = ["ballot-id", "address", "zip", "label", "private-string", "key"];
+
+// The refusal code for the first of `classes` any of `texts` holds, or null.
+const findRefusal = (texts, values, classes) =>
+  refusalCode(texts.flatMap((text) => scan(text, values, classes)));
+
+module.exports = { CLASSES, URL_CLASSES, findRefusal, refusalCode, scan };

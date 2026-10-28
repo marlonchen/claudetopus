@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/**/sources/**)",
+      "Edit(/**/snapshots.sha256)",
+      "Edit(/**/search-log/**)",
+      "Edit(/**/ballot.ledger)",
+      "Edit(/downloads/**)",
+      "Bash(*fetch-snapshot*--ballot*)",
+      "Bash(*ballot-check*--show*)",
+      "Bash(*publish*--show*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/skills/research-candidates/scripts/session-guard\" || exit 2"
+          }
+        ]
+      }
+    ]
+  }
+}

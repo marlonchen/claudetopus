@@ -226,6 +226,79 @@ const runCli = (script, args, { cwd, env = {} }) =>
     child.on("close", (status, signal) => resolve({ status, signal, stdout, stderr }));
   });
 
+// Runs argv on a new pseudo-terminal, so stdin and stdout are both TTYs, as in
+// the researcher's own terminal, unless `pipe` is "stdin" or "stdout": that
+// one is a pipe instead. Once the output shows "[y/N] " it types `answer` and
+// Enter, once. Prints everything the terminal (and a piped stdout) showed;
+// exits with the child's code.
+const PTY_RUNNER = `
+import os, select, subprocess, sys, time
+answer, pipe = sys.argv[1], sys.argv[2]
+master, slave = os.openpty()
+child = subprocess.Popen(
+    sys.argv[3:],
+    stdin=subprocess.DEVNULL if pipe == "stdin" else slave,
+    stdout=subprocess.PIPE if pipe == "stdout" else slave,
+    stderr=slave,
+    close_fds=True,
+)
+os.close(slave)
+out = b""
+asked = False
+deadline = time.time() + 30
+while time.time() < deadline:
+    ready, _, _ = select.select([master], [], [], 0.1)
+    if not ready:
+        if child.poll() is not None:
+            break
+        continue
+    try:
+        chunk = os.read(master, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    out += chunk
+    if not asked and b"[y/N] " in out:
+        os.write(master, answer.encode() + b"\\r")
+        asked = True
+# A child still waiting (on a prompt never shown) fails rather than hangs.
+if child.poll() is None:
+    child.kill()
+child.wait()
+if child.stdout:
+    out += child.stdout.read()
+sys.stdout.buffer.write(out)
+sys.exit(child.returncode)
+`;
+
+// Run a command in scripts/ on a pseudo-terminal (PTY_RUNNER), with CLAUDECODE
+// unset unless `env` sets it. Resolves with its exit code and what the
+// terminal showed, without escape sequences and with line ends as "\n".
+const runInTty = (script, args, { cwd, env = {}, answer = "y", pipe = "none" }) =>
+  new Promise((resolve) => {
+    const base = { ...process.env, ...env };
+    if (!Object.hasOwn(env, "CLAUDECODE")) delete base.CLAUDECODE;
+    const child = spawn(
+      "python3",
+      ["-c", PTY_RUNNER, answer, pipe, process.execPath, path.join(SCRIPTS_DIR, script), ...args],
+      { cwd, env: base },
+    );
+    let stdout = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    // readline's cursor moves are terminal noise, not output.
+    child.on("close", (status) =>
+      resolve({
+        status,
+        stdout: stdout
+          .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g"), "")
+          .replace(/\r\n/g, "\n"),
+      }),
+    );
+  });
+
 // A page Readability can read: an article between navigation and a footer.
 const articlePage = (title, paragraphs) => `<!doctype html>
 <html><head><title>${title}</title></head>
@@ -243,9 +316,11 @@ module.exports = {
   DEFAULT_BALLOT,
   DEFAULT_PRIVATE,
   DEFAULT_TIERS,
+  SCRIPTS_DIR,
   articlePage,
   git,
   makeDataRepo,
   runCli,
+  runInTty,
   startServer,
 };
