@@ -252,7 +252,7 @@ describe("each command's output codes are the ones its reference lists", () => {
   };
   // ballot-check's own modules; every other lib file but install-deps (README.md lists its two
   // codes) is fetch-snapshot's, or shared by both.
-  const BALLOT_CHECK = ["ballot-check.js", "ballot-match.js"];
+  const BALLOT_CHECK = ["ballot-check.js", "ballot-match.js", "ballot-privacy.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");

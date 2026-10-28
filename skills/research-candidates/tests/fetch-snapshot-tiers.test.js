@@ -329,6 +329,29 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     "tiers.yaml:9 tiers-overlap\n",
   );
   // Value: protects=tiers.yaml must exist, parse strictly and be a list before any URL is fetched; fails_when=readYamlDocument drops uniqueKeys or the error check, loadTiers drops the isSeq check, or a missing file surfaces as internal-error; why_new=the cases above all reach per-entry checks; seam=none; no_claim=ballot.yaml parse errors
+  // ballot-format.md, Tiers: discovery searches with every host, and every source reaches the page.
+  refusesTiers(
+    "a match holding a private string, matched as the publish scan matches",
+    `${COUNTY}- match: springfield-township.example.org\n  tier: T2\n  owner: third-party\n  source: X\n`,
+    "tiers.yaml:5 private-string match\n",
+  );
+  refusesTiers(
+    "a source holding a ZIP code from addresses.yaml",
+    `${COUNTY}- match: x.example.com\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
+    "tiers.yaml:8 private-zip source\n",
+  );
+  it("ends another ballot's private.yaml failure, read for the Tiers rule, with check-each-ballot", async () => {
+    const data = repo({ tiers: COUNTY });
+    data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: [unclosed\n");
+    const result = await fetchVia(
+      data,
+      { "https://county.example.gov/": { body: COUNTY_PAGE } },
+      PLAIN,
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "- yaml-invalid\n- check-each-ballot\n");
+    assert.deepEqual(result.seen, []);
+  });
   refusesTiers("a missing tiers.yaml", false, "tiers.yaml file-missing\n");
   refusesTiers(
     "a tiers.yaml with a duplicate key",

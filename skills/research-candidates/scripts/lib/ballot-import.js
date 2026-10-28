@@ -168,7 +168,7 @@ const main = (argv) =>
     const values = loadPrivateValues(root, args.ballot);
     const source = args.file ? fromFile(root, args, values) : fromUrl(args, values);
 
-    const entries = loadTiers(root);
+    const entries = loadTiers(root, args.ballot, values);
     const first = matchUrl(entries, args.url);
     if (!first) throw new Failure(WHERE, "domain-not-in-tiers");
     if (first.tier !== "T1") throw new Failure(WHERE, "not-t1");

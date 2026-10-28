@@ -1,6 +1,6 @@
 "use strict";
 
-// The npm dependencies (Readability, linkedom, yaml) live outside the skill
+// The npm dependencies (Readability, linkedom, yaml, entities) live outside the skill
 // directory, so a pinned `gh skill install` stays byte-for-byte its git tree
 // (the publish skill-pin gate refuses extra files). scripts/install-deps runs
 // `npm ci` from the skill's committed lockfile into a cache directory named by

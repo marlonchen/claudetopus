@@ -11,6 +11,7 @@ const path = require("node:path");
 const { BALLOT_ID_PATTERN, ELECTION_PATTERN, KEY_ENV } = require("./constants");
 const { load } = require("./deps");
 const { Failure } = require("./output");
+const { CLASSES, scan } = require("./privacy");
 const { TIER_RANK, conflicts, parseMatch } = require("./tiers");
 
 // Parse a YAML file into a document, refusing any parse error or warning;
@@ -71,9 +72,52 @@ const loadBallot = (root, ballot, location = `${ballot}/ballot.yaml`) => {
   return { contests, people };
 };
 
+// The classes a tiers.yaml match or source may not hold (ballot-format.md, Tiers).
+const TIERS_CLASSES = ["address", "zip", "label", "private-string"];
+
+// Every tiers.yaml match or source that holds a private value, as Failures
+// located by the entry's line and keyed by the field: `values` are this
+// ballot's (loadPrivateValues), and every other ballot's private_strings are
+// added. A failure in another ballot's private.yaml is located `-`. `tiers` is
+// tiers.yaml's readYamlDocument result, when the caller has already read it.
+const tiersPrivacy = (
+  root,
+  ballot,
+  values,
+  tiers = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml"),
+) => {
+  const failures = [];
+  const strings = [...(values["private-string"] ?? [])];
+  for (const other of ballotDirs(root)) {
+    if (other === ballot || !fs.existsSync(path.join(root, other, "private.yaml"))) continue;
+    try {
+      strings.push(...loadPrivate(root, other, "-").private_strings);
+    } catch (error) {
+      if (!(error instanceof Failure)) throw error;
+      failures.push(error);
+    }
+  }
+  const all = { ...values, "private-string": strings };
+  const { doc, lineCounter } = tiers;
+  const YAML = load("yaml");
+  for (const item of YAML.isSeq(doc.contents) ? doc.contents.items : []) {
+    for (const key of ["match", "source"]) {
+      const node = YAML.isMap(item) ? item.get(key, true) : null;
+      if (!YAML.isScalar(node) || typeof node.value !== "string") continue;
+      const at = `tiers.yaml:${lineCounter.linePos(node.range[0]).line}`;
+      const classes = new Set(scan(node.value, all, TIERS_CLASSES).map((m) => m.class));
+      for (const cls of TIERS_CLASSES) {
+        if (classes.has(cls)) failures.push(new Failure(at, CLASSES[cls], key));
+      }
+    }
+  }
+  return failures;
+};
+
 // tiers.yaml entries, each { match, parsed, tier, statements_only, owner, source }.
-// Refuses the whole file on any bad entry (source-tiers.md).
-const loadTiers = (root) => {
+// Refuses the whole file on any bad entry (source-tiers.md), and on a match or
+// source holding a private value of `ballot` (`values`) or any other ballot.
+const loadTiers = (root, ballot, values) => {
   const { doc, lineCounter } = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml");
   if (!load("yaml").isSeq(doc.contents)) {
     throw new Failure("tiers.yaml", "tiers-invalid");
@@ -126,6 +170,9 @@ const loadTiers = (root) => {
       throw new Failure(entry.at, "tiers-overlap");
     }
   }
+  const [leak] = tiersPrivacy(root, ballot, values, { doc, lineCounter });
+  if (leak?.location === "-") leak.hint = "check-each-ballot";
+  if (leak) throw leak;
   return entries.map(({ at, ...entry }) => entry);
 };
 
@@ -154,9 +201,16 @@ const loadAddresses = (root) => {
       throw new Failure(at, "addresses-invalid");
     }
     const zips = [...address.normalize("NFKC").matchAll(/(?<![0-9])[0-9]{5}(?![0-9])/g)];
-    return { label, address, street, zips: zips.map((m) => m[0]) };
+    return { at, label, address, street, zips: zips.map((m) => m[0]) };
   });
 };
+
+// The privacy matcher's address, zip and label values from loadAddresses.
+const addressValues = (addresses) => ({
+  address: addresses.flatMap((a) => [a.address, a.street]),
+  zip: addresses.flatMap((a) => a.zips),
+  label: addresses.map((a) => a.label),
+});
 
 // private.yaml: lists of strings under private_strings and ignored_lines, no
 // other key. A failure is located by the file alone: a stray key can be the
@@ -185,26 +239,23 @@ const loadPrivate = (root, ballot, location) => {
 // by class: the ballot id and its private_strings, every address, street
 // line, label and ZIP in addresses.yaml, and the API key values set in the
 // environment. No script prints any of them (Rule 5).
-const loadPrivateValues = (root, ballot) => {
-  const strings = loadPrivate(root, ballot, `${ballot}/private.yaml`).private_strings;
-  const addresses = loadAddresses(root);
-  return {
-    "ballot-id": [ballot.split("/")[1]],
-    "private-string": strings,
-    address: addresses.flatMap((a) => [a.address, a.street]),
-    zip: addresses.flatMap((a) => a.zips),
-    label: addresses.map((a) => a.label),
-    key: KEY_ENV.map((name) => process.env[name]).filter(Boolean),
-  };
-};
+const loadPrivateValues = (root, ballot) => ({
+  "ballot-id": [ballot.split("/")[1]],
+  "private-string": loadPrivate(root, ballot, `${ballot}/private.yaml`).private_strings,
+  ...addressValues(loadAddresses(root)),
+  key: KEY_ENV.map((name) => process.env[name]).filter(Boolean),
+});
 
 module.exports = {
+  addressValues,
   ballotDirs,
   ballotEntries,
   isDir,
+  loadAddresses,
   loadBallot,
   loadPrivate,
   loadPrivateValues,
   loadTiers,
   readYamlDocument,
+  tiersPrivacy,
 };
