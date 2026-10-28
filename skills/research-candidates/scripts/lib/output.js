@@ -20,6 +20,19 @@ class Failure extends Error {
   }
 }
 
+// Several failures at once, for a command that reports every one it finds;
+// `lines` are their report lines, in order.
+class Failures extends Error {
+  constructor(lines) {
+    super(`${lines.length} failures`);
+    this.lines = lines;
+  }
+
+  get line() {
+    return this.lines.join("\n");
+  }
+}
+
 const report = (lines) => {
   for (const line of lines) process.stdout.write(`${line}\n`);
 };
@@ -32,7 +45,7 @@ const runCommand = async (body) => {
     report(lines);
     process.exitCode = 0;
   } catch (error) {
-    if (error instanceof Failure) {
+    if (error instanceof Failure || error instanceof Failures) {
       report([error.line]);
     } else {
       report(["- internal-error"]);
@@ -42,4 +55,4 @@ const runCommand = async (body) => {
   }
 };
 
-module.exports = { Failure, runCommand };
+module.exports = { Failure, Failures, runCommand };

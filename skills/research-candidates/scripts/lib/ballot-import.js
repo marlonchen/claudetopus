@@ -21,6 +21,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { LEDGER, ROLES } = require("./constants");
 const { loadPrivateValues, loadTiers } = require("./data-files");
 const { openBallot, parseBallot, parseHttpUrl } = require("./fetch-common");
 const { cleanUrl, decode, fetchPage, isPdf, spellings } = require("./fetch-page");
@@ -34,8 +35,6 @@ const { confirm, requireTerminal } = require("./terminal");
 const { matchUrl } = require("./tiers");
 
 const WHERE = "_ballot";
-const ROLES = ["sample_ballot", "candidate_list", "pamphlet", "write_in_list", "withdrawal_notice"];
-const LEDGER = "ballot.ledger";
 
 const parseArgs = (argv) => {
   const file = argv[1] === "--file";

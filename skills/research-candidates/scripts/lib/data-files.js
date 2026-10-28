@@ -1,9 +1,10 @@
 "use strict";
 
-// Parsers for the data files fetch-snapshot reads: ballot.yaml (only the ids
-// it needs; ballot-check validates the rest), tiers.yaml, and the private
-// values in private.yaml and addresses.yaml. Failures are located by file and,
-// where there is one, the entry's line, never by a private value.
+// Parsers for the data files fetch-snapshot and ballot-check read: ballot.yaml
+// (only the ids fetch-snapshot needs; ballot-check validates the rest),
+// tiers.yaml, and the private values in private.yaml and addresses.yaml.
+// Failures are located by file and, where there is one, the entry's line,
+// never by a private value.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -12,7 +13,8 @@ const { load } = require("./deps");
 const { Failure } = require("./output");
 const { TIER_RANK, conflicts, parseMatch } = require("./tiers");
 
-// Parse a YAML file into a document, refusing any parse error or warning.
+// Parse a YAML file into a document, refusing any parse error or warning;
+// `text` is what was parsed.
 const readYamlDocument = (file, location) => {
   const YAML = load("yaml");
   let text;
@@ -24,24 +26,30 @@ const readYamlDocument = (file, location) => {
   const lineCounter = new YAML.LineCounter();
   const doc = YAML.parseDocument(text, { lineCounter, uniqueKeys: true });
   if (doc.errors.length || doc.warnings.length) throw new Failure(location, "yaml-invalid");
-  return { doc, lineCounter };
+  return { doc, lineCounter, text };
 };
 
 const isDir = (p) => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() ?? false;
 
-// Every <election>/<ballot-id> directory in the data repo, as relative paths.
-const ballotDirs = (root) => {
-  const dirs = [];
+// Every directory under an <election> directory in the data repo, as
+// { ballot: relative path, valid: whether its name is a ballot id }.
+const ballotEntries = (root) => {
+  const entries = [];
   for (const election of fs.readdirSync(root).sort()) {
     if (!ELECTION_PATTERN.test(election) || !isDir(path.join(root, election))) continue;
     for (const id of fs.readdirSync(path.join(root, election)).sort()) {
-      if (BALLOT_ID_PATTERN.test(id) && isDir(path.join(root, election, id))) {
-        dirs.push(`${election}/${id}`);
-      }
+      if (id.startsWith(".") || !isDir(path.join(root, election, id))) continue;
+      entries.push({ ballot: `${election}/${id}`, valid: BALLOT_ID_PATTERN.test(id) });
     }
   }
-  return dirs;
+  return entries;
 };
+
+// Every <election>/<ballot-id> directory in the data repo, as relative paths.
+const ballotDirs = (root) =>
+  ballotEntries(root)
+    .filter((entry) => entry.valid)
+    .map((entry) => entry.ballot);
 
 // { contests: Map<contest id, { type, subjects: Set<id> }>, people: Set<id> }
 // from <ballot>/ballot.yaml. Subjects are the contest's candidate or official ids.
@@ -150,18 +158,35 @@ const loadAddresses = (root) => {
   });
 };
 
+// private.yaml: lists of strings under private_strings and ignored_lines, no
+// other key. A failure is located by the file alone: a stray key can be the
+// private text itself (Rule 5).
+const loadPrivate = (root, ballot, location) => {
+  const data = readYamlDocument(path.join(root, ballot, "private.yaml"), location).doc.toJS();
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Failure(location, "private-invalid");
+  }
+  const lists = { private_strings: [], ignored_lines: [] };
+  for (const [key, value] of Object.entries(data)) {
+    const list = value ?? [];
+    if (
+      !Object.hasOwn(lists, key) ||
+      !Array.isArray(list) ||
+      list.some((s) => typeof s !== "string")
+    ) {
+      throw new Failure(location, "private-invalid");
+    }
+    lists[key] = list;
+  }
+  return lists;
+};
+
 // The values the privacy matcher checks for one ballot (SKILL.md step 6.3),
 // by class: the ballot id and its private_strings, every address, street
 // line, label and ZIP in addresses.yaml, and the API key values set in the
 // environment. No script prints any of them (Rule 5).
 const loadPrivateValues = (root, ballot) => {
-  const location = `${ballot}/private.yaml`;
-  const data = readYamlDocument(path.join(root, ballot, "private.yaml"), location).doc.toJS();
-  const strings = data?.private_strings ?? [];
-  if (!data || typeof data !== "object" || !Array.isArray(strings)) {
-    throw new Failure(location, "private-invalid");
-  }
-  if (strings.some((s) => typeof s !== "string")) throw new Failure(location, "private-invalid");
+  const strings = loadPrivate(root, ballot, `${ballot}/private.yaml`).private_strings;
   const addresses = loadAddresses(root);
   return {
     "ballot-id": [ballot.split("/")[1]],
@@ -173,4 +198,13 @@ const loadPrivateValues = (root, ballot) => {
   };
 };
 
-module.exports = { ballotDirs, loadBallot, loadPrivateValues, loadTiers };
+module.exports = {
+  ballotDirs,
+  ballotEntries,
+  isDir,
+  loadBallot,
+  loadPrivate,
+  loadPrivateValues,
+  loadTiers,
+  readYamlDocument,
+};

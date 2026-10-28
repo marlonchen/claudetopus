@@ -28,11 +28,11 @@ const CLASSES = {
 };
 const ORDER = Object.keys(CLASSES);
 
-// Letters, marks and decimal digits: a phrase match may not touch one.
-const WORD = /[\p{L}\p{M}\p{Nd}]/u;
 const DIGIT = /\p{Nd}/u;
 // A digit run that reads as a year matches only beside its entry's other words.
 const YEAR = /^(19|20)[0-9]{2}$/;
+
+const { WORD, occurrences } = require("./normalize");
 
 const NAMED_ENTITIES = {
   amp: "&",
@@ -147,27 +147,11 @@ for (const form of [2, 3]) {
 const normalizeValue = (value, variant) =>
   variant ? fold(decode(mapped(value)), variant.form, variant).text.trim() : value.trim();
 
-// The code point that starts at UTF-16 index `i`, or ends just before it.
-const pointAt = (s, i) => (i < s.length ? String.fromCodePoint(s.codePointAt(i)) : "");
-const pointBefore = (s, i) => {
-  if (i === 0) return "";
-  const low = s.charCodeAt(i - 1);
-  return i >= 2 && low >= 0xdc00 && low <= 0xdfff ? s.slice(i - 2, i) : s[i - 1];
-};
-
-// Start offsets of `needle` in `hay` that sit on boundaries `edge` allows.
-const occurrences = (hay, needle, edge) => {
-  const found = [];
-  if (!needle) return found;
-  const startsWord = edge.test(pointAt(needle, 0));
-  const endsWord = edge.test(pointBefore(needle, needle.length));
-  for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + 1)) {
-    const clearBefore = !startsWord || !edge.test(pointBefore(hay, i));
-    const clearAfter = !endsWord || !edge.test(pointAt(hay, i + needle.length));
-    if (clearBefore && clearAfter) found.push(i);
-  }
-  return found;
-};
+// `text` in the publish scan's third form (NFKC, ignorables removed, case
+// folded, separators read as spaces), trimmed: ballot-check's private_strings
+// accounting reads lines and entries this way (SKILL.md step 6.3).
+const privateForm = (text) =>
+  fold(mapped(text), 3, { ignorable: "remove", nfkc: true }).text.trim();
 
 // The searches one private_strings entry makes in one form: the whole entry,
 // then each digit run alone (4+ digits, not a year) or beside each of the
@@ -268,4 +252,4 @@ const URL_CLASSES = ["ballot-id", "address", "zip", "label", "private-string", "
 const findRefusal = (texts, values, classes) =>
   refusalCode(texts.flatMap((text) => scan(text, values, classes)));
 
-module.exports = { CLASSES, URL_CLASSES, findRefusal, refusalCode, scan };
+module.exports = { CLASSES, URL_CLASSES, findRefusal, privateForm, refusalCode, scan };
