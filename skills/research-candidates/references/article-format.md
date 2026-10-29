@@ -48,7 +48,7 @@ The example stops partway (`…`): an article has every section and every issue 
 ```
 
 - The tag is inline code, one of the claim tags in [source-tiers.md](source-tiers.md).
-- The link points at exactly one snapshot and is relative to the article.
+- The link points at exactly one snapshot and is relative to the article. Its text is `s` and a number (`s1`); the page never shows it.
 - The excerpt is an indented blockquote on its own line, copied verbatim from the body of *that* snapshot. `check` matches each excerpt against the one snapshot its own claim links to, never against other snapshots the article cites. It needs no quote marks, so it may contain any quote character.
 - The excerpt is 20 to 400 characters, except a sample-ballot excerpt, which is exactly one whole span from `ballot-view.md` whatever its length (a short entry such as `Jo Li REP`). The compile step keeps an excerpt under 280 characters where the claim allows, so little of it hides behind the page's ~200-character cut ([page.md](page.md)); `check` does not enforce this. For a short value (a roll-call "Yea", a dollar figure), quote enough of the surrounding line to reach 20, for example the bill number and the vote together. The cap keeps the figure check meaningful and keeps long stretches of a news article off the page.
 
@@ -70,9 +70,9 @@ Matching is case-sensitive, and an excerpt starts and ends on word boundaries: n
 
 ## Figures
 
-Before `check` looks for figures in the claim text, it strips link targets, link text and inline code, so snapshot names and contest ids (`us-house-07`, `fec-totals-2.md`) are never read as claimed figures.
+The claim text that `check` reads figures in leaves out the tag and the link, so snapshot names and contest ids (`us-house-07`, `fec-totals-2.md`) are never read as claimed figures. A claim line holds exactly one inline code span (the tag) and one link (the snapshot) whose text is `s` and a number, so no figure hides in either: link text of any other form, or claim text with a backtick, an inline or reference link (`](`, `][`), an autolink, an HTML tag, a bare URL (`https://`, `www.`), an email address or a `mailto:` link fails `claim-format`. A contest id written in the claim text itself is read as figures like any other text.
 
-Each figure left in the claim must match a figure in that claim's own excerpt, not just any number in the snapshot. Both sides are canonicalized first: drop `$` and thousands commas, read `K`, `M`, `million` and `billion` as multipliers, and read `%` as a percentage. A claimed figure matches when the excerpt's value, rounded half-up to the decimal places the claim shows, equals it: "$1.22 million" matches `receipts: 1220000.55`, and "$1,220,001" matches it too.
+Each figure left in the claim is copied from that claim's own excerpt, not from anywhere else in the snapshot, and is never rounded or rescaled, as the Wording rules say: money and vote figures are shown raw, as the excerpt gives them. Every run of digits is a figure, years, counts and bill numbers included, with its decimal point and thousands commas (a decimal may start at its point, `.5%`), any letters or `%` written right after it (`12B`, `7th`, `5M`, `61%`), and a scale or percent word after one space or hyphen. A character that normalizing turns into a digit it does not show as one (a superscript, a fraction such as `½`, a circled number) breaks its figure, so `10⁶` never stands for 106. The scale and percent words are `thousand`, `hundred`, `million`, `billion`, `trillion` or `dozen` (or their plurals), `percent`, `per cent`, `pct`, `bn`, `mn`, `mm`, `mil`, `tn`, or a single `K`, `M` or `B`. Each figure in the claim must be one of its excerpt's figures, written the same way once both are normalized as for matching, apart from case, a space before `%`, and a hyphen or a space before the scale word. `$` is not part of a figure. "Raised $1.2 million" matches `raised $1.2 million`, but "Raised $1,200,000" does not, and "$1.22 million" does not match `receipts: 1220000.55`: write the figure as the excerpt does. So "$1 million" never stands for 500,000, and "$5 B" never stands for a bare 5. A scale word not on the list above is not part of the figure, so only its number is matched. A scale or percent word written with no digits before it (`thousand`, `hundred`, `million`, `billion`, `trillion`, `dozen`, their plurals, `percent` or `per cent`) is a figure too, together with the number words right before it (`a`, `an`, `half`, `quarter`, `few`, `several`, and one to ninety-nine written out, joined by spaces, hyphens or `and`): "two million", "half a million", "twenty-five thousand", "thousands". The excerpt must hold the same phrase, so "two million" never stands for 500,000, and a quote such as "thousands of jobs" passes when the excerpt says it. Number words with no scale word (`two terms`) are not figures.
 
 ## Command line
 
@@ -84,12 +84,17 @@ check <election>/<ballot-id> [<contest>]...
 
 It checks, for every claim (Claim lines):
 
-- the claim line has its tag and its link, and the next line is its excerpt; any other line of the article that is not a heading, a section state or blank fails too (`claim-format`);
-- the link resolves, relative to the article, to an existing snapshot file under `sources/` whose every part `fetch-snapshot` could have named (`claim-format`);
+- the claim line has its tag and its link, with link text `s` and a number, and the next line is its excerpt; any other line of the article that is not a heading, a section state or blank fails too (`claim-format`);
+- the link resolves, relative to the article, to an existing snapshot file under `sources/` whose every part `fetch-snapshot` could have named (`claim-format`); a claim whose link does not resolve still gets every check below that does not need its snapshot;
 - a claim citing the sample ballot (the `link:` line of `ballot-view.md`) quotes one whole span of `ballot-view.md`, and a claim citing any other `role: sample_ballot` snapshot, or citing one while there is no `ballot-view.md`, fails, and so does a claim citing a `_ballot` snapshot whose front matter does not give a companion role (`candidate_list`, `pamphlet`, `write_in_list` or `withdrawal_notice`), so a sample ballot whose role cannot be read is never matched like an ordinary source (`ballot-excerpt`);
-- any other excerpt is 20 to 400 characters once normalized (`excerpt-length`) and is found in its own snapshot's body (`excerpt-not-found`).
+- any other excerpt is 20 to 400 characters once normalized (`excerpt-length`) and is found in its own snapshot's body (`excerpt-not-found`);
+- the claim text and excerpt hold no `<!--` or `-->`, read both raw and normalized, so a fullwidth or dash-folded marker counts too (`comment-marker`);
+- the tag fits the cited snapshot's front matter (source-tiers.md, Claim tags): its tier is the snapshot's `tier`, a plain tag is `T1` to `T3` on a snapshot that is not `statements_only`, and `T2i` cites a T2 snapshot that is not `statements_only`; a tag outside the table, or a snapshot whose `tier` or `statements_only` (`true` or `false`) cannot be read, fails too (`tag-mismatch`);
+- a claim with an `s` tag starts with `Says:` (`says-missing`); the `says-only` rule is `coverage`'s;
+- every figure in the claim text is in its own excerpt (Figures, `figure-missing`);
+- neither the claim text (`title-in-claim`) nor the excerpt (`title-in-excerpt`) holds the printed `title` of a contest with a `display_title` in `ballot.yaml`, matched as `publish` matches it (SKILL.md steps 6.2 and 6.3), so a title split at a `pdftotext` break counts too, sample-ballot spans included.
 
-Its other codes: `usage` (a contest that is not an id), `bad-ballot`, `unknown-ballot`, `file-missing` (an article for a contest given does not exist), the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked`, `deps-missing` and `internal-error`.
+Its other codes: `usage` (a contest that is not an id), `bad-ballot`, `unknown-ballot`, `file-missing` (an article for a contest given does not exist, or `ballot.yaml`, located `ballot.yaml`), `yaml-invalid` (`ballot.yaml` does not parse, located `ballot.yaml`), the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked`, `deps-missing` and `internal-error`.
 
 ## Failure codes
 
@@ -103,6 +108,7 @@ Its other codes: `usage` (a contest that is not an id), `bad-ballot`, `unknown-b
 | `says-missing` | A "Says:" claim does not start with `Says:`, or a `says-only` section holds another claim |
 | `figure-missing` | A figure in the claim is not in its excerpt |
 | `ballot-excerpt` | An excerpt citing the sample ballot is not one whole span of `ballot-view.md` |
+| `title-in-claim` | Claim text contains the printed title of a contest with a `display_title` |
 | `title-in-excerpt` | An excerpt contains the printed title of a contest with a `display_title` |
 | `comment-marker` | A claim or excerpt contains `<!--` or `-->` |
 | `private-match` | Reported by `publish`: a claim or excerpt matches the privacy scan (SKILL.md step 6.3) |

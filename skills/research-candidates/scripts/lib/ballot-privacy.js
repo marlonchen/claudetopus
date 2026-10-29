@@ -7,7 +7,7 @@
 // never the matched text (Rule 5).
 
 const { load } = require("./deps");
-const { addressValues, tiersPrivacy } = require("./data-files");
+const { addressValues, hiddenTitles, tiersPrivacy } = require("./data-files");
 const { Failure } = require("./output");
 const { CLASSES, YEAR, digitRuns, isEmptyValue, scan } = require("./privacy");
 
@@ -86,12 +86,6 @@ const stringScalars = (doc, lineCounter, titles) => {
   });
   return scalars;
 };
-
-// The printed titles of contests with a display_title.
-const hiddenTitles = (data) =>
-  (Array.isArray(data?.contests) ? data.contests : [])
-    .filter((c) => c?.display_title !== undefined && typeof c.title === "string")
-    .map((c) => c.title);
 
 // { failures: [Failure], warnings: [report line] } for one ballot.
 // `yaml` is checkBallotYaml's result (null when ballot.yaml could not be

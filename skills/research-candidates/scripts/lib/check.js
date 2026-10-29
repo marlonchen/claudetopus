@@ -12,16 +12,22 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { parseArticle } = require("./article");
 const { EXCERPT_LENGTH, ID_PATTERN, ROLES, VIEW } = require("./constants");
+const { hiddenTitles, readYamlDocument } = require("./data-files");
+const { figuresBacked } = require("./figures");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { bodyText, findExcerpt, normalizeLine } = require("./normalize");
 const { Failure, Failures, runCommand } = require("./output");
+const { scan } = require("./privacy");
 const { isSnapshotPath, verifyManifest } = require("./snapshot-hash");
 const { FRONT_MATTER } = require("./snapshot-file");
 const { withLock } = require("./snapshot-store");
+const { TIER_RANK } = require("./tiers");
 
 // The _ballot roles the compile agent reads whole (ballot-format.md, Ballot view).
 const COMPANION_ROLES = ROLES.filter((role) => role !== "sample_ballot");
+// source-tiers.md, Claim tags: a claim tag as its tier and mark.
+const CLAIM_TAG = /^(T[1-4])([si])?$/;
 // articles/<contest>.md, for a contest id.
 const ARTICLE_NAME = new RegExp(`${ID_PATTERN.source.slice(0, -1)}\\.md$`);
 
@@ -55,6 +61,22 @@ const readView = (ballotDir) => {
   return { link, spans };
 };
 
+// The printed titles of contests with a display_title (ballot-format.md). When
+// ballot.yaml cannot be read, its failure goes to `failureLines` and there are
+// none. ballot-check validates the rest.
+const readHiddenTitles = (ballotDir, failureLines) => {
+  try {
+    return hiddenTitles(
+      readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS(),
+    );
+  } catch (error) {
+    if (!(error instanceof Failure) || !["file-missing", "yaml-invalid"].includes(error.code))
+      throw error;
+    failureLines.push(error.line);
+    return [];
+  }
+};
+
 // The ballot-relative path a claim's link target names, or null when it is not
 // a relative link to a snapshot path under sources/.
 const resolveTarget = (target) => {
@@ -64,11 +86,13 @@ const resolveTarget = (target) => {
   return isSnapshotPath(rel) ? rel : null;
 };
 
-// Each cited snapshot, read once: { ballot, body } or null when it is missing
-// or not a regular file. `ballot` is true for a _ballot snapshot whose front
-// matter does not give a companion role, so a sample ballot whose role cannot
-// be read is never matched like an ordinary source.
-const snapshotReader = (ballotDir) => {
+// Each cited snapshot, read once: { ballot, tier, statementsOnly, body } or
+// null when it is missing or not a regular file. `ballot` is true for a
+// _ballot snapshot whose front matter does not give a companion role, so a
+// sample ballot whose role cannot be read is never matched like an ordinary
+// source. `tier` and `statementsOnly` are null when the front matter does not
+// give them.
+const snapshotReader = (ballotDir, YAML) => {
   const cache = new Map();
   return (rel) => {
     if (cache.has(rel)) return cache.get(rel);
@@ -77,32 +101,83 @@ const snapshotReader = (ballotDir) => {
     if (fs.lstatSync(file, { throwIfNoEntry: false })?.isFile()) {
       const text = fs.readFileSync(file, "utf8");
       const front = FRONT_MATTER.exec(text);
-      let role = null;
-      if (front && rel.startsWith("sources/_ballot/")) {
-        try {
-          role = load("yaml").parse(front[1] ?? "")?.role ?? null;
-        } catch {
-          role = null;
-        }
+      let fields = {};
+      try {
+        fields = (front && YAML.parse(front[1] ?? "")) || {};
+      } catch {
+        fields = {};
       }
-      const ballot = rel.startsWith("sources/_ballot/") && !COMPANION_ROLES.includes(role);
-      read = { ballot, body: bodyText(front ? text.slice(front[0].length) : text) };
+      const role = rel.startsWith("sources/_ballot/") ? fields.role : null;
+      read = {
+        ballot: rel.startsWith("sources/_ballot/") && !COMPANION_ROLES.includes(role),
+        tier: Object.hasOwn(TIER_RANK, fields.tier ?? "") ? fields.tier : null,
+        statementsOnly: typeof fields.statements_only === "boolean" ? fields.statements_only : null,
+        body: bodyText(front ? text.slice(front[0].length) : text),
+      };
     }
     cache.set(rel, read);
     return read;
   };
 };
 
+// Does a tag, parsed by CLAIM_TAG, fit the snapshot (source-tiers.md, Claim
+// tags)? A plain tag is T1 to T3 on a snapshot that is not statements_only,
+// an `s` tag any tier, and an `i` tag a T2 snapshot that is not
+// statements_only; every tag's tier is the snapshot's own. A snapshot whose
+// tier or statements_only cannot be read fits no tag.
+const tagFits = (tag, snapshot) => {
+  if (!tag || !snapshot.tier || snapshot.statementsOnly === null) return false;
+  if (tag.tier !== snapshot.tier) return false;
+  if (tag.mark === "s") return true;
+  if (snapshot.statementsOnly) return false;
+  return tag.mark === "i" ? tag.tier === "T2" : tag.tier !== "T4";
+};
+
+// Does any of `texts` hold `<!--` or `-->`, raw or normalized, so a fullwidth
+// or dash-folded marker counts too? The link text is always `s` and a number.
+const hasCommentMarker = (texts) =>
+  texts.some((text) =>
+    [text, normalizeLine(text)].some((t) => t.includes("<!--") || t.includes("-->")),
+  );
+
+// A hyphen between two letters, which a pdftotext break can leave in a word.
+const LETTER_HYPHEN = /(?<=\p{L})-(?=\p{L})/gu;
+
+// Does a claim or excerpt hold a hidden printed title, matched as publish
+// matches it (SKILL.md steps 6.2 and 6.3): as written, then with every hyphen
+// between two letters removed, against each title with and without its own
+// hyphens?
+const holdsTitle = (text, titles) => {
+  const unhyphen = (t) => normalizeLine(t).replace(LETTER_HYPHEN, "");
+  const values = { title: [...titles, ...titles.map(unhyphen)] };
+  return [text, unhyphen(text)].some((t) => scan(t, values, ["title"]).length > 0);
+};
+
 // The failures of one claim, located `at` (its claim line), in report order.
-const claimFailures = (claim, at, view, readSnapshot) => {
+// A claim whose link does not resolve still gets every check that does not
+// need its snapshot.
+const claimFailures = (claim, at, { view, titles, readSnapshot }) => {
   const rel = resolveTarget(claim.target);
   const snapshot = rel && readSnapshot(rel);
-  if (!snapshot) return [new Failure(at, "claim-format")];
+  const failures = snapshot ? [] : [new Failure(at, "claim-format")];
+  if (hasCommentMarker([claim.text, claim.excerpt]))
+    failures.push(new Failure(at, "comment-marker"));
+  if (holdsTitle(claim.text, titles)) failures.push(new Failure(at, "title-in-claim"));
+  if (holdsTitle(claim.excerpt, titles)) failures.push(new Failure(at, "title-in-excerpt"));
+  const parsed = CLAIM_TAG.exec(claim.tag);
+  const tag = parsed && { tier: parsed[1], mark: parsed[2] };
+  if (snapshot && !tagFits(tag, snapshot)) failures.push(new Failure(at, "tag-mismatch"));
+  if (tag?.mark === "s" && !claim.text.startsWith("Says:"))
+    failures.push(new Failure(at, "says-missing"));
+  // The parser keeps the tag and link out of the text, so their snapshot names
+  // and ids are never read as claimed figures.
+  if (!figuresBacked(claim.text, claim.excerpt)) failures.push(new Failure(at, "figure-missing"));
+  if (!snapshot) return failures;
   if ((view && rel === view.link) || snapshot.ballot) {
     const whole = view && rel === view.link && view.spans.has(normalizeLine(claim.excerpt));
-    return whole ? [] : [new Failure(at, "ballot-excerpt")];
+    if (!whole) failures.push(new Failure(at, "ballot-excerpt"));
+    return failures;
   }
-  const failures = [];
   const length = [...normalizeLine(claim.excerpt)].length;
   if (length < EXCERPT_LENGTH.min || length > EXCERPT_LENGTH.max)
     failures.push(new Failure(at, "excerpt-length"));
@@ -123,10 +198,15 @@ const allContests = (ballotDir) => {
 };
 
 const check = (ballotDir, given) => {
+  // Loaded first, so a missing install is one deps-missing, not a failure per claim.
+  const YAML = load("yaml");
   const failureLines = verifyManifest(ballotDir).map((f) => f.line);
   const contests = given.length ? given : allContests(ballotDir);
-  const view = readView(ballotDir);
-  const readSnapshot = snapshotReader(ballotDir);
+  const context = {
+    view: readView(ballotDir),
+    titles: readHiddenTitles(ballotDir, failureLines),
+    readSnapshot: snapshotReader(ballotDir, YAML),
+  };
   for (const contest of contests) {
     const rel = `articles/${contest}.md`;
     const file = path.join(ballotDir, rel);
@@ -141,7 +221,7 @@ const check = (ballotDir, given) => {
       new Failure(`${rel}:${line}`, code),
     ]);
     for (const claim of article.claims) {
-      for (const failure of claimFailures(claim, `${rel}:${claim.line}`, view, readSnapshot))
+      for (const failure of claimFailures(claim, `${rel}:${claim.line}`, context))
         found.push([claim.line, failure]);
     }
     found.sort((a, b) => a[0] - b[0]);

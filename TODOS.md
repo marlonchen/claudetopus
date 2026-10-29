@@ -67,6 +67,8 @@
 
 **Context:** Step 11 adversarial finding 3, /ship run 5. Deferred by the owner (D8).
 
+**Closed (ticket 08).** Built by removing rounding: a claimed figure is copied from its excerpt, never rounded or rescaled: it must be one of the excerpt's figures written the same way, scale and percent words included (owner decision, 2026-10-28, replacing the half-up-and-1% rule decided earlier that day, and matching the Wording rule that money and vote figures are shown raw). So "$1 million" no longer matches 500,000, and no figure can round its way to another (article-format.md, Figures). What `check` cannot read now belongs to the neutrality pass (review-list.md, Neutrality pass), and ticket 16's eval traps it: the field the claim names ("$5M from PACs" on a total), signs and direction words ("fell 3%" on "rose 3%"), and a count in words with no scale word ("twenty terms" on "two terms"). Link text must be `s` and a number, so no figure hides in it (`claim-format`), and `check` scans claim text for a hidden printed title as well as excerpts (`title-in-claim`).
+
 **Effort:** S
 **Priority:** P1
 **Depends on:** `check`.
@@ -75,7 +77,7 @@
 
 **What:** Requirements for the scripts, each to become a test:
 
-- [ ] `claim-format` allows exactly one inline code span (the trailing tag) and one link (the trailing snapshot link), so no figure hides in link text or code (article-format.md:46, 66).
+- [x] `claim-format` allows exactly one inline code span (the trailing tag) and one link (the trailing snapshot link), so no figure hides in link text or code; the link text is `s` and a number (article-format.md, Figures; built in ticket 08, `check`).
 - [x] Join pdftotext hyphenated line breaks before collapsing whitespace, and accept an excerpt that matches either the joined or the unjoined form (article-format.md, Matching; built in ticket 07, `check`).
 - [ ] Refuse an excerpt that crosses a blank-line record boundary in an `api` snapshot (snapshot-format.md:36).
 - [ ] `publish` recomputes every mechanical review item key, unfetchable entries included, and requires each to be accepted (review-list.md:48, SKILL.md:118).
