@@ -249,7 +249,7 @@ const RECEIPTS = {
       url: "https://api.open.fec.gov/v1/candidate/H0XX00000/totals/",
       tier: "T1",
       method: "api",
-      extra: "public_url: https://www.fec.gov/data/candidate/H0XX00000/\n",
+      extra: "public_url: https://www.fec.gov/data/candidate/H0XX00000/#totals\n",
       body: "results.0.note: Jane Example filed her report with the commission.",
     }),
     excerpt: "Jane Example filed her report with the commission.",
@@ -381,7 +381,7 @@ describe("publish: receipts", () => {
         "https://web.archive.org/web/20261019120000/https://news.example.com/archived",
       ],
     ]);
-    assert.doesNotMatch(data.read(SITE), /id=7|#money"/);
+    assert.doesNotMatch(data.read(SITE), /id=7|#money"|#totals/);
   });
 
   it("escapes every value it shows, so source text never becomes markup", async () => {
@@ -516,10 +516,10 @@ const retentionArticle = (state = "Unknown, no source found") =>
     section("D. Discipline", state),
     section("E. Statements", state),
   ].join("\n");
-const addRetention = (data, state) =>
+const addRetention = (data, state, article = retentionArticle(state)) =>
   addContest(data, {
     id: "supreme-court-retention-a",
-    article: retentionArticle(state),
+    article,
     log: logLines("supreme-court-retention-a", ["pat-example"], ["7"]),
   });
 
@@ -540,6 +540,35 @@ describe("publish: retention race", () => {
     ]);
     assert.ok(texts(race, ".meta").includes("Thin records are common for judges."));
     assert.ok(texts(race, "summary .vh").includes("for Pat Example, On the ballot section"));
+  });
+
+  it("says a section left for later is still to come, in its line and its banner", async () => {
+    const data = await setup();
+    const rel = `${BALLOT}/ballot.yaml`;
+    data.write(
+      rel,
+      data
+        .read(rel)
+        .replace(
+          "      name: Pat Example\n",
+          "      name: Pat Example\n    not_researched: [Discipline]\n",
+        ),
+    );
+    commit(data);
+    const article = retentionArticle().replace(
+      "### D. Discipline\n\nUnknown, no source found",
+      `### D. Discipline\n\n${NOT_RESEARCHED}`,
+    );
+    await addRetention(data, undefined, article);
+    const race = (await published(data)).getElementById("supreme-court-retention-a");
+    assert.strictEqual(
+      text(race.querySelector(".banner")),
+      "✓ Official record searched: 1 source · 1 topic not researched yet",
+    );
+    assert.strictEqual(
+      text(race.querySelector("#supreme-court-retention-a--discipline").nextElementSibling),
+      "Not researched yet. Research on this topic is still to come, for every candidate at once. Check back; this link stays the same.",
+    );
   });
 
   it("shows a not-researched contest's On the ballot section and one note, with no chips", async () => {

@@ -15,9 +15,17 @@ const { check: checkBallot } = require("./ballot-check");
 const { Failure, Failures } = require("./output");
 const { verifyManifest } = require("./snapshot-hash");
 
-// git in the data repo, as a Buffer, or git-failed.
-const git = (root, args) => {
-  const result = spawnSync("git", args, { cwd: root, maxBuffer: 256 * 1024 * 1024 });
+// Room for a long history's output, which spawnSync caps at 1MB by default.
+const MAX_OUTPUT = 1024 * 1024 * 1024;
+
+// git in the data repo: its result, `input` sent to its stdin.
+const runGit = (root, args, input) =>
+  spawnSync("git", args, { cwd: root, input, maxBuffer: MAX_OUTPUT });
+// Does git succeed (a path is tracked, HEAD exists)?
+const gitSays = (root, args) => runGit(root, args).status === 0;
+// git's output as a Buffer, or git-failed.
+const git = (root, args, input) => {
+  const result = runGit(root, args, input);
   if (result.status !== 0 || result.error) throw new Failure(".", "git-failed");
   return result.stdout;
 };
@@ -30,6 +38,7 @@ const areasOf = (ballot) => [
   { at: "snapshots.sha256", path: `${ballot}/snapshots.sha256` },
   { at: "search-log", path: `${ballot}/search-log` },
 ];
+// Is a repo path the area itself or under it?
 const within = (file, area) => file === area.path || file.startsWith(`${area.path}/`);
 
 // The areas holding anything not exactly as committed: a change, staged or
@@ -58,10 +67,7 @@ const uncommitted = (root, ballot) => {
     if (/^([a-z]|S) /.test(entry)) dirty.add(entry.slice(2));
   for (const area of areas) {
     if (!fs.lstatSync(path.join(root, area.path), { throwIfNoEntry: false })?.isFile()) continue;
-    const tracked = spawnSync("git", ["ls-files", "--error-unmatch", "--", area.path], {
-      cwd: root,
-    });
-    if (tracked.status !== 0) dirty.add(area.path);
+    if (!gitSays(root, ["ls-files", "--error-unmatch", "--", area.path])) dirty.add(area.path);
   }
   return areas
     .filter((area) => [...dirty].some((file) => within(file, area)))
@@ -72,13 +78,7 @@ const uncommitted = (root, ballot) => {
 const readBlobs = (root, hashes) => {
   const blobs = new Map();
   if (!hashes.length) return blobs;
-  const result = spawnSync("git", ["cat-file", "--batch"], {
-    cwd: root,
-    input: `${hashes.join("\n")}\n`,
-    maxBuffer: 1024 * 1024 * 1024,
-  });
-  if (result.status !== 0 || result.error) throw new Failure(".", "git-failed");
-  const out = result.stdout;
+  const out = git(root, ["cat-file", "--batch"], `${hashes.join("\n")}\n`);
   let at = 0;
   for (const hash of hashes) {
     const end = out.indexOf(0x0a, at);
@@ -106,18 +106,18 @@ const LOGGED = [
 ];
 
 // The text up to its last newline: a torn last line is not a line yet.
-const whole = (text) => text.slice(0, text.lastIndexOf("\n") + 1);
+const completeLines = (text) => text.slice(0, text.lastIndexOf("\n") + 1);
 
-// Every commit on HEAD's first-parent line that lost a line of an
-// append-only file, or changed a baseline outside a `reset review <contest>`
-// commit, located by the file and keyed by the commit.
+// Every commit reachable from HEAD that lost a line of an append-only file,
+// or changed a baseline outside a `reset review <contest>` commit, compared
+// with the commit before it (a merge with its first parent), located by the
+// file and keyed by the commit.
 const history = (root, ballot) => {
-  const born = spawnSync("git", ["rev-parse", "--verify", "-q", "HEAD"], { cwd: root });
-  if (born.status !== 0) return [];
+  if (!gitSays(root, ["rev-parse", "--verify", "-q", "HEAD"])) return [];
   const log = git(root, [
     "log",
-    "--first-parent",
     "--diff-merges=first-parent",
+    "--topo-order",
     "--reverse",
     "--no-renames",
     "--raw",
@@ -162,7 +162,7 @@ const history = (root, ballot) => {
     const after = c.new === null ? "" : blobs.get(c.new);
     if (c.kind === "baseline" && !reset)
       lines.push(new Failure(c.rel, "baseline-changed", c.commit).line);
-    const kept = c.kind === "accepted" ? whole(before) : before;
+    const kept = c.kind === "accepted" ? completeLines(before) : before;
     if ((c.kind === "log" || (c.kind === "accepted" && !reset)) && !after.startsWith(kept))
       lines.push(new Failure(c.rel, "history-lost-line", c.commit).line);
   }
@@ -173,7 +173,7 @@ const history = (root, ballot) => {
 const ballotGate = (root, ballot, ballotDir) => {
   const lines = [];
   try {
-    checkBallot(root, ballot, ballotDir, false);
+    checkBallot(root, ballot, ballotDir, /* show */ false);
   } catch (error) {
     if (!(error instanceof Failures || error instanceof Failure)) throw error;
     // ballot-check's own lines say why; running it shows them.

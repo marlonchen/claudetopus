@@ -159,6 +159,23 @@ describe("publish: ballot gate, history", () => {
       `snapshots.sha256 history-lost-line ${lost}`,
     ]);
   });
+
+  it("checks every commit, those on a merged branch included", async () => {
+    const data = await setup();
+    const log = `${BALLOT}/search-log/us-house-07.tsv`;
+    const full = data.read(log);
+    git(data.root, "checkout", "-q", "-b", "side");
+    data.write(log, full.replace(/[^\n]*\n$/, ""));
+    commit(data);
+    const lost = head(data);
+    data.write(log, full);
+    commit(data);
+    git(data.root, "checkout", "-q", "-");
+    const who = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
+    git(data.root, ...who, "merge", "-q", "--no-ff", "-m", "merge side", "side");
+    const result = await publish(data);
+    assert.deepStrictEqual(lines(result), [`search-log/us-house-07.tsv history-lost-line ${lost}`]);
+  });
 });
 
 describe("publish: contest gate", () => {

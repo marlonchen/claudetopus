@@ -85,12 +85,17 @@ const writeSite = (ballotDir, html) => {
   const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
   if (stat && !stat.isDirectory()) throw new Failure("site", "site-invalid");
   fs.mkdirSync(dir, { recursive: true });
+  // A write a crash cut short is never left beside the page.
+  for (const name of fs.readdirSync(dir))
+    if (name.startsWith("index.html.tmp-")) fs.rmSync(path.join(dir, name), { force: true });
   const file = path.join(ballotDir, SITE);
   const tmp = `${file}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, html);
   fs.renameSync(tmp, file);
 };
 
+// The gates, then the page: refuses with Failures, or returns the contest
+// lines and `site/index.html written`.
 const publish = (root, ballot, ballotDir) => {
   // Loaded first, so a missing install is one deps-missing.
   load("yaml");

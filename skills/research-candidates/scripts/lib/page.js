@@ -101,8 +101,10 @@ const receiptOf = (rel, fields, archives) => {
     };
   }
   if (fields.public_url !== undefined) {
+    // A public_url never has a query (snapshot-format.md); one that does is
+    // not linked, since dropping it would open a different page.
     const url = httpUrl(fields.public_url);
-    if (!url || url.search || url.hash) return noLink;
+    if (!url || url.search) return noLink;
     return {
       line: `The quote above was saved on ${date} from the official record this link shows.`,
       links: [{ text: "Original page", href: rebuilt(url) }],
@@ -180,6 +182,9 @@ const claimHtml = (claim, ctx, where) => {
   ].join("");
 };
 
+// page.md, Contest states: a race not ready yet, and a ballot with none ready.
+const NOT_READY_NOTE = `<div class="note"><b>Not ready yet.</b> Every candidate gets the same research before anything shows here. Check back; this link stays the same.</div>`;
+
 const UNKNOWN_HTML = `<div class="unk">${glyph("○")} Unknown: no source found.</div>`;
 
 // A section's or issue's state: one of SECTION_STATES, or "claims".
@@ -219,7 +224,8 @@ const sectionHtml = (name, people, ctx) => {
   if (state === NOT_JOB)
     return `<h2 id="${esc(id)}">${esc(pageName(name))} <span class="oos">(not part of this office's job)</span></h2>`;
   const heading = `<h2 id="${esc(id)}">${esc(pageName(name))}</h2>`;
-  if (state === NOT_RESEARCHED) return heading + notResearchedLine(candidates);
+  // Only a measure has no candidate to name (page.md, Not researched yet).
+  if (state === NOT_RESEARCHED) return heading + notResearchedLine(ctx.contest.type !== "measure");
   const lead = ARGUMENTS.includes(name)
     ? `<div class="meta">These are arguments, not facts.</div>`
     : "";
@@ -325,13 +331,7 @@ const raceHtml = (raw, contest, answer, next, page) => {
       : "";
   const end = [nextHtml(next), "</section>"];
   if (!answer?.ready) {
-    return [
-      ...head,
-      voteFor,
-      meta,
-      `<div class="note"><b>Not ready yet.</b> Every candidate gets the same research before anything shows here. Check back; this link stays the same.</div>`,
-      ...end,
-    ].join("");
+    return [...head, voteFor, meta, NOT_READY_NOTE, ...end].join("");
   }
   const { article } = answer;
   const people = peopleOf(contest, raw, article);
@@ -484,9 +484,7 @@ const ballotHtml = (raws, answers, page) => {
     `<div class="meta">Updated ${esc(page.updated)}</div>`,
     `<details class="how"><summary>How to read this ${DISCLOSURE}</summary><ol>${HOW_TO_READ.map((l) => `<li>${esc(l).replace("○", glyph("○"))}</li>`).join("")}</ol></details>`,
     `<div class="banner">${banner}</div>`,
-    anyReady
-      ? ""
-      : `<div class="note"><b>Not ready yet.</b> Every candidate gets the same research before anything shows here. Check back; this link stays the same.</div>`,
+    anyReady ? "" : NOT_READY_NOTE,
     `<div class="meta">Tap a race to compare the candidates.</div>`,
     `<ul class="list">${rows.join("")}</ul>`,
     `</section>`,
