@@ -320,6 +320,12 @@ describe("check: claim tags", () => {
       "sources/us-house-07/jane-example/speech.md",
       snapshot("jane-example", SPEECH, "", { tier: "T1", statementsOnly: true }),
     );
+    // A paper's candidate Q&A: T2, but only the candidate's words, so no T2i.
+    plant(
+      data,
+      "sources/us-house-07/jane-example/qa.md",
+      snapshot("jane-example", SPEECH, "", { statementsOnly: true }),
+    );
     withClaims(data, [
       ["T1s", SAYS, "speech", QUOTE],
       ["T2s", "Says: she served two terms", "bio", BOARD],
@@ -329,6 +335,8 @@ describe("check: claim tags", () => {
       ["T1", "Will cut the property tax", "speech", QUOTE],
       ["T4", "Served two terms", "bio", BOARD],
       ["T2x", "Served two terms", "bio", BOARD],
+      ["T2i", "Plans to cut the property tax", "qa", QUOTE],
+      ["T2s", SAYS, "qa", QUOTE],
     ]);
     await failsWith(data, [
       "articles/us-house-07.md:27 tag-mismatch",
@@ -336,6 +344,7 @@ describe("check: claim tags", () => {
       "articles/us-house-07.md:33 tag-mismatch",
       "articles/us-house-07.md:36 tag-mismatch",
       "articles/us-house-07.md:39 tag-mismatch",
+      "articles/us-house-07.md:42 tag-mismatch",
     ]);
   });
 

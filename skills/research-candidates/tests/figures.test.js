@@ -82,6 +82,27 @@ describe("article-format.md, Figures: each claimed figure is copied from its own
     passes([["Served two terms", "served from 2014 to 2022"]]);
   });
 
+  it("reads a scale or percent word with no digits as a figure, with its number words", () => {
+    passes([
+      ["Raised half a million", "raised half a million dollars"],
+      ["Raised twenty-five thousand", "raised twenty five thousand"],
+      ["Raised one hundred and fifty thousand", "one hundred and fifty thousand dollars"],
+      ["Says: will create thousands of jobs", "will create thousands of jobs"],
+      ["Raised $2.5 million and two million more", "$2.5 million and two million more"],
+    ]);
+    fails([
+      ["Raised two million dollars", "raised $500,000"],
+      ["Raised half a million", "raised a million"],
+      ["Raised five million", "raised $5 million"],
+      ["Raised $5 million", "raised five million"],
+      ["Says: will create thousands of jobs", "will create jobs"],
+      ["Won fifty percent", "won 50%"],
+      ["Raised a dozen", "raised 12"],
+    ]);
+    // Number words with no scale word are not figures.
+    passes([["Served twenty terms", "served two terms"]]);
+  });
+
   it("reads digits as normalized, so fullwidth digits count", () => {
     passes([["Raised $１,000", "raised 1,000"]]);
     fails([

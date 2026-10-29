@@ -119,7 +119,7 @@ const snapshotReader = (ballotDir) => {
 
 // Does a tag, parsed by CLAIM_TAG, fit the snapshot (source-tiers.md, Claim
 // tags)? A plain tag is T1 to T3 on a snapshot that is not statements_only,
-// an `s` tag any tier, and an `i` tag T2 only; every tag's tier is the
+// an `s` tag any tier, and an `i` tag a T2 snapshot that is not statements_only; every tag's tier is the
 // snapshot's own.
 const tagFits = (tag, snapshot) => {
   if (!tag || !snapshot.tier || tag.tier !== snapshot.tier) return false;

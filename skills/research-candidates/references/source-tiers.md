@@ -41,7 +41,7 @@ Each claim carries one tag: the cited snapshot's tier, plus an optional mark.
 | --- | --- | --- |
 | `T1`, `T2`, `T3` | Plain claim | The tier matches the snapshot; the snapshot is not `statements_only` |
 | `T1s` ... `T4s` | "Says:" claim, the candidate's own words | The tier matches the snapshot; the claim text starts with `Says:` |
-| `T2i` | T2 claim that interprets rather than reports | The snapshot is T2 (`review-list` puts every `T2i` claim on the list) |
+| `T2i` | T2 claim that interprets rather than reports | The snapshot is T2 and not `statements_only` (`review-list` puts every `T2i` claim on the list) |
 
 A candidate quote reported in a T2 article is `T2s`. The compile step sets the `i` mark; `check` cannot tell interpreting from reporting, so the neutrality pass also flags an unmarked T2 claim that interprets.
 
