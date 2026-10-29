@@ -23,6 +23,8 @@ const EXCERPT = /^ +> (\S.*)$/;
 // reference link, an autolink, an HTML tag, a bare URL or email address, or a
 // mailto: link. Text the figure check strips would otherwise hide a figure
 // from it (article-format.md, Figures).
+// The link text: `s` and a number, so no figure hides in it.
+const LABEL = /^s\d+$/;
 const EXTRA_SPAN =
   /`|\]\(|\]\[|<[a-z][a-z0-9+.-]*:|<[^\s<>@]+@|<\/?[a-z][^<>]*>|\b[a-z][a-z0-9+.-]*:\/\/|\bwww\.|\bmailto:|[^\s@<>]@[^\s@<>]+\.[a-z]/i;
 
@@ -101,7 +103,7 @@ const parseArticle = (text) => {
         section,
         issue,
       };
-      if (EXTRA_SPAN.test(claim[1])) pending.malformed = true;
+      if (EXTRA_SPAN.test(claim[1]) || !LABEL.test(claim[3])) pending.malformed = true;
       continue;
     }
     fail(n);

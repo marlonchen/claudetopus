@@ -429,7 +429,7 @@ describe("check: figures", () => {
 });
 
 describe("check: comment markers", () => {
-  it("fails <!-- or --> in claim text, link text or excerpt", async () => {
+  it("fails <!-- or --> in claim text or excerpt, and in link text as claim-format", async () => {
     const data = setup();
     plant(
       data,
@@ -450,7 +450,7 @@ describe("check: comment markers", () => {
         .replace("[s1](../sources/_ballot", "[s1-->](../sources/_ballot"),
     );
     await failsWith(data, [
-      "articles/us-house-07.md:7 comment-marker",
+      "articles/us-house-07.md:7 claim-format",
       "articles/us-house-07.md:18 comment-marker",
       "articles/us-house-07.md:21 comment-marker",
       "articles/us-house-07.md:24 comment-marker",
@@ -459,7 +459,7 @@ describe("check: comment markers", () => {
   });
 });
 
-describe("check: printed titles in excerpts", () => {
+describe("check: printed titles in claims and excerpts", () => {
   const TITLE = "    title: Representative in Congress, 7th District\n";
   const hidden = DEFAULT_BALLOT.replace(TITLE, `${TITLE}    display_title: U.S. House\n`);
 
@@ -495,11 +495,19 @@ describe("check: printed titles in excerpts", () => {
         "race",
         "running for REPRE-SENTATIVE IN CONGRESS, 7TH DISTRICT",
       ],
+      // In the claim text it fails on its own, as publish would drop it there too.
+      [
+        "T2",
+        "Runs for Representative in Congress, 7th District",
+        "race",
+        "7TH DISTRICT this fall, in Congress.",
+      ],
     ]);
     await failsWith(data, [
       "articles/us-house-07.md:18 title-in-excerpt",
       "articles/us-house-07.md:21 title-in-excerpt",
       "articles/us-house-07.md:27 title-in-excerpt",
+      "articles/us-house-07.md:30 title-in-claim",
     ]);
   });
 
@@ -572,7 +580,17 @@ Jane is a teacher.
       ["T2", "Served two terms, see mailto:jane", "bio", BOARD],
       ["T2", "Served two terms on the board [sic]", "bio", BOARD],
     ]);
+    // Link text other than `s` and a number, where a figure would go unread.
+    const article = data.read(`${BALLOT}/articles/us-house-07.md`);
+    data.write(
+      `${BALLOT}/articles/us-house-07.md`,
+      `${article.replace("[s1](../sources/_ballot", "[`$5M`](../sources/_ballot")}
+- Served two terms \`T2\` [$5 million](../sources/us-house-07/jane-example/bio.md)
+  > ${BOARD}
+`,
+    );
     await failsWith(data, [
+      "articles/us-house-07.md:7 claim-format",
       "articles/us-house-07.md:18 claim-format",
       "articles/us-house-07.md:21 claim-format",
       "articles/us-house-07.md:24 claim-format",
@@ -582,6 +600,18 @@ Jane is a teacher.
       "articles/us-house-07.md:36 claim-format",
       "articles/us-house-07.md:39 claim-format",
       "articles/us-house-07.md:42 claim-format",
+      "articles/us-house-07.md:48 claim-format",
+    ]);
+  });
+
+  it("still checks a claim whose link does not resolve for all that needs no snapshot", async () => {
+    const data = setup();
+    withClaims(data, [["T2s", "Served 3 terms <!-- key: abcdef", "gone", BOARD]]);
+    await failsWith(data, [
+      "articles/us-house-07.md:18 claim-format",
+      "articles/us-house-07.md:18 comment-marker",
+      "articles/us-house-07.md:18 says-missing",
+      "articles/us-house-07.md:18 figure-missing",
     ]);
   });
 

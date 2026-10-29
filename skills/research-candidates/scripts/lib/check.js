@@ -134,7 +134,7 @@ const tagFits = (tag, snapshot) => {
 };
 
 // Does any of `texts` hold `<!--` or `-->`, raw or normalized, so a fullwidth
-// or dash-folded marker counts too?
+// or dash-folded marker counts too? The link text is always `s` and a number.
 const hasCommentMarker = (texts) =>
   texts.some((text) =>
     [text, normalizeLine(text)].some((t) => t.includes("<!--") || t.includes("-->")),
@@ -143,32 +143,36 @@ const hasCommentMarker = (texts) =>
 // A hyphen between two letters, which a pdftotext break can leave in a word.
 const LETTER_HYPHEN = /(?<=\p{L})-(?=\p{L})/gu;
 
-// Does the excerpt hold a hidden printed title, matched as publish matches it
-// (SKILL.md steps 6.2 and 6.3): as written, then with every hyphen between two
-// letters removed, against each title with and without its own hyphens?
-const holdsTitle = (excerpt, titles) => {
-  const unhyphen = (text) => normalizeLine(text).replace(LETTER_HYPHEN, "");
+// Does a claim or excerpt hold a hidden printed title, matched as publish
+// matches it (SKILL.md steps 6.2 and 6.3): as written, then with every hyphen
+// between two letters removed, against each title with and without its own
+// hyphens?
+const holdsTitle = (text, titles) => {
+  const unhyphen = (t) => normalizeLine(t).replace(LETTER_HYPHEN, "");
   const values = { title: [...titles, ...titles.map(unhyphen)] };
-  return [excerpt, unhyphen(excerpt)].some((text) => scan(text, values, ["title"]).length > 0);
+  return [text, unhyphen(text)].some((t) => scan(t, values, ["title"]).length > 0);
 };
 
 // The failures of one claim, located `at` (its claim line), in report order.
+// A claim whose link does not resolve still gets every check that does not
+// need its snapshot.
 const claimFailures = (claim, at, { view, titles, readSnapshot }) => {
   const rel = resolveTarget(claim.target);
   const snapshot = rel && readSnapshot(rel);
-  if (!snapshot) return [new Failure(at, "claim-format")];
-  const failures = [];
-  if (hasCommentMarker([claim.text, claim.label, claim.excerpt]))
+  const failures = snapshot ? [] : [new Failure(at, "claim-format")];
+  if (hasCommentMarker([claim.text, claim.excerpt]))
     failures.push(new Failure(at, "comment-marker"));
+  if (holdsTitle(claim.text, titles)) failures.push(new Failure(at, "title-in-claim"));
   if (holdsTitle(claim.excerpt, titles)) failures.push(new Failure(at, "title-in-excerpt"));
   const parsed = CLAIM_TAG.exec(claim.tag);
   const tag = parsed && { tier: parsed[1], mark: parsed[2] };
-  if (!tagFits(tag, snapshot)) failures.push(new Failure(at, "tag-mismatch"));
+  if (snapshot && !tagFits(tag, snapshot)) failures.push(new Failure(at, "tag-mismatch"));
   if (tag?.mark === "s" && !claim.text.startsWith("Says:"))
     failures.push(new Failure(at, "says-missing"));
   // The parser keeps the tag and link out of the text, so their snapshot names
   // and ids are never read as claimed figures.
   if (!figuresBacked(claim.text, claim.excerpt)) failures.push(new Failure(at, "figure-missing"));
+  if (!snapshot) return failures;
   if ((view && rel === view.link) || snapshot.ballot) {
     const whole = view && rel === view.link && view.spans.has(normalizeLine(claim.excerpt));
     if (!whole) failures.push(new Failure(at, "ballot-excerpt"));
