@@ -141,12 +141,13 @@ push to `main`, and on demand from the Actions tab. Two jobs, both running the t
 | Job | Runs |
 | --- | --- |
 | Lint | `mise run lint`, once |
-| Test (Node 20, 22, 24, 26) | `mise run test`, one leg per Node version |
+| Test (Node 22, 24, 26) | `mise run test`, one leg per Node version |
 
-The test matrix exists because the mywiki checker claims to run on any Node 20+: CI exercises
-the floor of that claim, the current LTS line, and the version the repo is developed on. Each
+The test matrix exists because the mywiki checker claims to run on any Node 22+, the floor
+research-candidates needs too: CI exercises that floor, the current LTS line, and the version
+the repo is developed on. Each
 leg asserts that `mise exec -- node --version` really is the version it advertises, so pinning
-a Node in `.config/mise/config.toml` later cannot quietly collapse four legs into one.
+a Node in `.config/mise/config.toml` later cannot quietly collapse three legs into one.
 
 Nothing runs in CI that you cannot run locally — these are the same two commands the
 `pre-commit` hook runs. The three linters are pinned to exact versions in

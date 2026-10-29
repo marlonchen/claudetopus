@@ -5,8 +5,8 @@
 // JSON; it exits 2 to refuse one, printing only `<tool> <code>` (Rule 5). It
 // backs the terminal guard (terminal.js), which a child process can get past
 // on its own: it refuses
-//   - researcher-only-mode: --ballot or --show, in a command or in a file
-//     the model writes (a script it could run later);
+//   - researcher-only-mode: --ballot, --show or --keep-short, in a command
+//     or in a file the model writes (a script it could run later);
 //   - terminal-guard-bypass: a command or file naming CLAUDECODE, a command
 //     that empties the environment, or one that runs under a pseudo-terminal;
 //   - script-only-file: a command naming ballot.ledger, snapshots.sha256 or
@@ -20,7 +20,7 @@
 
 const path = require("node:path");
 
-const RESEARCHER_MODE = /(^|[^\w-])--(ballot|show)(?![\w-])/;
+const RESEARCHER_MODE = /(^|[^\w-])--(ballot|show|keep-short)(?![\w-])/;
 const GUARD_VARIABLE = /CLAUDECODE/i;
 // env -i, env --ignore-environment, env - (an empty environment drops CLAUDECODE).
 const ENV_WIPE = /(^|[^\w-])env\s+(-\w*i\b|--ignore-environment\b|-(\s|$))/;

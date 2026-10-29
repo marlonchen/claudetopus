@@ -4,7 +4,7 @@
   "description": "Runtime dependencies of the research-candidates scripts. Install them with scripts/install-deps, never into this directory.",
   "license": "MIT",
   "engines": {
-    "node": ">=20.19"
+    "node": ">=22"
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",

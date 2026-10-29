@@ -1,5 +1,5 @@
 # The mywiki skill's checker is deliberately zero-dependency and runs on any
-# Node 20+, so Node is intentionally NOT pinned here: `mise run test` should
+# Node 22+, so Node is intentionally NOT pinned here: `mise run test` should
 # exercise whatever Node the developer (and the installed skill) actually uses.
 # The linters below are pinned to exact versions, so `mise run lint` gives the
 # same answer locally and in CI; bump them in their own PR. All three are

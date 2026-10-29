@@ -763,6 +763,7 @@ describe("the data repo's Claude Code settings", () => {
       `cd x && ${script} --ballot`,
       "node scripts/ballot-check --show",
       "node scripts/publish --show",
+      `${script} --keep-short ${BALLOT} us-house-07 _race page https://county.example.gov/`,
     ]) {
       assert.ok(bashDenies(command), `not denied: ${command}`);
     }
@@ -772,6 +773,7 @@ describe("the data repo's Claude Code settings", () => {
       "git rev-parse --show-toplevel",
       "rg --files",
       "git commit --file=msg.txt",
+      "git status --short",
     ]) {
       assert.ok(!bashDenies(command), `denied: ${command}`);
     }
@@ -819,6 +821,12 @@ describe("the data repo's Claude Code settings", () => {
         ],
         [bash(`F=x; node scripts/ballot-check "--show"`), "researcher-only-mode"],
         [
+          bash(
+            `${script} --keep-short ${BALLOT} us-house-07 _race page https://county.example.gov/`,
+          ),
+          "researcher-only-mode",
+        ],
+        [
           bash("(sleep 1; printf 'y\\n') | env -u CLAUDECODE script -q /dev/null node x.js"),
           "terminal-guard-bypass",
         ],
@@ -859,6 +867,7 @@ describe("the data repo's Claude Code settings", () => {
         bash("git branch --show-current && git rev-parse --show-toplevel"),
         bash("rg --files sources/ | head"),
         bash("git commit --file=msg.txt"),
+        bash("git status --short && git log --shortstat -1"),
         bash("grep -rn 'empty' sources/us-house-07"),
         {
           tool_name: "Write",

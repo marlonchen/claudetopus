@@ -64,12 +64,14 @@ const LETTER = /\p{L}/u;
 // each such hyphen between two letters, which findExcerpt may read or skip;
 // a break with a digit on either side is read unjoined only, so a range
 // (`2014-` `2022`) never fuses into one number.
-const bodyText = (body) => {
-  const lines = body
+const bodyLines = (body) =>
+  body
     .split(/\r?\n/)
     .map((line) =>
       line.normalize("NFKC").replace(/(?!\u00ad)\p{Default_Ignorable_Code_Point}/gu, ""),
     );
+const bodyText = (body) => {
+  const lines = bodyLines(body);
   let text = "";
   const breaks = new Set();
   let glued = false;
@@ -94,6 +96,14 @@ const bodyText = (body) => {
   }
   return { text, breaks };
 };
+
+// An api snapshot's body, or one of its records, as excerpts are matched
+// against it: bodyText without hyphen breaks, since an API line never wraps and
+// a value ending in a hyphen (`SMITH-`) must not join the next key.
+const recordText = (body) => ({
+  text: bodyLines(body).map(normalizeLine).filter(Boolean).join(" "),
+  breaks: new Set(),
+});
 
 // True when `excerpt`, normalized, is in `body` (from bodyText) on word
 // boundaries, reading each break between two letters joined or unjoined on
@@ -124,4 +134,12 @@ const findExcerpt = ({ text, breaks }, excerpt) => {
   return false;
 };
 
-module.exports = { WORD, bodyText, findExcerpt, normalizeLine, occurrences, wholeWords };
+module.exports = {
+  WORD,
+  bodyText,
+  findExcerpt,
+  normalizeLine,
+  occurrences,
+  recordText,
+  wholeWords,
+};

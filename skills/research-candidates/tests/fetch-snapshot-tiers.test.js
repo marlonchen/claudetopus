@@ -70,15 +70,15 @@ describe("source-tiers.md: the tier, owner and source come only from tiers.yaml"
     const result = await fetchVia(
       data,
       {
-        "https://county.example.gov/go": {
+        "https://news.example.com/go": {
           status: 302,
           headers: { location: "https://news.example.com/opinion/piece" },
         },
         "https://news.example.com/opinion/piece": { body: COUNTY_PAGE },
       },
-      [BALLOT, "us-house-07", "_race", "piece", "https://county.example.gov/go"],
+      [BALLOT, "us-house-07", "_race", "piece", "https://news.example.com/go"],
     );
-    assert.equal(result.status, 0);
+    assert.equal(result.status, 0, result.stdout);
     const field = Object.fromEntries(
       frontMatter(data.read(`${BALLOT}/sources/us-house-07/_race/piece.md`)),
     );
@@ -88,7 +88,7 @@ describe("source-tiers.md: the tier, owner and source come only from tiers.yaml"
     assert.equal(field.url, "https://news.example.com/opinion/piece");
   });
 
-  it("refuses a redirect to an unmatched host before contacting it", async () => {
+  it("refuses a redirect to an unmatched host before contacting it, as off-site", async () => {
     const data = repo();
     const result = await fetchVia(
       data,
@@ -100,11 +100,13 @@ describe("source-tiers.md: the tier, owner and source come only from tiers.yaml"
       },
       [BALLOT, "us-house-07", "_race", "page", "https://county.example.gov/go"],
     );
-    assert.equal(result.stdout, "us-house-07/_race domain-not-in-tiers\n");
+    assert.equal(result.stdout, "us-house-07/_race off-site-redirect\n");
     assert.deepEqual(result.seen, ["https://county.example.gov/go"]);
+    // Logged under the URL given (snapshot-format.md, Unfetchable pages), so
+    // review-list lists it; a domain refusal it would drop.
     assert.match(
       data.read(`${BALLOT}/unfetchable.md`),
-      /^- https:\/\/tracker\.example\.net\/landing \|/,
+      /^- https:\/\/county\.example\.gov\/go \| .* \| off-site redirect to tracker\.example\.net\n$/,
     );
   });
 

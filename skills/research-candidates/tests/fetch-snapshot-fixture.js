@@ -34,7 +34,7 @@ const fetchVia = async (data, routes, args, env = {}) => {
     RESEARCH_CANDIDATES_TEST_HTTP_TARGET: web.target,
     ...env,
   });
-  return { ...result, seen: web.seen };
+  return { ...result, seen: web.seen, headers: web.headers };
 };
 
 const PLAIN = [BALLOT, "us-house-07", "_race", "county-page", "https://county.example.gov/"];

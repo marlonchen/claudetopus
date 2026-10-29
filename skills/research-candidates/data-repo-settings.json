@@ -7,6 +7,7 @@
       "Edit(/**/ballot.ledger)",
       "Edit(/downloads/**)",
       "Bash(*fetch-snapshot*--ballot*)",
+      "Bash(*fetch-snapshot*--keep-short*)",
       "Bash(*ballot-check*--show*)",
       "Bash(*publish*--show*)"
     ]

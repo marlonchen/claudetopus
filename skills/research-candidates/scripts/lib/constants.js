@@ -12,8 +12,32 @@ const BALLOT_ID_PATTERN = /^[a-z]{2}-[a-z]+(-[a-z]+)*-[1-9][0-9]?$/;
 // ballot-format.md, Ids: contest, candidate and official ids. Snapshot names use it too.
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-// snapshot-format.md, Cleaning the URL: the API-key environment variables the scripts read.
-const KEY_ENV = ["OPENFEC_API_KEY", "OPENSTATES_API_KEY"];
+// snapshot-format.md, Cleaning the URL: the API-key environment variables the
+// scripts read, each with the one host its key is sent to, as a header.
+const KEY_HOSTS = {
+  "api.open.fec.gov": "OPENFEC_API_KEY",
+  "v3.openstates.org": "OPENSTATES_API_KEY",
+};
+const KEY_ENV = Object.values(KEY_HOSTS);
+// snapshot-format.md, Unfetchable pages: the path segments of a login or
+// subscribe page, and the readable text, in characters, below which an html
+// page is logged as a teaser.
+const WALL_SEGMENTS = [
+  "login",
+  "log-in",
+  "logon",
+  "signin",
+  "sign-in",
+  "auth",
+  "sso",
+  "subscribe",
+  "subscription",
+  "subscriptions",
+  "paywall",
+  "register",
+  "registration",
+];
+const SHORT_PAGE = 500;
 
 // snapshot-format.md: the _ballot snapshot roles, and the ledger that lists them.
 const ROLES = ["sample_ballot", "candidate_list", "pamphlet", "write_in_list", "withdrawal_notice"];
@@ -242,6 +266,7 @@ module.exports = {
   EXEMPTION,
   ID_PATTERN,
   KEY_ENV,
+  KEY_HOSTS,
   LEDGER,
   LEFTOVER,
   OFFICE_TYPES,
@@ -251,8 +276,10 @@ module.exports = {
   SECTION_ITEMS,
   SECTION_STATES,
   SECTIONS,
+  SHORT_PAGE,
   SOURCE_REPO_ID,
   STATUSES,
   VIEW,
+  WALL_SEGMENTS,
   WITHDRAWN_SECTIONS,
 };

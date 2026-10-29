@@ -71,8 +71,8 @@ const fromUrl = (args, values) => {
       const url = cleanUrl(page.url);
       url.search = "";
       return {
-        method: page.pdf ? "pdf" : "html",
-        text: page.pdf ? pdfText(page.pdf, WHERE) : htmlToText(page.html),
+        method: page.kind,
+        text: page.kind === "pdf" ? pdfText(page.body, WHERE) : htmlToText(page.body),
         url,
         tiers: page.tiers,
         from: "url",

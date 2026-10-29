@@ -11,6 +11,7 @@
 // ignored, so the variable can never send a page anywhere but this machine.
 
 const { domainToUnicode } = require("node:url");
+const { KEY_HOSTS } = require("./constants");
 const { combineHops, matchUrl } = require("./tiers");
 
 const MAX_HOPS = 10;
@@ -41,10 +42,25 @@ const cleanUrl = (url) => {
   return clean;
 };
 
+// The cleaned URL as written to front matter and unfetchable.md alike, with
+// whitespace and | escaped, since href keeps a | and a non-http redirect
+// target can hold raw spaces, which would forge a log field. One spelling for
+// both, so review-list can compare them.
+const recordedHref = (url) => cleanUrl(url).href.replace(/[\s|]/g, encodeURIComponent);
+
+// The API-key variable of an API host (KEY_HOSTS), or null for any other host.
+const keyEnv = (url) => (Object.hasOwn(KEY_HOSTS, url.hostname) ? KEY_HOSTS[url.hostname] : null);
+
+// An API's key goes only to its own host, over https, as a header and never in
+// the URL; any key parameter the caller gave that host is dropped.
 const request = (url, accept) => {
-  const sent = withoutFragment(url);
   const target = process.env.RESEARCH_CANDIDATES_TEST_HTTP_TARGET;
   const headers = { "user-agent": "research-candidates fetch-snapshot", accept };
+  const env = keyEnv(url);
+  const sent = env ? cleanUrl(url) : withoutFragment(url);
+  if (env && url.protocol === "https:" && process.env[env]) {
+    headers["x-api-key"] = process.env[env];
+  }
   const options = { redirect: "manual", headers, signal: AbortSignal.timeout(TIMEOUT_MS) };
   if (target && TEST_TARGET.test(target)) {
     headers["x-original-url"] = sent.href;
@@ -99,8 +115,6 @@ const decode = (bytes, contentType) => {
 // A PDF's bytes start with its header.
 const isPdf = (bytes) => Buffer.from(bytes.subarray(0, 5)).toString("latin1") === "%PDF-";
 
-const refuse = (url, code, reason) => ({ url, refused: { code, reason } });
-
 // Every spelling of a URL the privacy check reads: as given (the argument or
 // the Location header), parsed, and with its host in Unicode, since parsing
 // turns a Unicode host into punycode. Each is checked on its own, so no
@@ -118,32 +132,57 @@ const fromHeader = (value) => {
   return utf8.includes("\ufffd") ? value : utf8;
 };
 
-// Returns { url, hops, html, tiers } for a saved page (`pdf` holding the bytes
-// in place of `html` for a PDF, which only `options.pdf` accepts: one sent as
-// application/pdf, or as an octet stream whose bytes start %PDF-), or { url,
-// refused: { code, reason } } with the URL to log (the refused hop, or the
-// final URL) and the unfetchable.md reason. `hops` is every URL requested, in
-// order. The caller has privacy-checked `startUrl`; `checkPrivate(texts)`
-// throws on a private value in any of `texts`, and runs on each redirect's
-// Location before it is parsed and on every spelling once it is, so no URL is
-// requested, tier-matched or returned for logging unchecked. With
-// `options.t1`, every hop must be T1 before it is requested.
+// The kind of body a response holds, from its content type: html, pdf (which
+// only `options.pdf` accepts: one sent as application/pdf, or as an octet
+// stream, `octets`, whose bytes must start %PDF-), json (which only
+// `options.json` accepts, and only from an API host), or null.
+const kindOf = (contentType, url, options) => {
+  if (/^\s*(text\/html|application\/xhtml\+xml)\b/i.test(contentType)) return "html";
+  if (options.pdf && /^\s*application\/pdf\b/i.test(contentType)) return "pdf";
+  // County sites often send a PDF as a download; its first bytes decide.
+  if (options.pdf && /^\s*(application|binary)\/octet-stream\b/i.test(contentType)) return "octets";
+  if (options.json && keyEnv(url) && /^\s*application\/([\w.-]+\+)?json\b/i.test(contentType)) {
+    return "json";
+  }
+  return null;
+};
+
+// Returns { url, hops, kind, body, tiers } for a saved page, `kind` being
+// html or json with `body` the decoded text, or pdf with `body` the bytes
+// (kindOf), or { url, hops, refused: { code, reason } } with the URL of the
+// hop refused and the unfetchable.md reason. `url` is where the redirects
+// landed and `hops` every URL requested, in order. The caller has
+// privacy-checked `startUrl`; `checkPrivate(texts)` throws on a private value
+// in any of `texts`, and runs on each redirect's Location before it is parsed
+// and on every spelling once it is, so no URL is requested, tier-matched or
+// returned for logging unchecked. With `options.t1`, every hop must be T1
+// before it is requested.
 const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
   const matches = [];
   const hops = [];
-  const accept = options.pdf ? "text/html, application/pdf" : "text/html";
+  const refuse = (url, code, reason) => ({ url, hops, refused: { code, reason } });
+  // HTML first, so a server that negotiates never answers an article URL with
+  // JSON; only an API host is told JSON will do.
+  const accept = (url) =>
+    [
+      "text/html",
+      options.pdf && "application/pdf",
+      options.json && keyEnv(url) && "application/json;q=0.9",
+    ]
+      .filter(Boolean)
+      .join(", ");
   let url = startUrl;
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
     if (!isHttp(url)) return refuse(url, "not-http", "not http");
     matches.push(matchUrl(entries, url));
     const combined = combineHops(matches);
-    if (combined.refused) return { url, refused: combined.refused };
+    if (combined.refused) return { url, hops, refused: combined.refused };
     if (options.t1 && combined.tier !== "T1") return refuse(url, "not-t1", "not T1");
 
     let response;
     hops.push(url);
     try {
-      response = await request(url, accept);
+      response = await request(url, accept(url));
     } catch {
       return refuse(url, "network-error", "network error");
     }
@@ -166,10 +205,8 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
       return refuse(url, "http-error", `http ${response.status}`);
     }
     const contentType = response.headers.get("content-type") || "";
-    const pdf = options.pdf && /^\s*application\/pdf\b/i.test(contentType);
-    // County sites often send a PDF as a download; its first bytes decide.
-    const octets = options.pdf && /^\s*(application|binary)\/octet-stream\b/i.test(contentType);
-    if (!pdf && !octets && !/^\s*(text\/html|application\/xhtml\+xml)\b/i.test(contentType)) {
+    const kind = kindOf(contentType, url, options);
+    if (!kind) {
       await response.body?.cancel();
       return refuse(url, "not-html", "not html");
     }
@@ -181,11 +218,13 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
       return refuse(url, "network-error", "network error");
     }
     if (!bytes) return refuse(url, "too-large", "too large");
-    if (octets && !isPdf(bytes)) return refuse(url, "not-html", "not html");
-    if (pdf || octets) return { url, hops, pdf: bytes, tiers: combined };
-    return { url, hops, html: decode(bytes, contentType), tiers: combined };
+    if (kind === "octets" && !isPdf(bytes)) return refuse(url, "not-html", "not html");
+    if (kind === "pdf" || kind === "octets") {
+      return { url, hops, kind: "pdf", body: bytes, tiers: combined };
+    }
+    return { url, hops, kind, body: decode(bytes, contentType), tiers: combined };
   }
   return refuse(url, "too-many-redirects", "too many redirects");
 };
 
-module.exports = { cleanUrl, decode, fetchPage, isHttp, isPdf, spellings };
+module.exports = { cleanUrl, decode, fetchPage, isHttp, isPdf, recordedHref, spellings };

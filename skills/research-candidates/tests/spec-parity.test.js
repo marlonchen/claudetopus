@@ -2379,11 +2379,11 @@ describe("ResearcherOnlyModes", () => {
     }
     // The agents' fetch tool rejects every mode the Scripts table gives fetch-snapshot.
     const row = scriptRow("fetch-snapshot");
-    const modes = new Set([...row.matchAll(/`(?:--\w+ )?(--\w+)`/g)].map((m) => m[1]));
+    const modes = new Set([...row.matchAll(/`(?:--[\w-]+ )?(--[\w-]+)`/g)].map((m) => m[1]));
     assert.ok(modes.size >= 2, `only ${[...modes]} fetch-snapshot modes found`);
     const rejects = SNAPSHOT.match(/The fetch tool given to agents rejects ([^.]+)\./);
     assert.ok(rejects, "snapshot-format.md no longer says what the agents' fetch tool rejects");
-    const rejected = new Set([...rejects[1].matchAll(/`(--\w+)`/g)].map((m) => m[1]));
+    const rejected = new Set([...rejects[1].matchAll(/`(--[\w-]+)`/g)].map((m) => m[1]));
     // Extended for the search log (issue 01).
     // Value: protects=agents get exactly one fetch-snapshot mode, --searched, bound to their
     //   contest, and every other mode stays rejected; fails_when=a mode is both allowed and
@@ -2393,7 +2393,7 @@ describe("ResearcherOnlyModes", () => {
       /It allows only a plain fetch and ([^.]+?), both bound to the agent's own contest[.:]/,
     );
     assert.ok(allows, "snapshot-format.md no longer says what the agents' fetch tool allows");
-    const allowed = new Set([...allows[1].matchAll(/`(--\w+)`/g)].map((m) => m[1]));
+    const allowed = new Set([...allows[1].matchAll(/`(--[\w-]+)`/g)].map((m) => m[1]));
     assert.deepStrictEqual([...allowed], ["--searched"], "agents' fetch tool allows another mode");
     for (const mode of modes) {
       assert.ok(
