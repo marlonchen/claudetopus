@@ -21,7 +21,7 @@ const {
   checkContext,
   resolveTarget,
 } = require("./check");
-const { ALLEGATION_WORDS, ALWAYS_REVIEWED, ID_PATTERN } = require("./constants");
+const { ABBREVIATIONS, ALLEGATION_WORDS, ALWAYS_REVIEWED, ID_PATTERN } = require("./constants");
 const { coverArticle, readContests } = require("./coverage");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
@@ -87,18 +87,37 @@ const hasAllegation = (text) => {
 // Is the claim text, without a leading `Says:` and one pair of enclosing
 // quotes, one whole sentence of its excerpt once both are normalized, opening
 // quotes and closing punctuation aside, of at least three words
-// (review-list.md, Accepted keys)? A sentence ends in `.`, `!` or `?` and
-// starts the excerpt with a capital letter or digit, or follows another
-// sentence's end. `wholeSpan` is true for a claim citing the sample ballot,
-// whose excerpt check matched as one whole span of ballot-view.md: the whole
-// excerpt counts too, whatever its length.
+// (review-list.md, Accepted keys)? A sentence starts with a capital letter or
+// digit and ends in `.`, `!` or `?`. `wholeSpan` is true for a claim citing
+// the sample ballot, whose excerpt check matched as one whole span of
+// ballot-view.md: the whole excerpt counts too, whatever its length.
 const QUOTED = /^(["'])(.*)\1$/;
-const SENTENCE_BREAK = /(?<=[.!?]["')\]]*) /;
+// A word, its end marks and any closing quotes or brackets, then a space.
+const END = /([\p{L}\p{M}\p{Nd}]*)([.!?]+)["')\]]* /gu;
 const OPENING = /^["'([]+/;
 const ENDS = /[.!?]+["')\]]*$/;
 const OPENS = /^["'([]*[\p{Lu}\p{Nd}]/u;
 const WORDS = /[\p{L}\p{M}\p{Nd}]+/gu;
 const bare = (text) => text.replace(OPENING, "").replace(ENDS, "").trim();
+// The text's sentences, split after each end mark followed by a capital
+// letter or digit, except an ellipsis, or a period after a single letter (an
+// initial, U.S.) or an abbreviation: a tail after `Sen.` or `...` drops what
+// came before it, so it is never a sentence of its own. When unsure, it does
+// not split, which only puts a claim on the list.
+const sentences = (text) => {
+  const found = [];
+  let start = 0;
+  for (const m of text.matchAll(END)) {
+    const [all, word, marks] = m;
+    const next = m.index + all.length;
+    const abbreviated =
+      marks === "." && (/^\p{L}$/u.test(word) || ABBREVIATIONS.includes(word.toLowerCase()));
+    if (marks.includes("..") || abbreviated || !OPENS.test(text.slice(next))) continue;
+    found.push(text.slice(start, next - 1));
+    start = next;
+  }
+  return [...found, text.slice(start)];
+};
 const isVerbatim = (text, excerpt, wholeSpan = false) => {
   let claim = normalizeLine(text);
   if (claim.startsWith("Says:")) claim = claim.slice("Says:".length).trim();
@@ -109,9 +128,7 @@ const isVerbatim = (text, excerpt, wholeSpan = false) => {
   const whole = normalizeLine(excerpt);
   if (wholeSpan && bare(whole) === claim) return true;
   if ((claim.match(WORDS) ?? []).length < 3) return false;
-  return whole
-    .split(SENTENCE_BREAK)
-    .some((s, i) => ENDS.test(s) && (i > 0 || OPENS.test(s)) && bare(s) === claim);
+  return sentences(whole).some((s) => ENDS.test(s) && OPENS.test(s) && bare(s) === claim);
 };
 
 const SAYS_TAG = /^T[1-4]s$/;
@@ -125,6 +142,15 @@ const lstat = (ballotDir, rel) =>
 const checkReviewDir = (ballotDir) => {
   const dir = lstat(ballotDir, "review");
   if (dir && !dir.isDirectory()) throw new Failure("review", "review-invalid");
+};
+
+// Remove the temporary files writeOnce leaves in review/ when a crash cuts it
+// short. Under the ballot lock, any one there is a leftover.
+const TEMP = /\.tmp-[0-9a-f]{16}$/;
+const removeTemps = (ballotDir) => {
+  const dir = path.join(ballotDir, "review");
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true }))
+    if (entry.isFile() && TEMP.test(entry.name)) fs.rmSync(path.join(dir, entry.name));
 };
 
 // A file's lines and whether its last one ended in a newline, or null when it
@@ -170,20 +196,21 @@ const readAccepted = (ballotDir, id) => {
 };
 
 // The items the researcher marked [x] in review/<contest>.md, as a map from
-// key to what the item showed: { reasons, flags }, the reasons on its why line
-// and its neutrality lines. Trailing whitespace is ignored, so an editor's CRLF
-// or trailing space never drops a mark.
+// key to what the item showed: { line, reasons, flags }, its item line and the
+// reasons on its why line and its neutrality lines. Trailing whitespace is
+// ignored, so an editor's CRLF or trailing space never drops a mark.
 const ITEM = /^- \[([ xX])\] [^\n]* <!-- id:([0-9a-f]{32}) -->$/;
 const WHY = /^ {2}- why: (.+) \([^()]+\)$/;
 const NOTE = /^ {2}- neutrality: (.+)$/;
 const readMarks = (ballotDir, id) => {
   const marks = new Map();
   let item = null;
-  for (const raw of readLines(ballotDir, `review/${id}.md`, "review-invalid")?.lines ?? []) {
+  const lines = readLines(ballotDir, `review/${id}.md`, "review-invalid")?.lines ?? [];
+  for (const [i, raw] of lines.entries()) {
     const line = raw.trimEnd();
     const head = ITEM.exec(line);
     if (head) {
-      item = head[1] === " " ? null : { reasons: new Set(), flags: new Set() };
+      item = head[1] === " " ? null : { line: i + 1, reasons: new Set(), flags: new Set() };
       if (item && !marks.has(head[2])) marks.set(head[2], item);
       continue;
     }
@@ -376,20 +403,27 @@ const buildList = ({ claims, entries }, { accepted, flags, first }) => {
   ];
 };
 
-// The marks a later run counts (review-list.md, Command line): each on a
-// current claim or entry key not yet accepted, whose item showed every reason
-// and neutrality flag the key has now, so a flag or rule that came after the
-// researcher looked keeps the item open.
-const countedMarks = ({ claims, entries }, marks, { accepted, flags }) => {
+// The marks a later run reads (review-list.md, Command line), each on a
+// current claim or entry key not yet accepted, as { counted, dropped }:
+// counted, the keys whose item showed every reason and neutrality flag the key
+// has now, and dropped, the marks whose item did not, as { key, line }, so a
+// flag or rule that came after the researcher looked keeps the item open and
+// is said.
+const readCounted = ({ claims, entries }, marks, { accepted, flags }) => {
   const now = new Map(entries.map((e) => [e.key, new Set()]));
   for (const c of claims)
     now.set(c.key, new Set([...(now.get(c.key) ?? []), ...reasonsOf(c, flags, false)]));
   const saw = (key, shown) =>
     [...now.get(key)].every((r) => shown.reasons.has(r)) &&
     (flags.get(key) ?? []).every((f) => shown.flags.has(f));
-  return [...marks]
-    .filter(([key, shown]) => now.has(key) && !accepted.has(key) && saw(key, shown))
-    .map(([key]) => key);
+  const counted = [];
+  const dropped = [];
+  for (const [key, shown] of marks) {
+    if (!now.has(key) || accepted.has(key)) continue;
+    if (saw(key, shown)) counted.push(key);
+    else dropped.push({ key, line: shown.line });
+  }
+  return { counted, dropped };
 };
 
 // Every claim and unfetchable key accepted (review-list.md, Clearing it);
@@ -444,6 +478,7 @@ const writeReview = (ballotDir, id, ctx) => {
   const claimKeys = new Set(loaded.claims.map((c) => c.key));
 
   let marks = [];
+  let dropped = [];
   if (first) {
     // The baseline waits for a pass that read exactly the current claims.
     if (!neutrality) throw new Failure(neutralityRel, "neutrality-missing");
@@ -451,7 +486,10 @@ const writeReview = (ballotDir, id, ctx) => {
     if (reviewed.size !== claimKeys.size || ![...claimKeys].every((k) => reviewed.has(k)))
       throw new Failure(`${neutralityRel}:1`, "neutrality-stale");
   } else {
-    marks = countedMarks(loaded, readMarks(ballotDir, id), { accepted: before, flags });
+    ({ counted: marks, dropped } = readCounted(loaded, readMarks(ballotDir, id), {
+      accepted: before,
+      flags,
+    }));
     // Every key still not accepted once the marks count was read by the pass.
     const counted = new Set([...before, ...marks]);
     if ([...claimKeys].some((k) => !counted.has(k) && !neutrality?.reviewed.has(k)))
@@ -461,8 +499,9 @@ const writeReview = (ballotDir, id, ctx) => {
   }
   const accepted = new Set([...before, ...marks]);
   const list = buildList(loaded, { accepted, flags, first });
-  const lines = [];
+  const lines = dropped.map(({ key, line }) => `${reviewRel}:${line} mark-not-counted ${key}`);
   fs.mkdirSync(path.join(ballotDir, "review"), { recursive: true });
+  removeTemps(ballotDir);
   if (first) {
     const onList = new Set(list.map((item) => item.key));
     const baseline = [...claimKeys].filter((k) => !onList.has(k));
@@ -553,28 +592,43 @@ const refusedHosts = (ballotDir, id) => {
   return lines.length ? lines : [`${id} no-refused-hosts`];
 };
 
-// Is the contest ready (review-list.md, Clearing it)? publish's contest gate
-// calls this holding the ballot lock. Returns { ready, reasons }, reasons
-// being the codes that keep it from being ready: not-reviewed (no baseline),
-// review-missing (a baseline with no review file), unaccepted, or the code of
-// any failure that stopped the check (unknown-contest, file-missing,
-// check-failed, coverage-failed, review-invalid, unfetchable-invalid,
-// yaml-invalid, ballot-invalid, deps-missing). It never throws a Failure.
-const ready = (ballotDir, id) => {
-  try {
-    const ctx = runContext(ballotDir, { entries: true });
-    const loaded = loadContest(ballotDir, id, ctx);
-    checkReviewDir(ballotDir);
-    const { first, keys } = readAccepted(ballotDir, id);
-    const reasons = [];
-    if (first) reasons.push("not-reviewed");
-    else if (!lstat(ballotDir, `review/${id}.md`)?.isFile()) reasons.push("review-missing");
-    if (!allAccepted(loaded, keys)) reasons.push("unaccepted");
-    return { ready: reasons.length === 0, reasons };
-  } catch (error) {
+// Is each contest ready (review-list.md, Clearing it)? publish's contest gate
+// calls this once, for every contest, holding the ballot lock, so the ballot
+// is read and its manifest verified once. Returns a map from contest id to
+// { ready, reasons }, reasons being the codes that keep it from being ready:
+// not-reviewed (no baseline), review-missing (a baseline with no review
+// file), unaccepted, or the code of any failure that stopped the check
+// (unknown-contest, file-missing, check-failed, coverage-failed,
+// review-invalid, unfetchable-invalid, yaml-invalid, ballot-invalid,
+// deps-missing); a failure of the whole run is every contest's. It never
+// throws a Failure.
+const ready = (ballotDir, contests) => {
+  const refused = (error) => {
     if (error instanceof Failure) return { ready: false, reasons: [error.code] };
     throw error;
+  };
+  let ctx;
+  try {
+    ctx = runContext(ballotDir, { entries: true });
+  } catch (error) {
+    return new Map(contests.map((id) => [id, refused(error)]));
   }
+  const answers = new Map();
+  for (const id of contests) {
+    try {
+      const loaded = loadContest(ballotDir, id, ctx);
+      checkReviewDir(ballotDir);
+      const { first, keys } = readAccepted(ballotDir, id);
+      const reasons = [];
+      if (first) reasons.push("not-reviewed");
+      else if (!lstat(ballotDir, `review/${id}.md`)?.isFile()) reasons.push("review-missing");
+      if (!allAccepted(loaded, keys)) reasons.push("unaccepted");
+      answers.set(id, { ready: reasons.length === 0, reasons });
+    } catch (error) {
+      answers.set(id, refused(error));
+    }
+  }
+  return answers;
 };
 
 const MODES = ["--keys", "--refused-hosts"];

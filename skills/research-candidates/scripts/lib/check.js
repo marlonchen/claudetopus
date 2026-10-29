@@ -163,6 +163,10 @@ const holdsTitle = (text, titles) => {
 const citable = (rel, contest) =>
   rel.startsWith(`sources/${contest}/`) || rel.startsWith("sources/_ballot/");
 
+// A bidi control reorders what a reader sees, and normalizing drops it, so a
+// review key would not change with it (review-list.md, Item keys).
+const BIDI = /\p{Bidi_Control}/u;
+
 // The failures of one claim of `contest`, located `at` (its claim line), in
 // report order. A claim whose link does not resolve, or names another
 // contest's snapshot, still gets every check that does not need its snapshot.
@@ -170,7 +174,8 @@ const claimFailures = (claim, at, contest, { view, titles, readSnapshot }) => {
   const resolved = resolveTarget(claim.target);
   const rel = resolved && citable(resolved, contest) ? resolved : null;
   const snapshot = rel && readSnapshot(rel);
-  const failures = snapshot ? [] : [new Failure(at, "claim-format")];
+  const reordered = [claim.text, claim.excerpt].some((t) => BIDI.test(t));
+  const failures = snapshot && !reordered ? [] : [new Failure(at, "claim-format")];
   if (hasCommentMarker([claim.text, claim.excerpt]))
     failures.push(new Failure(at, "comment-marker"));
   if (holdsTitle(claim.text, titles)) failures.push(new Failure(at, "title-in-claim"));

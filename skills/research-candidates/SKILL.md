@@ -101,7 +101,7 @@ Trigger: "research `<contest>`". Work top of ballot first.
 
 ### 5. Review
 
-The researcher clears `review/<contest>.md` by marking items `[x]`. A changed claim is edited in the article, then steps 4.4-4.5 are rerun; it comes back as a new unchecked item. A contest is `ready` as defined in [review-list.md](references/review-list.md). After marking, run `review-list` so the marked keys are appended to `.accepted`; then the researcher commits `review/`, `tiers.yaml`, `snapshots.sha256` and `search-log/` in the data repo. The model never commits.
+The researcher clears `review/<contest>.md` by marking items `[x]`. After marking, run `review-list` so the marked keys are appended to `.accepted`, before any claim is edited: rerunning the neutrality pass first can word a flag differently, and a mark whose item no longer shows every flag is not counted (`review-list` prints `mark-not-counted` for it). A changed claim is edited in the article, then steps 4.4-4.5 are rerun; it comes back as a new unchecked item. A contest is `ready` as defined in [review-list.md](references/review-list.md). Once the marks are counted, the researcher commits `review/`, `tiers.yaml`, `snapshots.sha256` and `search-log/` in the data repo. The model never commits.
 
 ### 6. Publish
 

@@ -25,7 +25,7 @@ const { Failure, runCommand } = require("./output");
 const { URL_CLASSES, findRefusal } = require("./privacy");
 const searched = require("./search-log").main;
 const { snapshotText, today } = require("./snapshot-file");
-const { save, withLock } = require("./snapshot-store");
+const { appendLine, save, withLock } = require("./snapshot-store");
 
 const parseArgs = (argv) => {
   if (argv.length !== 5 || argv.some((arg) => arg.startsWith("--"))) {
@@ -63,7 +63,13 @@ const logUnfetchable = (ballotDir, url, where, reason) => {
   const href = cleanUrl(url).href.replace(/[\s|]/g, encodeURIComponent);
   const line = `- ${href} | ${where} | ${today()} | ${reason}\n`;
   // Under the ballot lock, so review-list never reads a half-written line.
-  withLock(ballotDir, () => fs.appendFileSync(path.join(ballotDir, "unfetchable.md"), line));
+  withLock(ballotDir, () => {
+    const file = path.join(ballotDir, "unfetchable.md");
+    // After a line a crash cut short, start a new one: the torn line stays
+    // for review-list to locate, and this entry is whole.
+    const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+    appendLine(file, text === "" || text.endsWith("\n") ? line : `\n${line}`);
+  });
 };
 
 const MODES = { "--ballot": ballotImport, "--searched": searched };

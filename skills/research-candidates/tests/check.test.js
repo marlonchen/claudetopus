@@ -457,6 +457,24 @@ describe("check: comment markers", () => {
       "articles/us-house-07.md:30 comment-marker",
     ]);
   });
+
+  it("fails a bidi control in a claim or excerpt, which reorders what is shown but not its key", async () => {
+    const data = setup();
+    withClaims(data, [
+      ["T2", "Served two terms on the ‮draob‬", "bio", BOARD],
+      ["T2", "Served two terms", "bio", `She served two ⁧terms⁩ on the Exampleton school board`],
+      ["T2", "Served two terms‏", "bio", BOARD],
+      ["T2", "Served two terms؜", "bio", BOARD],
+      // A zero-width space reorders nothing.
+      ["T2", "Served two​ terms", "bio", BOARD],
+    ]);
+    await failsWith(data, [
+      "articles/us-house-07.md:18 claim-format",
+      "articles/us-house-07.md:21 claim-format",
+      "articles/us-house-07.md:24 claim-format",
+      "articles/us-house-07.md:27 claim-format",
+    ]);
+  });
 });
 
 describe("check: printed titles in claims and excerpts", () => {

@@ -30,6 +30,20 @@ describe("source-tiers.md: the tier, owner and source come only from tiers.yaml"
     assert.ok(!data.exists(`${BALLOT}/sources`));
   });
 
+  it("starts its entry on a new line after a line a crash cut short", async () => {
+    const data = repo();
+    const torn = "- https://news.example.com/a | us-house-07/_race | 2026-10-20 | http 4";
+    data.write(`${BALLOT}/unfetchable.md`, torn);
+    const url = "https://evilcounty.example.gov/page";
+    const result = await fetchVia(data, {}, [BALLOT, "us-house-07", "_race", "page", url]);
+    assert.equal(result.status, 1);
+    // The torn line stays, for review-list to locate; the new entry is whole.
+    assert.match(
+      data.read(`${BALLOT}/unfetchable.md`),
+      /^- https:\/\/news\.example\.com\/a \| us-house-07\/_race \| 2026-10-20 \| http 4\n- https:\/\/evilcounty\.example\.gov\/page \| us-house-07\/_race \| \d{4}-\d{2}-\d{2} \| domain not in tiers\.yaml\n$/,
+    );
+  });
+
   it("matches a path prefix only on a segment boundary, and the longest match wins", async () => {
     const data = repo();
     const routes = {

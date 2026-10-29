@@ -26,6 +26,7 @@ const {
   addRetention,
   afterFirstRun,
   claim,
+  itemLine,
   itemsOf,
   keyList,
   keysOf,
@@ -50,6 +51,9 @@ const {
 afterEach(() => {
   while (repos.length) repos.pop().cleanup();
 });
+
+// ready() for one contest.
+const readyOne = (ballotDir, contest = "us-house-07") => ready(ballotDir, [contest]).get(contest);
 
 describe("review-list --keys", () => {
   it("prints each claim's location, whether it is accepted and a 128-bit key, writing nothing", async () => {
@@ -207,10 +211,16 @@ describe("review-list: marks", () => {
   it("keeps an item open when a neutrality flag came after the researcher marked it", async () => {
     const { data, keys } = await afterFirstRun();
     mark(data, keys.misfiled);
+    const at = itemLine(data, keys.misfiled);
     // The pass runs again before review-list and now flags the marked item.
     await readUnaccepted(data, [[keys.misfiled, "a vote described as a stance"]]);
     let result = await reviewList(data);
     assert.strictEqual(result.status, 0, result.stdout);
+    // Said, so the researcher knows the mark was dropped.
+    assert.strictEqual(
+      result.stdout,
+      `${R}.md:${at} mark-not-counted ${keys.misfiled}\n${R}.md written\narticles/us-house-07.md not-ready\n`,
+    );
     assert.deepStrictEqual(keyList(data), []);
     assert.deepStrictEqual(itemsOf(data)[keys.misfiled], {
       checked: false,
@@ -232,7 +242,12 @@ describe("review-list: marks", () => {
       rel,
       data.read(rel).replace(/- why: allegation-word, not-verbatim \(/, "- why: not-verbatim ("),
     );
-    await reviewList(data);
+    const at = itemLine(data, keys.alleged);
+    const result = await reviewList(data);
+    assert.match(
+      result.stdout,
+      new RegExp(`^${R}\\.md:${at} mark-not-counted ${keys.alleged}$`, "m"),
+    );
     assert.deepStrictEqual(keyList(data), []);
     assert.deepStrictEqual(itemsOf(data)[keys.alleged], {
       checked: false,
@@ -253,6 +268,20 @@ describe("review-list: marks", () => {
     result = await reviewList(data);
     assert.strictEqual(result.status, 0, result.stdout);
     assert.strictEqual(data.read(rel), `${keys.always}\n${keys.misfiled}\n`);
+  });
+
+  it("removes a temporary baseline a crash left in review/", async () => {
+    const data = setup();
+    const leftover = `${BALLOT}/${R}.baseline.tmp-0011223344556677`;
+    data.write(leftover, "9f2c41ab");
+    neutrality(
+      data,
+      Object.values(await keysOf(data)).map((k) => k.key),
+    );
+    const result = await reviewList(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.ok(!data.exists(leftover));
+    assert.ok(data.exists(`${BALLOT}/${R}.baseline`));
   });
 
   it("rebuilds a missing review file from the baseline and .accepted, never as a first run", async () => {
@@ -306,7 +335,7 @@ describe("review-list: marks", () => {
   it("reports the contest ready once every claim and unfetchable key is accepted", async () => {
     const { data, keys } = await afterFirstRun();
     const ballotDir = data.ballotDir;
-    assert.deepStrictEqual(ready(ballotDir, "us-house-07"), {
+    assert.deepStrictEqual(readyOne(ballotDir), {
       ready: false,
       reasons: ["unaccepted"],
     });
@@ -317,13 +346,13 @@ describe("review-list: marks", () => {
     let result = await reviewList(data);
     assert.strictEqual(result.stdout, `${R}.md written\narticles/us-house-07.md ready\n`);
     assert.ok(keyList(data).includes(PAYWALLED));
-    assert.deepStrictEqual(ready(ballotDir, "us-house-07"), { ready: true, reasons: [] });
+    assert.deepStrictEqual(readyOne(ballotDir), { ready: true, reasons: [] });
     // With every key accepted, the neutrality file is no longer needed.
     fs.rmSync(data.file(`${BALLOT}/${R}.neutrality.md`));
     result = await reviewList(data);
     assert.strictEqual(result.stdout, `${R}.md written\narticles/us-house-07.md ready\n`);
     fs.rmSync(data.file(`${BALLOT}/${R}.md`));
-    assert.deepStrictEqual(ready(ballotDir, "us-house-07"), {
+    assert.deepStrictEqual(readyOne(ballotDir), {
       ready: false,
       reasons: ["review-missing"],
     });
@@ -588,7 +617,7 @@ describe("review-list: refusals", () => {
 describe("review-list: ready", () => {
   it("returns every refusal as a reason, never throwing one", async () => {
     let data = setup();
-    const reasonsOf = (contest = "us-house-07") => ready(data.ballotDir, contest).reasons;
+    const reasonsOf = (contest = "us-house-07") => readyOne(data.ballotDir, contest).reasons;
     assert.deepStrictEqual(reasonsOf(), ["not-reviewed", "unaccepted"]);
     assert.deepStrictEqual(reasonsOf("us-house-08"), ["unknown-contest"]);
     assert.deepStrictEqual(reasonsOf("supreme-court-retention-a"), ["file-missing"]);
@@ -600,6 +629,26 @@ describe("review-list: ready", () => {
     assert.deepStrictEqual(reasonsOf(), ["check-failed"]);
     data = setup({ article: ARTICLE.replace("### D. Money\n", "") });
     assert.deepStrictEqual(reasonsOf(), ["coverage-failed"]);
+  });
+
+  it("answers for every contest given from one read of the ballot", async () => {
+    let data = setup();
+    assert.deepStrictEqual(
+      ready(data.ballotDir, ["us-house-07", "us-house-08", "us-house-07"]),
+      new Map([
+        ["us-house-07", { ready: false, reasons: ["not-reviewed", "unaccepted"] }],
+        ["us-house-08", { ready: false, reasons: ["unknown-contest"] }],
+      ]),
+    );
+    // A failure of the whole run is every contest's reason.
+    data = setup({ unfetchable: "- not an entry\n" });
+    assert.deepStrictEqual(
+      ready(data.ballotDir, ["us-house-07", "supreme-court-retention-a"]),
+      new Map([
+        ["us-house-07", { ready: false, reasons: ["unfetchable-invalid"] }],
+        ["supreme-court-retention-a", { ready: false, reasons: ["unfetchable-invalid"] }],
+      ]),
+    );
   });
 });
 
@@ -746,6 +795,10 @@ describe("review-list: keys, verbatim claims and allegation words", () => {
       ["She left the board", "She served two terms. She left the board!"],
       ["Says: “We will lower taxes now”", "“We will lower taxes now.”"],
       ["Says: 'We will lower taxes now.'", "We will lower taxes now. Then we will go."],
+      // A period after a title or an initial ends no sentence.
+      ["Sen. Jones voted against the bill", "Sen. Jones voted against the bill."],
+      ["She moved to the U.S. in 2004", "Born abroad. She moved to the U.S. in 2004."],
+      ["She won in 2020", "She ran in 2016 and lost in 2018. She won in 2020."],
     ];
     for (const [text, excerpt] of yes) assert.strictEqual(isVerbatim(text, excerpt), true, text);
     const no = [
@@ -759,6 +812,29 @@ describe("review-list: keys, verbatim claims and allegation words", () => {
       ["She left", "She left."],
       ["Served two terms", "She served two terms."],
       ['Says: ""', "anything at all here."],
+      // The tail after a title, an initial or an ellipsis drops what came before it.
+      [
+        "Jones voted to cut school funding.",
+        "It is false that Sen. Jones voted to cut school funding.",
+      ],
+      ["Smith supports the bill fully.", "Nobody thinks Mr. Smith supports the bill fully."],
+      ["Doe backed the plan in 2020.", "Critics falsely say J. Doe backed the plan in 2020."],
+      [
+        "Says: We should raise taxes on families.",
+        "I never said... We should raise taxes on families.",
+      ],
+      [
+        "Says: We should raise taxes on families.",
+        "I never said… We should raise taxes on families.",
+      ],
+      // A sentence starts with a capital letter or digit.
+      ["Says: raise the minimum wage now.", "I oppose any plan to. raise the minimum wage now."],
+      [
+        "Says: we should raise taxes on families.",
+        "I never said. we should raise taxes on families.",
+      ],
+      // Nor does a period before a lowercase word end the sentence before it.
+      ["Says: We will win this seat.", "We will win this seat. or so the mailer claims."],
     ];
     for (const [text, excerpt] of no) assert.strictEqual(isVerbatim(text, excerpt), false, text);
     // A sample-ballot claim may be its whole span, however short.
@@ -785,6 +861,14 @@ describe("review-list: keys, verbatim claims and allegation words", () => {
       "violates the rule",
       "the al-legations",
       "an investi-gation",
+      "a misdemeanor",
+      "two misdemeanors",
+      "sentenced to probation",
+      "was jailed",
+      "a night in jail",
+      "a year in prison",
+      "was acquitted",
+      "the acquittal",
     ]) {
       assert.strictEqual(hasAllegation(text), true, text);
     }

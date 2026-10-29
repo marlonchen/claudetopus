@@ -363,6 +363,13 @@ const mark = (data, ...keys) => {
   data.write(rel, text);
 };
 
+// The review file line of the item with `key`, counted from 1.
+const itemLine = (data, key) =>
+  data
+    .read(`${BALLOT}/${R}.md`)
+    .split("\n")
+    .findIndex((line) => line.endsWith(` <!-- id:${key} -->`)) + 1;
+
 // A retention article for supreme-court-retention-a: Discipline is always reviewed.
 const PAT_NEWS = "sources/supreme-court-retention-a/pat-example/news.md";
 const retentionArticle = (excerpt = "The state commission reprimanded Pat Example in 2019.") =>
@@ -411,6 +418,7 @@ module.exports = {
   addRetention,
   afterFirstRun,
   claim,
+  itemLine,
   itemsOf,
   keyList,
   keysOf,

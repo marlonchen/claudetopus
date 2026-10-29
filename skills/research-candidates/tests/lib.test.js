@@ -274,6 +274,14 @@ describe("constants match the reference text they come from", () => {
       words.map((m) => m[1]),
       constants.ALLEGATION_WORDS,
     );
+    const abbreviations = read("references/review-list.md").match(
+      /one of these abbreviations, case folded: ([^.]+)\./,
+    );
+    assert.ok(abbreviations, "review-list.md no longer lists the abbreviations");
+    assert.deepEqual(
+      [...abbreviations[1].matchAll(/`([a-z]+)`/g)].map((m) => m[1]),
+      constants.ABBREVIATIONS,
+    );
   });
   it("the API key variables are the ones snapshot-format.md names", () => {
     const named = read("references/snapshot-format.md").match(
