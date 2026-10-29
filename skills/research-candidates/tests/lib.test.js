@@ -521,6 +521,23 @@ describe("snapshot-format.md, Manifest: the ballot lock", () => {
     }
   });
 
+  it("keeps a long run's lock fresh, and fails once another run has broken it", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-lock-"));
+    try {
+      const lock = path.join(dir, ".lock", "held");
+      withLock(dir, (refresh) => {
+        const old = new Date(Date.now() - 3600 * 1000);
+        fs.utimesSync(lock, old, old);
+        refresh();
+        assert.ok(Date.now() - fs.statSync(lock).mtimeMs < 60 * 1000);
+        fs.writeFileSync(lock, "1 another-owner\n");
+        assert.throws(refresh, ballotLocked);
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("takes over a stale lock whose break lock has an mtime in the future", () => {
     const dir = lockedBallot({ held: ["1 x\n", 3600 * 1000], break: ["2 y\n", -3600 * 1000] });
     try {

@@ -324,7 +324,7 @@ const raceHtml = (raw, contest, answer, next, page) => {
     backLink,
     `<h1>${esc(titleOf(raw))}</h1>`,
   ];
-  const meta = `<div class="meta">Updated ${esc(page.updated)} · Not affiliated with any campaign or party · <a href="#ballot">About this guide ${glyph("↑")}</a></div>`;
+  const meta = `<div class="meta">Updated ${esc(page.updated)} · Not affiliated with any campaign or party · <a class="link" href="#ballot">About this guide ${glyph("↑")}</a></div>`;
   const voteFor =
     raw.type === "candidate" && raw.vote_for > 1
       ? `<div class="meta">Vote for ${esc(raw.vote_for)}</div>`

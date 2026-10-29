@@ -685,6 +685,19 @@ describe("review-list: ready", () => {
   });
 });
 
+describe("review-list: ready, for publish", () => {
+  it("judges against the contests its caller read, not a second read of the ballot", () => {
+    const data = setup();
+    assert.deepStrictEqual(
+      [...ready(data.ballotDir, ["us-house-07"], { contests: new Map() })].map(([id, a]) => [
+        id,
+        a.reasons,
+      ]),
+      [["us-house-07", ["unknown-contest"]]],
+    );
+  });
+});
+
 describe("review-list --refused-hosts", () => {
   it("prints the current run's distinct, IDNA-normalized LDH hosts, and counts the rest", async () => {
     const data = setup({

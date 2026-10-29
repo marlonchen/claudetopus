@@ -7,6 +7,7 @@ const { afterEach, describe, it } = require("node:test");
 const { BALLOT } = require("./harness");
 const {
   NOT_RESEARCHED,
+  SAMPLE_TEXT,
   addContest,
   ballotClaim,
   block,
@@ -149,6 +150,12 @@ describe("publish: ballot screen", () => {
     ]);
   });
 
+  it("makes every link one of the classes its 44px tap target is set on", async () => {
+    const doc = await published(await setup());
+    const bare = all(doc, "a").filter((a) => !/\b(link|chip|row)\b/.test(a.className));
+    assert.deepStrictEqual(bare.map(text), []);
+  });
+
   it("never shows the printed title of a contest with a display_title", async () => {
     const data = await setup();
     await published(data);
@@ -236,6 +243,18 @@ describe("publish: candidate race", () => {
     assert.strictEqual(note.querySelector("a").getAttribute("href"), "https://county.example.gov/");
     assert.doesNotMatch(data.read(SITE), /precinct-12/);
   });
+
+  it("keeps a sample-ballot origin's port and gives an IDN host in its ASCII form", async () => {
+    const data = await setup({
+      sample: SAMPLE_TEXT.replace(
+        "https://county.example.gov/",
+        "https://bücher.example.gov:8443/",
+      ),
+    });
+    const race = (await published(data)).getElementById("us-house-07");
+    const href = race.querySelector("details.src .note a").getAttribute("href");
+    assert.strictEqual(href, "https://xn--bcher-kva.example.gov:8443/");
+  });
 });
 
 // Jane's Money section, one claim per receipt case (SKILL.md step 6.2).
@@ -304,6 +323,49 @@ const RECEIPTS = {
       body: 'Jane Example wrote <img src=x onerror="alert(1)"> on her site.',
     }),
     excerpt: 'Jane Example wrote <img src=x onerror="alert(1)"> on her site.',
+  },
+  // Links no receipt may carry: another scheme, a userinfo, a public_url query.
+  script: {
+    rel: `${MONEY}/script.md`,
+    text: snapshot({
+      subject: "jane-example",
+      url: "https://news.example.com/script",
+      extra: "public_url: javascript:alert(1)\n",
+      body: "Jane Example thanked the volunteers who knocked on doors.",
+    }),
+    excerpt: "Jane Example thanked the volunteers who knocked on doors.",
+  },
+  dataUrl: {
+    rel: `${MONEY}/data-url.md`,
+    text: snapshot({
+      subject: "jane-example",
+      url: "data:text/html,hello",
+      body: "Jane Example paid her staff on the first of each month.",
+    }),
+    excerpt: "Jane Example paid her staff on the first of each month.",
+  },
+  userinfo: {
+    rel: `${MONEY}/userinfo.md`,
+    text: snapshot({
+      subject: "jane-example",
+      url: "https://user:secret@news.example.com/userinfo",
+      body: "Jane Example rented a small office downtown.",
+    }),
+    excerpt: "Jane Example rented a small office downtown.",
+  },
+  publicQuery: {
+    rel: `${MONEY}/public-query.md`,
+    text: snapshot({
+      subject: "jane-example",
+      source: "FEC filings",
+      url: "https://api.open.fec.gov/v1/filings/",
+      tier: "T1",
+      method: "api",
+      extra: "public_url: https://www.fec.gov/data/filings/?committee_id=C1\n",
+      body: "results.0.note: Jane Example amended one report.",
+    }),
+    excerpt: "Jane Example amended one report.",
+    tag: "T1",
   },
   long: {
     rel: `${MONEY}/long.md`,
@@ -382,6 +444,17 @@ describe("publish: receipts", () => {
       ],
     ]);
     assert.doesNotMatch(data.read(SITE), /id=7|#money"|#totals/);
+    for (const start of [
+      "Jane Example thanked",
+      "Jane Example paid",
+      "Jane Example rented",
+      "Jane Example amended",
+    ]) {
+      const refused = receiptOf(doc, start);
+      assert.match(refused.line, /from this source; its address can't be shared\.$/, start);
+      assert.deepStrictEqual(refused.links, [], start);
+    }
+    assert.doesNotMatch(data.read(SITE), /javascript:|data:text|secret|committee_id/);
   });
 
   it("escapes every value it shows, so source text never becomes markup", async () => {

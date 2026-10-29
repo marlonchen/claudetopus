@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { ballotGate } = require("./ballot-gate");
 const { ID_PATTERN, LEDGER } = require("./constants");
-const { readContests } = require("./coverage");
+const { contestsOf } = require("./coverage");
 const { readYamlDocument } = require("./data-files");
 const { SKILL_DIR, load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
@@ -20,7 +20,7 @@ const { FONT_FACES, renderPage } = require("./page");
 const { ready } = require("./review-list");
 const { isSnapshotPath } = require("./snapshot-hash");
 const { today } = require("./snapshot-file");
-const { withLock } = require("./snapshot-store");
+const { withLock, writeSynced } = require("./snapshot-store");
 
 const SITE = "site/index.html";
 
@@ -79,33 +79,44 @@ const hasWriteInList = (ballotDir) => {
   });
 };
 
-// Write the page through a temporary file, so a reader never sees half of it.
-const writeSite = (ballotDir, html) => {
+// site/, or site-invalid when something other than a directory is there.
+const siteDir = (ballotDir) => {
   const dir = path.join(ballotDir, "site");
   const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
   if (stat && !stat.isDirectory()) throw new Failure("site", "site-invalid");
+  return dir;
+};
+
+// Write the page through a synced temporary file, so a reader never sees
+// half of it, even after a power loss.
+const writeSite = (ballotDir, html) => {
+  const dir = siteDir(ballotDir);
   fs.mkdirSync(dir, { recursive: true });
   // A write a crash cut short is never left beside the page.
   for (const name of fs.readdirSync(dir))
     if (name.startsWith("index.html.tmp-")) fs.rmSync(path.join(dir, name), { force: true });
   const file = path.join(ballotDir, SITE);
   const tmp = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, html);
+  writeSynced(tmp, html, "w");
   fs.renameSync(tmp, file);
 };
 
 // The gates, then the page: refuses with Failures, or returns the contest
-// lines and `site/index.html written`.
-const publish = (root, ballot, ballotDir) => {
+// lines and `site/index.html written`. `refresh` keeps the ballot lock fresh.
+const publish = (root, ballot, ballotDir, refresh) => {
+  // A page from an earlier run never outlives a refused one.
+  fs.rmSync(path.join(siteDir(ballotDir), "index.html"), { force: true });
   // Loaded first, so a missing install is one deps-missing.
   load("yaml");
   const displayName = readDisplayName(root);
-  ballotGate(root, ballot, ballotDir);
+  ballotGate(root, ballot, ballotDir, refresh);
+  // Read once: the page shows the contests ready judged.
   const data = readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS();
-  const contests = readContests(ballotDir);
+  const contests = contestsOf(data);
   const ids = data.contests.map((c) => c.id).filter((id) => ID_PATTERN.test(id));
   // Once, for every contest, under the ballot lock (review-list.md).
-  const answers = ready(ballotDir, ids);
+  const answers = ready(ballotDir, ids, { contests, manifestVerified: true });
+  refresh();
   const lines = ids.map((id) => {
     const { ready: isReady, reasons } = answers.get(id);
     return isReady ? `articles/${id}.md ready` : `articles/${id}.md not-ready ${reasons.join(",")}`;
@@ -127,6 +138,8 @@ const publish = (root, ballot, ballotDir) => {
       data: fs.readFileSync(path.join(SKILL_DIR, "fonts", f.file)),
     })),
   });
+  // Only while the lock is still this run's.
+  refresh();
   writeSite(ballotDir, html);
   return [...lines, `${SITE} written`];
 };
@@ -137,7 +150,7 @@ const main = (argv) =>
     const root = process.cwd();
     const ballotDir = openBallot(root, ballot);
     // Under the ballot lock, so a save or log line written now is never half seen.
-    return withLock(ballotDir, () => publish(root, ballot, ballotDir));
+    return withLock(ballotDir, (refresh) => publish(root, ballot, ballotDir, refresh));
   });
 
 module.exports = { main };

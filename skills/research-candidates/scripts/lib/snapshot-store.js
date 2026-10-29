@@ -114,6 +114,8 @@ const removeLeftoverTemps = (lockDir) => {
 };
 
 // Run `body` holding the ballot's lock, or fail with ballot-locked after `waitMs`.
+// A long body calls the `refresh` it is given between its steps, so no
+// waiting run judges the lock stale; it fails ballot-locked if one broke it.
 const withLock = (ballotDir, body, waitMs = LOCK_WAIT_MS) => {
   const lockDir = path.join(ballotDir, ".lock");
   fs.mkdirSync(lockDir, { recursive: true });
@@ -129,9 +131,14 @@ const withLock = (ballotDir, body, waitMs = LOCK_WAIT_MS) => {
     if (Date.now() > deadline) throw new Failure(".lock", "ballot-locked");
     sleep(50);
   }
+  const refresh = () => {
+    if (readLock(lock)?.text !== text) throw new Failure(".lock", "ballot-locked");
+    const now = new Date();
+    fs.utimesSync(lock, now, now);
+  };
   try {
     removeLeftoverTemps(lockDir);
-    return body();
+    return body(refresh);
   } finally {
     if (readLock(lock)?.text === text) fs.rmSync(lock, { force: true });
   }
@@ -281,4 +288,5 @@ module.exports = {
   sha256,
   withLock,
   writeOnce,
+  writeSynced,
 };
