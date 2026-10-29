@@ -7,14 +7,17 @@
 // judges structure (which blocks and sections, in which order, in which
 // states): that is coverage's, from what this returns.
 //
-// Returns { title, titles, blocks, claims, strays, failures }: titles, every
-// `#` heading as { text, line }, and title, the first or null; blocks [{ name, line, sections: [{ name, line, states, claims, issues:
-// [{ name, line, states, claims }] }] }]; claims [{ line, text, tag, label,
-// target, excerpt, excerptLine, block, section, issue }], each also under its
-// section or issue; strays, the lines of each heading, state or claim with no
-// block or section to sit in (a `###` before any `##`, a `####` or a state or
-// claim before a block's first `###`), so nothing the tree leaves out is lost;
-// failures [{ line, code }], in line order.
+// Returns { title, titles, blocks, claims, rejected, strays, failures }:
+// titles, every `#` heading as { text, line }, and title, the first or null;
+// blocks [{ name, line, sections: [{ name, line, states, claims, rejected,
+// issues: [{ name, line, states, claims, rejected }] }] }]; claims [{ line,
+// text, tag, label, target, excerpt, excerptLine, block, section, issue }],
+// each also under its section or issue; rejected, each claim line failed as
+// claim-format, as { line, target }, also under its section or issue, so it
+// still counts as a claim there; strays, the lines of each heading, state or
+// claim with no block or section to sit in (a `###` before any `##`, a `####`
+// or a state or claim before a block's first `###`), so nothing the tree
+// leaves out is lost; failures [{ line, code }], in line order.
 
 const { SECTION_STATES } = require("./constants");
 
@@ -37,6 +40,7 @@ const parseArticle = (text) => {
   const titles = [];
   const blocks = [];
   const claims = [];
+  const rejected = [];
   const strays = [];
   const failures = [];
   let block = null;
@@ -45,6 +49,12 @@ const parseArticle = (text) => {
   // The claim whose excerpt must be the next line, and whether it was.
   let pending = null;
   const fail = (line) => failures.push({ line, code: "claim-format" });
+  const reject = (claim) => {
+    fail(claim.line);
+    const entry = { line: claim.line, target: claim.target };
+    rejected.push(entry);
+    (claim.issue ?? claim.section)?.rejected.push(entry);
+  };
 
   for (const [i, raw] of lines.entries()) {
     const n = i + 1;
@@ -54,7 +64,7 @@ const parseArticle = (text) => {
       const claim = pending;
       pending = null;
       if (excerpt && claim.malformed) {
-        fail(claim.line);
+        reject(claim);
         continue;
       }
       if (excerpt) {
@@ -64,7 +74,7 @@ const parseArticle = (text) => {
         (claim.issue ?? claim.section)?.claims.push(claim);
         continue;
       }
-      fail(claim.line);
+      reject(claim);
     }
     if (line === "") continue;
     const heading = HEADING.exec(line);
@@ -79,13 +89,13 @@ const parseArticle = (text) => {
         issue = null;
       }
       if (level === 3) {
-        section = { name, line: n, states: [], claims: [], issues: [] };
+        section = { name, line: n, states: [], claims: [], rejected: [], issues: [] };
         if (block) block.sections.push(section);
         else strays.push(n);
         issue = null;
       }
       if (level === 4) {
-        issue = { name, line: n, states: [], claims: [] };
+        issue = { name, line: n, states: [], claims: [], rejected: [] };
         if (section) section.issues.push(issue);
         else strays.push(n);
       }
@@ -117,8 +127,8 @@ const parseArticle = (text) => {
     }
     fail(n);
   }
-  if (pending) fail(pending.line);
-  return { title: titles[0] ?? null, titles, blocks, claims, strays, failures };
+  if (pending) reject(pending);
+  return { title: titles[0] ?? null, titles, blocks, claims, rejected, strays, failures };
 };
 
 module.exports = { parseArticle };

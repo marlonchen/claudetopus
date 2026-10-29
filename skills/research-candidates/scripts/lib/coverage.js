@@ -22,6 +22,7 @@ const {
   POSITIONS_ISSUES,
   SAYS_ONLY,
   SECTION_ITEMS,
+  SECTION_STATES,
   SECTIONS,
   STATUSES,
   WITHDRAWN_SECTIONS,
@@ -33,10 +34,8 @@ const { logPath } = require("./search-log");
 const { locate, walk } = require("./snapshot-hash");
 const { withLock } = require("./snapshot-store");
 
-const UNKNOWN = "Unknown, no source found";
-const NOT_RESEARCHED = "Not researched yet";
-const NOT_JOB = "Not part of this office's job";
-const ON_BALLOT = "On the ballot";
+const [UNKNOWN, NOT_RESEARCHED, NOT_JOB] = SECTION_STATES;
+const ON_BALLOT = SECTIONS.candidate[0];
 // source-tiers.md, Claim tags: a "Says:" tag.
 const SAYS_TAG = /^T[1-4]s$/;
 
@@ -88,14 +87,19 @@ const isText = (value) => typeof value === "string" && value !== "";
 const readContest = (contest) => {
   if (!contest || !isText(contest.id) || !Object.hasOwn(SECTIONS, contest.type)) return null;
   const { type } = contest;
-  const listable = SECTIONS[type].filter((s) => s !== ON_BALLOT);
-  const nr = contest.not_researched;
+  // The sections not_researched may name: all but On the ballot.
+  const deferrable = SECTIONS[type].filter((s) => s !== ON_BALLOT);
+  const later = contest.not_researched;
   const valid =
-    nr === undefined ||
-    nr === "all" ||
-    (Array.isArray(nr) && nr.every((s) => listable.includes(s)));
+    later === undefined ||
+    later === "all" ||
+    (Array.isArray(later) && later.every((s) => deferrable.includes(s)));
   if (!valid) return null;
-  const read = { id: contest.id, type, notResearched: new Set(nr === "all" ? listable : nr) };
+  const read = {
+    id: contest.id,
+    type,
+    notResearched: new Set(later === "all" ? deferrable : later),
+  };
   if (type === "candidate") {
     if (!OFFICE_TYPES.includes(contest.office_type) || !Array.isArray(contest.candidates))
       return null;
@@ -163,10 +167,10 @@ const matchInOrder = (expected, items) => {
 };
 
 // The states a section or issue holds: each state line, and "claims" once
-// for any claims.
+// for any claims, a claim line check fails included.
 const statesOf = (part) => [
   ...part.states.map((s) => s.state),
-  ...(part.claims.length ? ["claims"] : []),
+  ...(part.claims.length || part.rejected.length ? ["claims"] : []),
 ];
 
 // The failures of one article, as [line, Failure] pairs (line 0 for one
@@ -228,48 +232,49 @@ const checkSection = (name, part, { contest, subject, logged, fail }) => {
     if (!items.every((item) => logged.has(`${subject}\t${item}`)))
       fail(state.line, "search-not-logged");
   };
-  // A whole-section state: the section holds that one state and no issues.
-  const whole = (state) => {
-    for (const issue of part.issues) fail(issue.line, "section-missing");
-    const states = statesOf(part);
-    if (states.length !== 1 || states[0] !== state) fail(part.line, "section-state");
-  };
-  // Claims or one Unknown, backed by the log.
-  const claimsOrUnknown = (holder) => {
+  // The one state a section or issue holds, of those `allowed`, or null
+  // after failing it. An Unknown also needs the log.
+  const stateOf = (holder, allowed) => {
     const states = statesOf(holder);
-    if (states.length !== 1 || ![UNKNOWN, "claims"].includes(states[0]))
-      return fail(holder.line, "section-state");
+    if (states.length !== 1 || !allowed.includes(states[0])) {
+      fail(holder.line, "section-state");
+      return null;
+    }
     if (states[0] === UNKNOWN) backed(holder.states[0]);
+    return states[0];
   };
 
   const exempt =
     type === EXEMPTION.type &&
     name === EXEMPTION.section &&
     contest.officeType === EXEMPTION.office_type;
-  if (exempt) return whole(NOT_JOB);
-  if (contest.notResearched.has(name)) return whole(NOT_RESEARCHED);
-  if (name === ON_BALLOT) {
+  const positions = type === "candidate" && name === "Positions";
+  const allowed = exempt
+    ? [NOT_JOB]
+    : contest.notResearched.has(name)
+      ? [NOT_RESEARCHED]
+      : name === ON_BALLOT
+        ? ["claims"]
+        : ["claims", UNKNOWN];
+  // Only Positions, in a state of its issues, holds issue headings.
+  if (!positions || allowed.length === 1) {
     for (const issue of part.issues) fail(issue.line, "section-missing");
-    const states = statesOf(part);
-    if (states.length !== 1 || states[0] !== "claims") fail(part.line, "section-state");
+    stateOf(part, allowed);
     return;
-  }
-  if (type !== "candidate" || name !== "Positions") {
-    for (const issue of part.issues) fail(issue.line, "section-missing");
-    return claimsOrUnknown(part);
   }
   // Positions holds only its office type's issues, in order and once.
   if (statesOf(part).length) fail(part.line, "section-state");
   const issues = matchInOrder(POSITIONS_ISSUES[contest.officeType], part.issues);
   for (const issue of issues.faults) fail(issue.line, "section-missing");
   for (const _ of issues.missing) fail(part.line, "section-missing");
-  for (const [, issue] of issues.pairs) claimsOrUnknown(issue);
+  for (const [, issue] of issues.pairs) stateOf(issue, allowed);
 };
 
 // The snapshots under sources/<contest>/ that no claim of the article cites,
 // as `<path> uncited` lines, each path located as check locates it.
 const uncited = (ballotDir, contest, article) => {
-  const cited = new Set(article.claims.map((c) => resolveTarget(c.target)).filter(Boolean));
+  const targets = [...article.claims, ...article.rejected].map((c) => resolveTarget(c.target));
+  const cited = new Set(targets.filter(Boolean));
   const lines = walk(ballotDir)
     .filter(({ rel, kind }) => kind === "file" && rel.startsWith(`sources/${contest}/`))
     .filter(({ rel }) => !cited.has(rel))
@@ -304,7 +309,7 @@ const coverage = (ballotDir, given) => {
     const failures = [...found.map(([, f]) => f), ...log.failures];
     lines.push(...failures.map((f) => f.line), ...uncited(ballotDir, id, article));
     if (failures.length) failed = true;
-    else lines.push(`${rel} covered`);
+    else lines.push(`${rel} passed`);
   }
   if (failed) throw new Failures(lines);
   return lines;

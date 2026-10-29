@@ -84,10 +84,10 @@ const coverage = (data, args = [BALLOT]) =>
   runCli("coverage", args, { cwd: data.root, env: data.env });
 
 describe("coverage: a passing article", () => {
-  it("prints the article as covered and exits 0", async () => {
+  it("prints the article as passed and exits 0", async () => {
     const data = setup();
     const result = await coverage(data);
-    assert.strictEqual(result.stdout, "articles/us-house-07.md covered\n");
+    assert.strictEqual(result.stdout, "articles/us-house-07.md passed\n");
     assert.strictEqual(result.status, 0);
   });
 });
@@ -320,7 +320,7 @@ describe("coverage: an Unknown needs the search log", () => {
       claim("jane-example").replace("Served", "Says: served").replace("`T2`", "`T2s`"),
     );
     const result = await coverage(setup({ article: noUnknowns, log: null }));
-    assert.strictEqual(result.stdout, `${AT} covered\n`);
+    assert.strictEqual(result.stdout, `${AT} passed\n`);
   });
 
   it("reads a line only for its own subject", async () => {
@@ -334,7 +334,7 @@ describe("coverage: an Unknown needs the search log", () => {
     const result = await coverage(
       setup({ log: `${FULL_LOG}us-house-07\tjim-gone\t4\t2026-10-20\n` }),
     );
-    assert.strictEqual(result.stdout, `${AT} covered\n`);
+    assert.strictEqual(result.stdout, `${AT} passed\n`);
   });
 
   it("fails each malformed line by its log line, and a last line with no newline", async () => {
@@ -376,7 +376,7 @@ describe("coverage: Not researched yet", () => {
     const result = await coverage(
       setup({ ballot: ballotWith("not_researched: [Money]"), article }),
     );
-    assert.strictEqual(result.stdout, `${AT} covered\n`);
+    assert.strictEqual(result.stdout, `${AT} passed\n`);
   });
 
   it("fails a listed section in another state, for any one candidate", async () => {
@@ -398,7 +398,7 @@ describe("coverage: Not researched yet", () => {
         log: FULL_LOG.replaceAll("\t5\t", "\t4\t"),
       }),
     );
-    assert.strictEqual(result.stdout, `${AT} covered\n`);
+    assert.strictEqual(result.stdout, `${AT} passed\n`);
     const withIssue = article.replace(
       `### E. Positions\n\n${NOT_RESEARCHED}\n`,
       `### E. Positions\n\n${NOT_RESEARCHED}\n\n#### Health care\n\n${UNKNOWN}\n`,
@@ -422,7 +422,7 @@ describe("coverage: Not researched yet", () => {
     const result = await coverage(
       setup({ ballot: ballotWith("not_researched: all"), article, log: null }),
     );
-    assert.strictEqual(result.stdout, `${AT} covered\n`);
+    assert.strictEqual(result.stdout, `${AT} passed\n`);
   });
 });
 
@@ -439,7 +439,7 @@ describe("coverage: withdrawn and write-in candidates", () => {
   it("gives a withdrawn candidate On the ballot alone, and fails any other section", async () => {
     const article = `${JANE_ONLY}${onBallotOnly("John Sample")}`;
     const result = await coverage(setup({ ballot: withdrawn, article }));
-    assert.strictEqual(result.stdout, `${AT} covered\n`);
+    assert.strictEqual(result.stdout, `${AT} passed\n`);
     await failsWith(setup({ ballot: withdrawn }), [
       `${AT}:${lineOf(ARTICLE, "### B. Background", 2)} section-missing`,
       `${AT}:${lineOf(ARTICLE, "### C. Record in public office", 2)} section-missing`,
@@ -460,7 +460,7 @@ describe("coverage: withdrawn and write-in candidates", () => {
     const inOrder = `${ARTICLE}\n${wanda}`;
     assert.strictEqual(
       (await coverage(setup({ ballot, article: inOrder, log }))).stdout,
-      `${AT} covered\n`,
+      `${AT} passed\n`,
     );
     const yamlOrder = `${JANE_ONLY}${wanda}\n${JOHN}`;
     await failsWith(setup({ ballot, article: yamlOrder, log }), [
@@ -479,7 +479,7 @@ describe("coverage: the judicial exemption", () => {
   it("puts a judicial contest's Positions in Not part of this office's job, with no issues", async () => {
     assert.strictEqual(
       (await coverage(setup({ ballot: judicial, article: exempt }))).stdout,
-      `${AT} covered\n`,
+      `${AT} passed\n`,
     );
     await failsWith(setup({ ballot: judicial }), [
       `${AT}:${lineOf(ARTICLE, "### E. Positions")} section-state`,
@@ -496,7 +496,7 @@ describe("coverage: the judicial exemption", () => {
     );
     assert.strictEqual(
       (await coverage(setup({ ballot, article: exempt }))).stdout,
-      `${AT} covered\n`,
+      `${AT} passed\n`,
     );
     const nr = exempt.replace(
       `### E. Positions\n\n${NOT_JOB}`,
@@ -533,7 +533,7 @@ describe("coverage: retention contests", () => {
       BALLOT,
       "supreme-court-retention-a",
     ]);
-    assert.strictEqual(result.stdout, `${RET_AT} covered\n`);
+    assert.strictEqual(result.stdout, `${RET_AT} passed\n`);
     const unlogged = await coverage(retention(RETENTION, null), [
       BALLOT,
       "supreme-court-retention-a",
@@ -620,7 +620,7 @@ describe("coverage: snapshots no claim cites", () => {
         "sources/us-house-07/- uncited",
         "sources/us-house-07/_race/debate.md uncited",
         "sources/us-house-07/jane-example/old-bio.md uncited",
-        `${AT} covered`,
+        `${AT} passed`,
       ]
         .map((l) => `${l}\n`)
         .join(""),
@@ -649,16 +649,16 @@ describe("coverage: arguments and data files", () => {
       "supreme-court-retention-a\tpat-example\t7\t2026-10-20\n",
     );
     const twice = await coverage(data, [BALLOT, "us-house-07", "us-house-07"]);
-    assert.strictEqual(twice.stdout, `${AT} covered\n`);
+    assert.strictEqual(twice.stdout, `${AT} passed\n`);
     const all = await coverage(data);
     // Sorted by name, as check reads them.
-    assert.strictEqual(all.stdout, `${RET_AT} covered\n${AT} covered\n`);
+    assert.strictEqual(all.stdout, `${RET_AT} passed\n${AT} passed\n`);
   });
 
   it("fails an article for a contest ballot.yaml does not list, and a missing article", async () => {
     const data = setup();
     data.write(`${BALLOT}/articles/us-senate.md`, "# us-senate\n");
-    await failsWith(data, [`${AT} covered`, "articles/us-senate.md unknown-contest"]);
+    await failsWith(data, [`${AT} passed`, "articles/us-senate.md unknown-contest"]);
     const given = await coverage(data, [BALLOT, "supreme-court-retention-a"]);
     assert.strictEqual(given.stdout, `${RET_AT} file-missing\n`);
     assert.strictEqual(given.status, 1);
@@ -678,5 +678,19 @@ describe("coverage: arguments and data files", () => {
     const unguarded = setup();
     fs.rmSync(unguarded.file("publish.yaml"));
     await failsWith(unguarded, ["publish.yaml guard-no-publish-yaml"]);
+  });
+});
+
+describe("coverage: lines check fails as claim-format", () => {
+  it("still counts a malformed claim as its section's claim, and its snapshot as cited", async () => {
+    const article = edited(
+      `### B. Background\n\n${claim("jane-example")}`,
+      "### B. Background\n\n- Served two terms `T2` [s1](../sources/us-house-07/jane-example/cv.md)",
+    );
+    const data = setup({ article });
+    data.write(`${BALLOT}/sources/us-house-07/jane-example/cv.md`, "body\n");
+    const result = await coverage(data);
+    assert.strictEqual(result.stdout, `${AT} passed\n`);
+    assert.strictEqual(result.status, 0);
   });
 });
