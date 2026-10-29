@@ -100,6 +100,53 @@ const SAYS_ONLY = {
   retention: ["Statements"],
   measure: ["Arguments for", "Arguments against"],
 };
+// sections.md, the Rule column: the sections marked `always reviewed`.
+const ALWAYS_REVIEWED = {
+  candidate: ["Controversies and cases"],
+  retention: ["Discipline"],
+  measure: [],
+};
+// review-list.md, What goes on it: the allegation words, each a stem and its
+// endings as the list writes them.
+const ALLEGATION_WORDS = [
+  "alleg(e|ed|es|ation|ations|edly)",
+  "accus(e|ed|es|ation|ations)",
+  "charged",
+  "charges",
+  "indict(ed|ment|ments)",
+  "convict(ed|ion|ions)",
+  "sues",
+  "sued",
+  "suing",
+  "lawsuit(s)",
+  "investigat(e|ed|ion|ions|ing)",
+  "arrest(ed|s)",
+  "sanction(ed|s)",
+  "disciplin(e|ed|ary)",
+  "settlement(s)",
+  "fraud(ulent)",
+  "felon(y|ies)",
+  "misconduct",
+  "guilty",
+  "plead(s|ed)",
+  "pled",
+  "plea(s)",
+  "subpoena(s|ed)",
+  "complaint(s)",
+  "probe(s)",
+  "censur(e|ed)",
+  "impeach(ed|ment)",
+  "resign(ed|ation)",
+  "fined",
+  "violat(e|ed|ion|ions)",
+  "reprimand(ed)",
+  "admonish(ed|ment)",
+  "suspen(ded|sion)",
+  "disbar(red|ment)",
+  "scandal",
+  "dui",
+  "penalt(y|ies)",
+];
 // sections.md, the Discovery checklist items column: the items each section
 // draws on. On the ballot draws on _ballot/ snapshots, never the search log.
 const SECTION_ITEMS = {
@@ -130,6 +177,8 @@ const CHECKLIST_ITEMS = { candidate: ["1", "2", "3", "4", "5"], measure: ["6"], 
 const STATUSES = ["on_ballot", "withdrawn_still_printed", "certified_write_in"];
 
 module.exports = {
+  ALLEGATION_WORDS,
+  ALWAYS_REVIEWED,
   BALLOT_ID_PATTERN,
   CHECKLIST_ITEMS,
   ELECTION_PATTERN,

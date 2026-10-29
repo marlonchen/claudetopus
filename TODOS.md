@@ -104,12 +104,12 @@
 - **Session guard:** the data repo's PreToolUse hook (`scripts/session-guard`, PR #11 review) refuses `--ballot`/`--show`, `CLAUDECODE`, `env -i`, pseudo-terminal wrappers and Bash commands naming `ballot.ledger`, `snapshots.sha256` or `downloads/`, but matches text: a flag or name built at run time gets through. Decide whether `--show` (ticket 05) needs more, such as running sessions in Claude Code's sandbox, before it prints private text. Also run one real-poppler `--ballot` PDF check; the tests use a `pdftotext` stub.
 - **Review acceptance:** a session with Bash can append to `.accepted` and commit `reset review <contest>` as the researcher (review-list.md:30, SKILL.md:100/119). Require signed commits from a key the session cannot use, or deny `git commit` and writes to `review/` in the data repo's settings.
 - **Party names:** decide which sources may vouch for `party_name` (ballot-format.md:74). The sample ballot can vouch for `DEM` as its own full name; a stricter rule must still let all-caps ballots with no pamphlet pass, and must accept hyphenated full names (Democratic-Farmer-Labor) while catching `DFL Party`.
-- **Allegation words:** add fined, violat(e|ed|ion|ions), reprimand(ed), admonish(ed|ment), suspen(ded|sion), disbar(red|ment), scandal, plead(s|ed), DUI, penalt(y|ies) to review-list.md:12 and the AllegationWords test.
+- **Allegation words:** add fined, violat(e|ed|ion|ions), reprimand(ed), admonish(ed|ment), suspen(ded|sion), disbar(red|ment), scandal, plead(s|ed), DUI, penalt(y|ies) to review-list.md:12 and the AllegationWords test. **Built (ticket 10):** in review-list.md and `ALLEGATION_WORDS`, pinned to it by lib.test.js.
 - **Unfetchable after redirect:** record `requested_url` in snapshot front matter and clear an `unfetchable.md` entry on either URL (review-list.md:13, source-tiers.md:25).
 - **Shared-history check:** SKILL.md:131 "shares any commit with it" compares root commits (`git rev-list --max-parents=0 HEAD` in each repo) and never fetches one repo into the other.
 - **Referrer:** add `<meta name="referrer" content="no-referrer">` and `rel="noreferrer noopener"` on receipt links (SKILL.md:121).
 - **Slug overwrite:** refuse when `<slug>/index.html` exists in `pages_dir` but this ballot has no publish record (ballot-format.md:77, SKILL.md:132).
-- **Review keys:** at least 64-bit hashes (review-list.md:21-26). Label Wayback links "Archive copy (captured separately)", since a capture can differ from the snapshot (snapshot-format.md:52).
+- **Review keys:** at least 64-bit hashes (review-list.md:21-26). **Built (ticket 10):** 16 hex digits of a sha256. Label Wayback links "Archive copy (captured separately)", since a capture can differ from the snapshot (snapshot-format.md:52).
 
 **Why:** Prose cannot enforce file locking, commit provenance or hash width; each item becomes a script behavior and a test.
 

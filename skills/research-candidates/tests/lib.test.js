@@ -249,6 +249,32 @@ describe("constants match the reference text they come from", () => {
     ].map((m) => m[1]);
     assert.deepEqual(states, constants.SECTION_STATES);
   });
+  it("the always-reviewed sections and allegation words are the references'", () => {
+    const sections = read("references/sections.md");
+    const tables = {
+      candidate: "Candidate contests",
+      retention: "Retention contests",
+      measure: "Measures",
+    };
+    for (const [type, heading] of Object.entries(tables)) {
+      const start = sections.indexOf(`## ${heading}`);
+      const rows = [
+        ...sections
+          .slice(start, sections.indexOf("\n## ", start + 1))
+          .matchAll(/^\| [A-Z]\. ([^|]+?) \|.*\| ([^|]*?) ?\|$/gm),
+      ];
+      const always = rows.filter((m) => m[2].includes("`always reviewed`")).map((m) => m[1]);
+      assert.deepEqual(always, constants.ALWAYS_REVIEWED[type], type);
+    }
+    const bullet = read("references/review-list.md")
+      .split("\n")
+      .find((line) => line.includes("allegation word"));
+    const words = [...bullet.split("Bare stems")[0].matchAll(/`([a-z]+(?:\([a-z|]+\))?)`/g)];
+    assert.deepEqual(
+      words.map((m) => m[1]),
+      constants.ALLEGATION_WORDS,
+    );
+  });
   it("the API key variables are the ones snapshot-format.md names", () => {
     const named = read("references/snapshot-format.md").match(
       /environment variables the scripts read \(([^)]*)\)/,
@@ -324,13 +350,17 @@ describe("each command's output codes are the ones its reference lists", () => {
   const CHECK = ["check.js", "article.js", "figures.js", "snapshot-hash.js"];
   // coverage's own module (article-format.md, Command line).
   const COVERAGE = ["coverage.js"];
+  // review-list's own module (review-list.md, Command line).
+  const REVIEW_LIST = ["review-list.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");
     const files = fs
       .readdirSync(path.join(SKILL_DIR, "scripts", "lib"))
       .filter(
-        (f) => f !== "install-deps.js" && ![...BALLOT_CHECK, ...CHECK, ...COVERAGE].includes(f),
+        (f) =>
+          f !== "install-deps.js" &&
+          ![...BALLOT_CHECK, ...CHECK, ...COVERAGE, ...REVIEW_LIST].includes(f),
       );
     const emitted = new Set(files.flatMap((f) => [...emittedBy(f)]));
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
@@ -342,6 +372,16 @@ describe("each command's output codes are the ones its reference lists", () => {
     const own = new Set(COVERAGE.flatMap((f) => [...emittedBy(f)]));
     assert.ok(own.size >= 8, `only ${own.size} codes found in coverage`);
     for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+  });
+
+  it("review-list: every code is in review-list.md's Command line section", () => {
+    const listed = listedIn("review-list.md");
+    const own = new Set(REVIEW_LIST.flatMap((f) => [...emittedBy(f)]));
+    assert.ok(own.size >= 10, `only ${own.size} codes found in review-list`);
+    for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+    // The codes it reaches through check, coverage and the shared modules.
+    for (const code of ["usage", "bad-ballot", "unknown-ballot", "ballot-invalid", "deps-missing"])
+      assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
 
   it("ballot-check: every code is in ballot-format.md's Command line section", () => {

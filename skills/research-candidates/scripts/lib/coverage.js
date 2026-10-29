@@ -301,4 +301,4 @@ const main = (argv) =>
     return withLock(ballotDir, () => coverage(ballotDir, contests));
   });
 
-module.exports = { main };
+module.exports = { coverage, main, readContests };

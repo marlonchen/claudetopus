@@ -1144,10 +1144,16 @@ describe("FailureCodes", () => {
       ...between(BALLOT, "## Command line").matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g),
     ].map((m) => m[1]);
     assert.ok(ballotCodes.length >= 10, `only ${ballotCodes.length} ballot-check codes parsed`);
+    // review-list's own output codes and item reasons, listed in review-list.md's Command line section.
+    const reviewCodes = [
+      ...between(REVIEW, "## Command line").matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g),
+    ].map((m) => m[1]);
+    assert.ok(reviewCodes.length >= 10, `only ${reviewCodes.length} review-list codes parsed`);
     const known = new Set([
       ...codes,
       ...fetchCodes,
       ...ballotCodes,
+      ...reviewCodes,
       ...scripts,
       ...ids,
       "says-only",
@@ -2547,7 +2553,9 @@ describe("PublishPush", () => {
 describe("ReviewItemKeys", () => {
   it("every promised re-list trigger maps to a field in the key", () => {
     const keys = between(REVIEW, "## Item keys");
-    const fields = keys.match(/The key is a short hash of (.+?)\. Snapshots are write-once/)?.[1];
+    const fields = keys.match(
+      /The key is the first 16 hex digits \(64 bits\) of a sha256 hash of (.+?)\. Snapshots are write-once/,
+    )?.[1];
     assert.ok(fields, "review-list.md no longer lists the key's fields");
     const want = [
       "the candidate id (the retention official's id, or the contest id for a measure)",

@@ -21,7 +21,7 @@ const { Failure, Failures, runCommand } = require("./output");
 const { scan } = require("./privacy");
 const { isSnapshotPath, verifyManifest } = require("./snapshot-hash");
 const { FRONT_MATTER } = require("./snapshot-file");
-const { withLock } = require("./snapshot-store");
+const { sha256, withLock } = require("./snapshot-store");
 const { TIER_RANK } = require("./tiers");
 
 // The _ballot roles the compile agent reads whole (ballot-format.md, Ballot view).
@@ -86,8 +86,10 @@ const resolveTarget = (target) => {
   return isSnapshotPath(rel) ? rel : null;
 };
 
-// Each cited snapshot, read once: { ballot, tier, statementsOnly, body } or
-// null when it is missing or not a regular file. `ballot` is true for a
+// Each cited snapshot, read once: { ballot, tier, statementsOnly, body, fields,
+// hash } or null when it is missing or not a regular file. `fields` is its
+// parsed front matter ({} when it cannot be read) and `hash` the sha256 of the
+// whole file. `ballot` is true for a
 // _ballot snapshot whose front matter does not give a companion role, so a
 // sample ballot whose role cannot be read is never matched like an ordinary
 // source. `tier` and `statementsOnly` are null when the front matter does not
@@ -99,7 +101,8 @@ const snapshotReader = (ballotDir, YAML) => {
     const file = path.join(ballotDir, rel);
     let read = null;
     if (fs.lstatSync(file, { throwIfNoEntry: false })?.isFile()) {
-      const text = fs.readFileSync(file, "utf8");
+      const bytes = fs.readFileSync(file);
+      const text = bytes.toString("utf8");
       const front = FRONT_MATTER.exec(text);
       let fields = {};
       try {
@@ -113,6 +116,8 @@ const snapshotReader = (ballotDir, YAML) => {
         tier: Object.hasOwn(TIER_RANK, fields.tier ?? "") ? fields.tier : null,
         statementsOnly: typeof fields.statements_only === "boolean" ? fields.statements_only : null,
         body: bodyText(front ? text.slice(front[0].length) : text),
+        fields,
+        hash: sha256(bytes),
       };
     }
     cache.set(rel, read);
@@ -239,4 +244,4 @@ const main = (argv) =>
     return withLock(ballotDir, () => check(ballotDir, contests));
   });
 
-module.exports = { allContests, main, parseArgs, resolveTarget };
+module.exports = { allContests, check, main, parseArgs, resolveTarget, snapshotReader };
