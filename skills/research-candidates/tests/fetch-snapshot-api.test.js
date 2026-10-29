@@ -78,6 +78,27 @@ describe("fetch-snapshot saves an API response as key: value records", () => {
   });
 });
 
+// Value: protects=D1 of the PR #18 review: only the two API hosts, whose shapes are known, are saved as api, and only they are told JSON will do; fails_when=JSON from another tiered host is saved again, or every host gets the JSON Accept; why_new=PR #18 review (B#8, D1); seam=cli; no_claim=none
+describe("fetch-snapshot takes JSON only from an API host", () => {
+  it("refuses JSON from any other tiered host as not-html", async () => {
+    const data = repo({ tiers: FEC_TIERS });
+    const result = await fetchVia(
+      data,
+      { "https://county.example.gov/": json({ results: [{ name: "EXAMPLE, JANE" }] }) },
+      PLAIN,
+    );
+    assert.equal(result.stdout, "us-house-07/_race not-html\n");
+    assert.equal(result.headers[0].accept, "text/html");
+  });
+
+  it("asks an API host for JSON, after HTML", async () => {
+    const data = repo({ tiers: FEC_TIERS });
+    const result = await fetchVia(data, { [FEC_URL]: json({ results: [{ a: 1 }] }) }, FEC);
+    assert.equal(result.status, 0, result.stdout);
+    assert.equal(result.headers[0].accept, "text/html, application/json;q=0.9");
+  });
+});
+
 describe("fetch-snapshot sends an API key only as a header to its own API", () => {
   const FEC_KEY = "fec-key-0123456789abcdef";
   const STATES_KEY = "states-key-0123456789abcdef";

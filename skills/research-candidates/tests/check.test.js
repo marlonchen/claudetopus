@@ -133,8 +133,8 @@ describe("check: excerpts against their own snapshot", () => {
     await failsWith(data, ["articles/us-house-07.md:12 excerpt-not-found"]);
   });
 
-  it("reads hyphen breaks in a snapshot of any method", async () => {
-    for (const method of ["html", "pdf", "api"]) {
+  it("reads hyphen breaks in an html or pdf snapshot", async () => {
+    for (const method of ["html", "pdf"]) {
       const data = setup();
       data.write(`${BALLOT}/snapshots.sha256`, "");
       plant(
@@ -250,6 +250,25 @@ results.receipts: 5000`;
       "articles/us-house-07.md:18 excerpt-crosses-record",
       "articles/us-house-07.md:21 excerpt-not-found",
     ]);
+  });
+
+  // Value: protects=an api value ending in a hyphen is quoted as the snapshot shows it; fails_when=api records go through bodyText's hyphen-break join again; why_new=PR #18 review (A#5): `SMITH-` glued to the next key; seam=cli; no_claim=html and pdf joins (tested above)
+  it("never joins a value ending in a hyphen to the next key", async () => {
+    const data = setup({
+      article: `${ARTICLE}
+- Reported receipts \`T1\` [s3](../sources/us-house-07/jane-example/fec-totals.md)
+  > results.name: EXAMPLE- results.receipts: 5000
+`,
+    });
+    plant(
+      data,
+      "sources/us-house-07/jane-example/fec-totals.md",
+      snapshot("jane-example", "results.name: EXAMPLE-\nresults.receipts: 5000", "", {
+        tier: "T1",
+      }).replace("method: html", "method: api"),
+    );
+    const result = await check(data);
+    assert.strictEqual(result.status, 0, result.stdout);
   });
 
   it("reads the blank line as a record boundary only in an api snapshot", async () => {

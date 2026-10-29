@@ -118,7 +118,7 @@ tests/
 
 Nothing to install. The journal, ingest, and query workflows are pure prompt — no runtime at all.
 Only the Lint workflow's mechanical sweep shells out, to `scripts/check_evidence.js`, which needs
-**Node.js 20+** and uses `node:` builtins only — no `npm install`, no `node_modules`, works offline.
+**Node.js 22+** and uses `node:` builtins only — no `npm install`, no `node_modules`, works offline.
 
 Run it directly if you want the report outside a Claude session:
 

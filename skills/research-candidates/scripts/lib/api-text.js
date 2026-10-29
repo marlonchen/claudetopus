@@ -2,18 +2,22 @@
 
 // An API response to snapshot text (snapshot-format.md, Body): one
 // `key: value` line per field, nested keys joined with `.`, and a blank line
-// between records. Each element of a top-level array of objects (or of the
-// top-level array itself) is a record of its own, its keys led by the
-// array's; the other top-level fields form one record before them. Whitespace
-// in a key or value is collapsed to one space, so no line break in the data
-// can start a line or a record.
+// between records. Each element of a top-level array that holds an object (or
+// of the top-level array itself) is a record of its own, its keys led by the
+// array's, so a null or a scalar among the results never merges two of them;
+// the other top-level fields form one record before them. Numbers are written
+// as the response spelled them. Whitespace in a key or value is collapsed to
+// one space, so no line break in the data can start a line or a record.
 
 const oneLine = (text) => String(text).replace(/\s+/gu, " ").trim();
 
-const isRecordList = (value) =>
-  Array.isArray(value) &&
-  value.length > 0 &&
-  value.every((item) => item && typeof item === "object" && !Array.isArray(item));
+const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+const isRecordList = (value) => Array.isArray(value) && value.some(isObject);
+
+// JSON.parse reads every number as a double, which drops trailing zeros
+// (5000.00) and digits past 2^53; the reviver keeps the literal instead.
+const parseExact = (text) =>
+  JSON.parse(text, (_key, value, context) => (typeof value === "number" ? context.source : value));
 
 // The `key: value` lines of `value` under `key` (null at the top).
 const lines = (value, key, out) => {
@@ -35,7 +39,7 @@ const lines = (value, key, out) => {
 const jsonToText = (text) => {
   let data;
   try {
-    data = JSON.parse(text);
+    data = parseExact(text);
   } catch {
     return "";
   }

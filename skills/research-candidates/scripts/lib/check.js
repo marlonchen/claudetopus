@@ -17,7 +17,7 @@ const { hiddenTitles, readYamlDocument } = require("./data-files");
 const { figuresBacked } = require("./figures");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
-const { bodyText, findExcerpt, normalizeLine } = require("./normalize");
+const { bodyText, findExcerpt, normalizeLine, recordText } = require("./normalize");
 const { Failure, Failures, runCommand } = require("./output");
 const { scan } = require("./privacy");
 const { isSnapshotPath, verifyManifest } = require("./snapshot-hash");
@@ -90,7 +90,8 @@ const resolveTarget = (target) => {
 // Each cited snapshot, read once: { ballot, tier, statementsOnly, body, records,
 // fields, hash } or null when it is missing or not a regular file. `records`
 // is an api snapshot's records, each read as a body on its own
-// (snapshot-format.md, Body), and null for any other method. `fields` is its
+// (snapshot-format.md, Body), and null for any other method; an api body and
+// its records are read with no hyphen breaks (recordText). `fields` is its
 // parsed front matter ({} when it cannot be read) and `hash` the sha256 of the
 // whole file. `ballot` is true for a
 // _ballot snapshot whose front matter does not give a companion role, so a
@@ -115,12 +116,13 @@ const snapshotReader = (ballotDir, YAML) => {
         fields = {};
       }
       const role = rel.startsWith("sources/_ballot/") ? fields.role : null;
+      const api = fields.method === "api";
       read = {
         ballot: rel.startsWith("sources/_ballot/") && !COMPANION_ROLES.includes(role),
         tier: Object.hasOwn(TIER_RANK, fields.tier ?? "") ? fields.tier : null,
         statementsOnly: typeof fields.statements_only === "boolean" ? fields.statements_only : null,
-        body: bodyText(body),
-        records: fields.method === "api" ? apiRecords(body).map(bodyText) : null,
+        body: api ? recordText(body) : bodyText(body),
+        records: api ? apiRecords(body).map(recordText) : null,
         fields,
         hash: sha256(bytes),
       };

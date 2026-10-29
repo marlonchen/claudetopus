@@ -1,13 +1,16 @@
 "use strict";
 
 // fetch-snapshot <election>/<ballot-id> <contest> <subject> <name> <url>
+// fetch-snapshot --keep-short <election>/<ballot-id> <contest> <subject> <name> <url>
 //
 // Save one web page or API response as a write-once snapshot under
 // <ballot>/sources/<contest>/<subject>/<name>.md (snapshot-format.md). Its
 // tier, statements_only, owner and source name come only from the matched
 // tiers.yaml entries; a page that cannot be saved, including one whose
 // redirects land on another site or a login page and a short teaser
-// (Unfetchable pages), is logged to unfetchable.md.
+// (Unfetchable pages), is logged to unfetchable.md. --keep-short is the
+// researcher's own plain fetch, at their terminal, that saves a short page
+// once they confirm it is the article.
 // A URL holding a private value (Rule 7) is refused before anything else
 // reads it, on every hop, and only its class code is printed: it is never
 // requested and never logged, since the URL is the private text.
@@ -19,16 +22,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { jsonToText } = require("./api-text");
 const ballotImport = require("./ballot-import").main;
-const { ID_PATTERN, SHORT_PAGE } = require("./constants");
+const { ID_PATTERN, SHORT_PAGE, WALL_SEGMENTS } = require("./constants");
 const { loadBallot, loadPrivateValues, loadTiers } = require("./data-files");
 const { openBallot, parseBallot, parseHttpUrl } = require("./fetch-common");
-const { cleanUrl, fetchPage, spellings } = require("./fetch-page");
+const { fetchPage, recordedHref, spellings } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
 const { Failure, runCommand } = require("./output");
 const { URL_CLASSES, findRefusal } = require("./privacy");
 const searched = require("./search-log").main;
 const { snapshotText, today } = require("./snapshot-file");
 const { appendLine, save, withLock } = require("./snapshot-store");
+const { confirm, requireTerminal } = require("./terminal");
 
 const parseArgs = (argv) => {
   if (argv.length !== 5 || argv.some((arg) => arg.startsWith("--"))) {
@@ -62,9 +66,7 @@ const checkTarget = (root, { ballot, contest, subject, name }) => {
 };
 
 const logUnfetchable = (ballotDir, url, where, reason) => {
-  // A non-http redirect target can hold raw spaces and |, which would forge fields.
-  const href = cleanUrl(url).href.replace(/[\s|]/g, encodeURIComponent);
-  const line = `- ${href} | ${where} | ${today()} | ${reason}\n`;
+  const line = `- ${recordedHref(url)} | ${where} | ${today()} | ${reason}\n`;
   // Under the ballot lock, so review-list never reads a half-written line.
   withLock(ballotDir, () => {
     const file = path.join(ballotDir, "unfetchable.md");
@@ -75,12 +77,52 @@ const logUnfetchable = (ballotDir, url, where, reason) => {
   });
 };
 
-const MODES = { "--ballot": ballotImport, "--searched": searched };
+// snapshot-format.md, Unfetchable pages. The host with one leading `www.`
+// dropped, so example.com and www.example.com are one site.
+const site = (url) => url.hostname.replace(/^www\./, "");
+// The path segments, case folded and up to their first `.` or `;`, that name
+// a login or subscribe page.
+const wallSegments = (url) =>
+  url.pathname
+    .split("/")
+    .map((part) => part.toLowerCase().split(/[.;]/)[0])
+    .filter((part) => WALL_SEGMENTS.includes(part));
+// The refusals of a hop the redirects landed on that its URL decides instead:
+// one it answered (or, untiered, was never asked), but not a broken redirect
+// chain or an owner change, which say more.
+const LANDED = ["domain-not-in-tiers", "http-error", "not-html", "too-large"];
+
+// The Unfetchable pages rule `page` breaks by where its redirects landed,
+// whatever that URL answered, as { code, reason }, or null. A host off the
+// site is refused even when tiers.yaml does not list it, and is never
+// contacted; a wall segment `given` already has (a trailing-slash redirect
+// on /elections/register) is not a wall.
+const landedOnWall = (given, page) => {
+  if (page.url.href === given.href) return null;
+  if (page.refused && !LANDED.includes(page.refused.code)) return null;
+  if (site(page.url) !== site(given)) {
+    return { code: "off-site-redirect", reason: `off-site redirect to ${page.url.hostname}` };
+  }
+  const asked = new Set(wallSegments(given));
+  if (wallSegments(page.url).some((part) => !asked.has(part))) {
+    return { code: "login-redirect", reason: "login redirect" };
+  }
+  return null;
+};
+const SHORT = { code: "short-page", reason: "short page" };
+
+const MODES = {
+  "--ballot": ballotImport,
+  "--searched": searched,
+  "--keep-short": (argv) => plainFetch(argv.slice(1), { keepShort: true }),
+};
 // Own keys only, so `constructor` or `toString` is a ballot plainFetch refuses.
 const main = (argv) => (Object.hasOwn(MODES, argv[0]) ? MODES[argv[0]] : plainFetch)(argv);
 
-const plainFetch = (argv) =>
+const plainFetch = (argv, { keepShort = false } = {}) =>
   runCommand(async () => {
+    // The researcher's own judgment, so never the session's (Rule 5's guard).
+    if (keepShort) requireTerminal();
     const root = process.cwd();
     const args = parseArgs(argv);
     const ballotDir = openBallot(root, args.ballot);
@@ -98,36 +140,45 @@ const plainFetch = (argv) =>
     checkPrivate(spellings(args.url, args.given));
     const entries = loadTiers(root, args.ballot, values);
 
-    const page = await fetchPage(entries, args.url, checkPrivate, { json: true, walls: true });
-    if (page.refused) {
-      logUnfetchable(ballotDir, page.url, where, page.refused.reason);
-      throw new Failure(where, page.refused.code);
-    }
+    // An Unfetchable pages rule is logged under the URL given, since that is
+    // the source that could not be saved; any other failure under its hop.
+    const unfetchable = (url, { code, reason }) => {
+      logUnfetchable(ballotDir, url, where, reason);
+      return new Failure(where, code);
+    };
+    const page = await fetchPage(entries, args.url, checkPrivate, { json: true });
+    const wall = landedOnWall(args.url, page);
+    if (wall) throw unfetchable(args.url, wall);
+    if (page.refused) throw unfetchable(page.url, page.refused);
     // A campaign site is filed only under its own candidate.
     if (target.subjects.has(page.tiers.owner) && page.tiers.owner !== args.subject) {
       throw new Failure(where, "owner-not-subject");
     }
-    const method = page.json === undefined ? "html" : "api";
-    const raw = method === "api" ? page.json : page.html;
-    const text = method === "api" ? jsonToText(raw) : htmlToText(raw);
+    const method = page.kind === "json" ? "api" : "html";
+    const text = method === "api" ? jsonToText(page.body) : htmlToText(page.body);
     // A page that echoes a key, raw or as decoded: never saved, and never logged.
-    const key = findRefusal([raw, text], values, ["key"]);
+    const key = findRefusal([page.body, text], values, ["key"]);
     if (key) throw new Failure(where, key);
     if (!text) {
-      logUnfetchable(ballotDir, page.url, where, "no readable text");
-      throw new Failure(where, "no-readable-text");
+      throw unfetchable(page.url, { code: "no-readable-text", reason: "no readable text" });
     }
-    // A paywall teaser reads as a short article (snapshot-format.md, Unfetchable pages).
-    if (method === "html" && [...text].length < SHORT_PAGE) {
-      logUnfetchable(ballotDir, args.url, where, "short page");
-      throw new Failure(where, "short-page");
+    // A paywall teaser reads as a short article (snapshot-format.md,
+    // Unfetchable pages); with --keep-short the researcher may say it is the
+    // article, and a no logs nothing new, since the plain fetch already did.
+    const length = [...text].length;
+    if (method === "html" && length < SHORT_PAGE) {
+      if (!keepShort) throw unfetchable(args.url, SHORT);
+      const href = recordedHref(page.url);
+      if (!(await confirm(`Save ${href}, ${length} characters of text, as ${where}? [y/N] `))) {
+        throw new Failure(where, "not-confirmed");
+      }
     }
 
     const fileText = snapshotText(
       {
         source: page.tiers.source,
-        url: cleanUrl(page.url).href,
-        requested_url: cleanUrl(args.url).href,
+        url: recordedHref(page.url),
+        requested_url: recordedHref(args.url),
         fetched: today(),
         method,
         tier: page.tiers.tier,

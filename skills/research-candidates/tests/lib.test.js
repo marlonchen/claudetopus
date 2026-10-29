@@ -540,6 +540,26 @@ describe("snapshot-format.md, Body: an API response as key: value records", () =
     );
   });
 
+  // Value: protects=a null or scalar among the results never merges two records into one, so check can still refuse a spliced excerpt; fails_when=isRecordList again needs every element to be an object; why_new=PR #18 review (A#1, B#8): the guard failed open; seam=none; no_claim=nested envelopes (only the API hosts' top-level shapes are accepted, Body)
+  it("splits a results list that holds a null or a scalar, one record per element", () => {
+    const text = jsonToText('{"results":[{"name":"A","total":1},null,"x",{"name":"B","total":2}]}');
+    assert.equal(
+      text,
+      "results.name: A\nresults.total: 1\n\nresults: null\n\nresults: x\n\nresults.name: B\nresults.total: 2",
+    );
+  });
+
+  // Value: protects=the snapshot holds the API's own figures; fails_when=numbers go back through JSON.parse's doubles; why_new=PR #18 review (A#4, B#2): 5000.00 was saved as 5000 and long integers lost digits; seam=none; no_claim=none
+  it("writes every number as the response spelled it", () => {
+    const text = jsonToText(
+      '{"results":[{"id":12345678901234567890,"a":100.10,"b":2000.0,"c":1e400,"d":-0}]}',
+    );
+    assert.equal(
+      text,
+      "results.id: 12345678901234567890\nresults.a: 100.10\nresults.b: 2000.0\nresults.c: 1e400\nresults.d: -0",
+    );
+  });
+
   it("gives no text for invalid JSON, a scalar, or an empty object or array", () => {
     for (const given of ["{not json", '"text"', "42", "null", "{}", "[]"]) {
       assert.equal(jsonToText(given), "", given);

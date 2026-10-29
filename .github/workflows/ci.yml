@@ -45,16 +45,16 @@ jobs:
       - run: mise run lint
 
   test:
-    # The mywiki checker is a zero-dependency script that claims to run on any
-    # Node 20+, so CI exercises the floor of that claim, the current LTS line,
-    # and 26 (what the repo is actually developed on) rather than whatever Node
-    # the runner image happens to ship.
+    # The mywiki checker claims to run on any Node 22+, and research-candidates
+    # needs 22 for JSON.parse's source text (exact API numbers), so CI exercises
+    # that floor, the current LTS line, and 26 (what the repo is actually
+    # developed on) rather than whatever Node the runner image happens to ship.
     name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24, 26]
+        node: [22, 24, 26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -65,7 +65,7 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       # No Node is pinned in .config/mise/config.toml, so mise leaves the
       # version selected above alone. If anyone ever pins one, every leg would
-      # silently test that single version while still reporting four. Ask mise
+      # silently test that single version while still reporting three. Ask mise
       # which node it resolves, not the ambient shell: `mise run test` runs in
       # mise's context, so that is the only answer that proves anything.
       - name: Verify the tests will run on the matrix Node
