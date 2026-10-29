@@ -10,7 +10,8 @@
 // reads it, on every hop, and only its class code is printed: it is never
 // requested and never logged, since the URL is the private text.
 //
-// fetch-snapshot --ballot ... is the researcher's step 2 import (ballot-import.js).
+// fetch-snapshot --ballot ... is the researcher's step 2 import (ballot-import.js),
+// and fetch-snapshot --searched ... the discovery agent's search log (search-log.js).
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -22,6 +23,7 @@ const { cleanUrl, fetchPage, spellings } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
 const { Failure, runCommand } = require("./output");
 const { URL_CLASSES, findRefusal } = require("./privacy");
+const searched = require("./search-log").main;
 const { snapshotText, today } = require("./snapshot-file");
 const { save, withLock } = require("./snapshot-store");
 
@@ -63,7 +65,8 @@ const logUnfetchable = (ballotDir, url, where, reason) => {
   fs.appendFileSync(path.join(ballotDir, "unfetchable.md"), line);
 };
 
-const main = (argv) => (argv[0] === "--ballot" ? ballotImport(argv) : plainFetch(argv));
+const MODES = { "--ballot": ballotImport, "--searched": searched };
+const main = (argv) => (MODES[argv[0]] ?? plainFetch)(argv);
 
 const plainFetch = (argv) =>
   runCommand(async () => {

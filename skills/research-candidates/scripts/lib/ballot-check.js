@@ -19,6 +19,7 @@ const {
   OFFICE_TYPES,
   ROLES,
   SECTIONS,
+  STATUSES,
   VIEW,
 } = require("./constants");
 const { checkPrivacy } = require("./ballot-privacy");
@@ -39,7 +40,6 @@ const { readManifest, sha256, withLock } = require("./snapshot-store");
 const { requireTerminal } = require("./terminal");
 
 const BALLOT_DIR = "sources/_ballot";
-const STATUSES = ["on_ballot", "withdrawn_still_printed", "certified_write_in"];
 // The names fetch-snapshot --ballot gives _ballot snapshots; any other name is
 // never printed, since a file dropped there can be named after private text.
 const SNAPSHOT_NAME = new RegExp(`${ID_PATTERN.source.slice(0, -1)}\\.md$`);

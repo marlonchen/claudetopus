@@ -78,6 +78,18 @@ fetch-snapshot --ballot --file <election>/<ballot-id> <role> <path> <url>
 - `--file`: `file-not-in-downloads` (the path, with symlinks resolved, is not under `downloads/`), `bad-file` (not a regular file; not a PDF or HTML file by both its extension and its first bytes, `%PDF-` or a tag; or an HTML file that names no charset in a `<meta>` and is not valid UTF-8). The file is read once, before the prompt, and that copy is saved.
 - PDFs: `pdftotext-missing` (install poppler), `pdf-unreadable` (also a conversion that takes over a minute), `pdf-no-text`.
 
+The discovery agent logs a checklist item it has run (Search log) with:
+
+```text
+fetch-snapshot --searched <election>/<ballot-id> <contest> <subject> <item>
+```
+
+The agents' fetch tool fixes the ballot and the contest, so the agent gives only the subject and the item. Once its arguments parse, it checks Rule 8 and finishes any interrupted save, as a plain fetch does, then appends the line while it holds the ballot lock and prints `search-log/<contest>.tsv logged`. It reads only `ballot.yaml`, never `tiers.yaml`, `private.yaml` or `addresses.yaml`, since every field it writes is an id `ballot.yaml` lists, `_race`, an item number or the date. Its codes are the plain fetch's Rule 8, argument and data-file codes (`usage`, `bad-ballot`, `unknown-ballot`, `unknown-contest`, `unknown-subject`, `file-missing`, `yaml-invalid`, `ballot-invalid`), located the same way, and:
+
+- `bad-item`: an item that is not one the contest's type uses, located `<contest>/<subject>`;
+- `search-log-invalid`: the log does not end in a newline, so the next line would join the last, located `search-log/<contest>.tsv`;
+- `ballot-locked` and `internal-error`.
+
 ## Names
 
 Use a short kebab-case name for the source (`fec-totals.md`). Re-fetching writes a new file with a numeric suffix (`fec-totals-2.md`); a file is never overwritten. A suffix always means a re-fetch, so `fetch-snapshot` refuses a name that ends in `-` and digits (`bad-name`). Numbers in names are fine: `check` strips link targets, link text and inline code before looking for figures.

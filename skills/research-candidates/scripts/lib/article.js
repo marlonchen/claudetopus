@@ -7,11 +7,14 @@
 // judges structure (which blocks and sections, in which order, in which
 // states): that is coverage's, from what this returns.
 //
-// Returns { title, blocks, claims, failures }: title { text, line } or null;
-// blocks [{ name, line, sections: [{ name, line, states, claims, issues:
+// Returns { title, titles, blocks, claims, strays, failures }: titles, every
+// `#` heading as { text, line }, and title, the first or null; blocks [{ name, line, sections: [{ name, line, states, claims, issues:
 // [{ name, line, states, claims }] }] }]; claims [{ line, text, tag, label,
 // target, excerpt, excerptLine, block, section, issue }], each also under its
-// section or issue; failures [{ line, code }], in line order.
+// section or issue; strays, the lines of each heading, state or claim with no
+// block or section to sit in (a `###` before any `##`, a `####` or a state or
+// claim before a block's first `###`), so nothing the tree leaves out is lost;
+// failures [{ line, code }], in line order.
 
 const { SECTION_STATES } = require("./constants");
 
@@ -31,9 +34,10 @@ const EXTRA_SPAN =
 const parseArticle = (text) => {
   const lines = text.split("\n");
   if (lines.at(-1) === "") lines.pop();
-  let title = null;
+  const titles = [];
   const blocks = [];
   const claims = [];
+  const strays = [];
   const failures = [];
   let block = null;
   let section = null;
@@ -67,7 +71,7 @@ const parseArticle = (text) => {
     if (heading) {
       const level = heading[1].length;
       const name = heading[2];
-      if (level === 1) title ??= { text: name, line: n };
+      if (level === 1) titles.push({ text: name, line: n });
       if (level === 2) {
         block = { name, line: n, sections: [] };
         blocks.push(block);
@@ -76,17 +80,21 @@ const parseArticle = (text) => {
       }
       if (level === 3) {
         section = { name, line: n, states: [], claims: [], issues: [] };
-        block?.sections.push(section);
+        if (block) block.sections.push(section);
+        else strays.push(n);
         issue = null;
       }
       if (level === 4) {
         issue = { name, line: n, states: [], claims: [] };
-        section?.issues.push(issue);
+        if (section) section.issues.push(issue);
+        else strays.push(n);
       }
       continue;
     }
     if (SECTION_STATES.includes(line)) {
-      (issue ?? section)?.states.push({ state: line, line: n });
+      const container = issue ?? section;
+      if (container) container.states.push({ state: line, line: n });
+      else strays.push(n);
       continue;
     }
     const claim = CLAIM.exec(line);
@@ -104,12 +112,13 @@ const parseArticle = (text) => {
         issue,
       };
       if (EXTRA_SPAN.test(claim[1]) || !LABEL.test(claim[3])) pending.malformed = true;
+      if (!section) strays.push(n);
       continue;
     }
     fail(n);
   }
   if (pending) fail(pending.line);
-  return { title, blocks, claims, failures };
+  return { title: titles[0] ?? null, titles, blocks, claims, strays, failures };
 };
 
 module.exports = { parseArticle };

@@ -239,4 +239,4 @@ const main = (argv) =>
     return withLock(ballotDir, () => check(ballotDir, contests));
   });
 
-module.exports = { main };
+module.exports = { allContests, main, parseArgs, resolveTarget };
