@@ -382,7 +382,7 @@ describe("check: claim tags", () => {
 });
 
 describe("check: figures", () => {
-  it("fails a claimed figure its own excerpt does not hold, never reading the tag or link", async () => {
+  it("fails a claimed figure its own excerpt does not hold as written, never reading the tag or link", async () => {
     const data = setup();
     plant(
       data,
@@ -392,8 +392,8 @@ describe("check: figures", () => {
       }),
     );
     withClaims(data, [
+      ["T1", "Raised $1220000.55", "fec-totals-2", "receipts: 1220000.55"],
       ["T1", "Raised $1.22 million", "fec-totals-2", "receipts: 1220000.55"],
-      ["T1", "Raised $1 million", "fec-totals-2", "receipts: 1220000.55"],
       ["T1", "Spent $980,000", "fec-totals-2", "receipts: 1220000.55"],
       ["T2", "Served two terms ending in 2022", "bio", BOARD],
     ]);

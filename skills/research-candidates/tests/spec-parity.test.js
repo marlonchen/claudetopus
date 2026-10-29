@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
+const { figuresBacked } = require("../scripts/lib/figures");
 
 // The reference files depend on each other in ways markdown lint cannot see:
 // review-list.md and coverage pick sections by the Rule markers in
@@ -2592,60 +2593,27 @@ describe("ReviewItemKeys", () => {
   });
 });
 
-// The value of a figure, canonicalized as article-format.md's Figures rule says: `$` and
-// thousands commas dropped, K/M/million/billion read as multipliers. Returns a scaled BigInt
-// (digits, decimals shown, power of ten) so half-up rounding stays exact.
-const FIGURE_MULTIPLIERS = { K: 3, M: 6, million: 6, billion: 9 };
-const parseFigure = (text) => {
-  const m = text.replace(/[$,]/g, "").match(/^(\d+)(?:\.(\d+))?\s*(K|M|million|billion)?$/);
-  assert.ok(m, `not a figure: ${text}`);
-  const decimals = (m[2] ?? "").length;
-  return { digits: BigInt(m[1] + (m[2] ?? "")), decimals, power: FIGURE_MULTIPLIERS[m[3]] ?? 0 };
-};
-// Does the excerpt's value, rounded half-up to the decimals the claim shows, equal the claim,
-// and is the claim within 1% of it?
-const figureMatches = (claim, excerpt) => {
-  const c = parseFigure(claim);
-  const e = parseFigure(excerpt);
-  // Excerpt value in the claim's unit, times 10^c.decimals: num / den.
-  const exp = e.power - c.power + c.decimals - e.decimals;
-  const num = exp >= 0 ? e.digits * 10n ** BigInt(exp) : e.digits;
-  const den = exp >= 0 ? 1n : 10n ** BigInt(-exp);
-  if ((2n * num + den) / (2n * den) !== c.digits) return false;
-  // And within 1%: |claim - excerpt| * 100 <= excerpt, both at the smaller power of ten.
-  const ce = c.power - c.decimals;
-  const ee = e.power - e.decimals;
-  const low = Math.min(ce, ee);
-  const cv = c.digits * 10n ** BigInt(ce - low);
-  const ev = e.digits * 10n ** BigInt(ee - low);
-  return (cv > ev ? cv - ev : ev - cv) * 100n <= ev;
-};
-
 // Added by /ship test coverage audit (run 9).
-// Value: protects=the Figures rule's worked examples hold under its own half-up and 1% rule with
-//   K/M/million/billion multipliers; fails_when=an example or the multiplier list is edited so
-//   the stated match no longer computes; why_new=no test read Figures; seam=none;
-//   no_claim=check's figure parser (tests/figures.test.js)
+// Value: protects=the Figures rule's worked examples hold under the shipped matcher
+//   (lib/figures.js), and the rule agrees with the Wording rules' raw figures; fails_when=an
+//   example or the matcher changes so a stated match no longer holds; why_new=no test read
+//   Figures; seam=lib; no_claim=the matcher's edge cases (tests/figures.test.js)
 describe("FigureExamples", () => {
-  it("the Figures rule's worked examples match under half-up rounding", () => {
+  it("the Figures rule's worked examples hold: figures are copied, never rounded", () => {
     const rule = between(ARTICLE, "## Figures");
-    assert.match(rule, /drop `\$` and thousands commas/);
-    assert.match(rule, /read `K`, `M`, `million` and `billion` as multipliers/);
-    assert.match(rule, /rounded half-up to the decimal places the claim shows/);
-    const first = rule.match(/"([^"]+)" matches `\w+: ([\d.]+)`, and "([^"]+)" matches it too/);
-    assert.ok(first, "the Figures rule lost its worked examples");
-    const [, claimA, excerpt, claimB] = first;
-    assert.ok(figureMatches(claimA, excerpt), `${claimA} does not match ${excerpt}`);
-    assert.ok(figureMatches(claimB, excerpt), `${claimB} does not match ${excerpt}`);
-    // The helper rejects what the rule rejects, so the passes above are not vacuous.
-    assert.ok(!figureMatches("$1,220,000", excerpt), "half-up should round .55 up");
-    assert.ok(!figureMatches("$1.23 million", excerpt));
-    // Half-up, not half-even, and K is a multiplier: 12450 shows as $12.5K.
-    assert.ok(figureMatches("$12.5K", "12450") && !figureMatches("$12.4K", "12450"));
-    // The 1% bound: rounding alone would pass these.
-    assert.match(rule, /and the claim is within 1% of the excerpt's value/);
-    assert.ok(!figureMatches("$2 billion", "1.5 billion") && !figureMatches("3M", "2,500,000"));
-    assert.ok(!figureMatches("$1 million", "500000") && figureMatches("$1 million", "1004000"));
+    assert.match(rule, /never rounded or rescaled/);
+    assert.match(ARTICLE, /Money and vote figures are shown raw, as the excerpt gives them/);
+    const examples = rule.match(
+      /"([^"]+)" matches `([^`]+)`, but "([^"]+)" does not, and "([^"]+)" does not match `([^`]+)`/,
+    );
+    assert.ok(examples, "the Figures rule lost its worked examples");
+    const [, claim, excerpt, rescaled, rounded, raw] = examples;
+    assert.ok(figuresBacked(claim, excerpt), `${claim} does not match ${excerpt}`);
+    assert.ok(!figuresBacked(rescaled, excerpt), `${rescaled} matches ${excerpt}`);
+    assert.ok(!figuresBacked(rounded, raw), `${rounded} matches ${raw}`);
+    // The stretches the rule names.
+    assert.match(rule, /"\$1 million" never stands for 500,000/);
+    assert.ok(!figuresBacked("$1 million", "500,000") && !figuresBacked("$5 B", "5"));
   });
 });
 
