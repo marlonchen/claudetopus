@@ -68,10 +68,10 @@ A measure or retention race with a section not researched yet adds the same endi
 
 ## Type
 
-Two open-license fonts, Latin subset, embedded as base64 `woff2` in the inline CSS, so the page makes no external requests (the woff2 files live in this skill's fonts directory). Budget: the four faces total at most 200KB of `woff2` before base64, which adds a third, so at most about 270KB in the page; subset further rather than exceed it.
+Two open-license fonts, Latin subset, embedded as base64 `woff2` in the inline CSS, so the page makes no external requests (the woff2 files live in this skill's [fonts directory](../fonts/README.md)). Budget: the four faces total at most 200KB of `woff2` before base64, which adds a third, so at most about 270KB in the page; subset further rather than exceed it.
 
 - Atkinson Hyperlegible Next (400, 700) for body and UI. It was designed for low-vision readers, with distinct 1/l/I and 0/O, which matters for dollar figures and vote counts.
-- Source Serif 4 (400, 600) for headings and excerpts, so the source's own words read differently from the summary.
+- Source Serif 4 (400, 600) for headings and excerpts, so the source's own words read differently from the summary. Its license reserves the name "Source" for unmodified copies, so the subset faces are named Ballot Serif.
 
 ## Tokens
 
@@ -120,3 +120,23 @@ Page budget: the whole file, fonts included, should stay under 1MB. `publish` pr
 
 1. Ballot and race screens with receipts (the first deliverable).
 2. My weights screen, later: sliders and ratings in localStorage only, with Unknown and out-of-scope sections excluded from scoring, plus a private printable cheat sheet. Built only after the top-of-ballot contests are `ready`. It needs JavaScript, which the page CSP and the `<script` refusal in the privacy scan (SKILL.md step 6.2-6.3) forbid, so it waits for a reviewed change to both.
+
+## Command line
+
+```text
+publish <election>/<ballot-id>
+```
+
+Once its argument parses, `publish` checks Rule 8 and finishes any interrupted save, then holds the ballot lock while it runs SKILL.md step 6.1 and renders the page. Like every script, it prints only `location code [key]` lines (Rule 5), reports every refusal of a gate it finds and exits non-zero on any. This phase stops after the render: the privacy scan and the copy to the Pages repo (steps 6.2-6.6) come later, and so does the installed-skill check.
+
+The ballot gate refuses the whole publish, writing no page:
+
+- `ballot-check-failed`, located `ballot.yaml`: `ballot-check` fails; run it to see why.
+- `snapshot-hash`, located as `check` locates it ([article-format.md](article-format.md#command-line)).
+- `uncommitted`, located by the area only (`review`, `tiers.yaml`, `snapshots.sha256` or `search-log`), never by a file name, which a planted file can take from private text: the area holds a change, staged or not, an untracked or ignored file, or a file git is told to assume unchanged or skip.
+- `history-lost-line`, located by the file and keyed by the commit: in a commit on the first-parent line of `HEAD`, `snapshots.sha256` or a search log does not begin with all of its text from the commit before, or `review/<contest>.accepted` does not begin with all of its lines from the commit before, a last line with no newline aside (`review-list` drops it as a torn append), unless the commit is `reset review <contest>`.
+- `baseline-changed`, located by `review/<contest>.baseline` and keyed by the commit: a commit other than `reset review <contest>` changed or removed it.
+
+Then the contest gate prints one line per contest of `ballot.yaml`, in ballot order: `articles/<contest>.md ready`, or `articles/<contest>.md not-ready` keyed by the reasons `ready` returns, joined by commas ([review-list.md](review-list.md#command-line)): `not-reviewed` (no baseline yet), `unaccepted`, `review-missing`, or the failure that stopped the check, such as `file-missing` or `check-failed`. A `review-missing` contest refuses the whole publish as `review/<contest>.md review-missing`: run `review-list` to rebuild the file. Last, it writes the page and prints `site/index.html written`.
+
+Its other codes: `usage`, `bad-ballot`, `unknown-ballot`, `file-missing` and `yaml-invalid` (`publish.yaml` or `ballot.yaml`), `ballot-invalid`, `publish-invalid` (`publish.yaml` has no `display_name`, keyed `display_name`), `archives-invalid` (an `archives.tsv` line that is not a snapshot path, a tab and 14 digits, or a last line with no newline, located by line), `snapshot-invalid` (a snapshot a ready contest cites has no `source:` or no real `fetched:` date, located by its path), `site-invalid` (`site` is not a directory), `git-failed`, the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked`, `deps-missing` and `internal-error`.

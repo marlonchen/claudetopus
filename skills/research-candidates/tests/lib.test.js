@@ -374,6 +374,8 @@ describe("each command's output codes are the ones its reference lists", () => {
   const COVERAGE = ["coverage.js"];
   // review-list's own module (review-list.md, Command line).
   const REVIEW_LIST = ["review-list.js"];
+  // publish's own modules (page.md, Command line).
+  const PUBLISH = ["publish.js", "ballot-gate.js", "page.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");
@@ -382,7 +384,7 @@ describe("each command's output codes are the ones its reference lists", () => {
       .filter(
         (f) =>
           f !== "install-deps.js" &&
-          ![...BALLOT_CHECK, ...CHECK, ...COVERAGE, ...REVIEW_LIST].includes(f),
+          ![...BALLOT_CHECK, ...CHECK, ...COVERAGE, ...REVIEW_LIST, ...PUBLISH].includes(f),
       );
     const emitted = new Set(files.flatMap((f) => [...emittedBy(f)]));
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
@@ -403,6 +405,27 @@ describe("each command's output codes are the ones its reference lists", () => {
     for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
     // The codes it reaches through check, coverage and the shared modules.
     for (const code of ["usage", "bad-ballot", "unknown-ballot", "ballot-invalid", "deps-missing"])
+      assert.ok(listed.has(code), `\`${code}\` is not listed`);
+  });
+
+  it("publish: every code is in page.md's Command line section", () => {
+    const listed = listedIn("page.md");
+    const own = new Set(PUBLISH.flatMap((f) => [...emittedBy(f)]));
+    assert.ok(own.size >= 10, `only ${own.size} codes found in publish`);
+    for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+    // The codes it reaches through the shared modules and review-list's ready.
+    for (const code of [
+      "usage",
+      "bad-ballot",
+      "unknown-ballot",
+      "yaml-invalid",
+      "ballot-invalid",
+      "snapshot-hash",
+      "ballot-locked",
+      "deps-missing",
+      "not-reviewed",
+      "unaccepted",
+    ])
       assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
 

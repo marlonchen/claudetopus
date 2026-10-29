@@ -52,8 +52,14 @@ afterEach(() => {
   while (repos.length) repos.pop().cleanup();
 });
 
+// ready() for each contest, as { ready, reasons }: the article and snapshot
+// reader it also returns are publish's to render.
+const readyOf = (ballotDir, contests) =>
+  new Map(
+    [...ready(ballotDir, contests)].map(([id, a]) => [id, { ready: a.ready, reasons: a.reasons }]),
+  );
 // ready() for one contest.
-const readyOne = (ballotDir, contest = "us-house-07") => ready(ballotDir, [contest]).get(contest);
+const readyOne = (ballotDir, contest = "us-house-07") => readyOf(ballotDir, [contest]).get(contest);
 
 describe("review-list --keys", () => {
   it("prints each claim's location, whether it is accepted and a 128-bit key, writing nothing", async () => {
@@ -661,7 +667,7 @@ describe("review-list: ready", () => {
   it("answers for every contest given from one read of the ballot", async () => {
     let data = setup();
     assert.deepStrictEqual(
-      ready(data.ballotDir, ["us-house-07", "us-house-08", "us-house-07"]),
+      readyOf(data.ballotDir, ["us-house-07", "us-house-08", "us-house-07"]),
       new Map([
         ["us-house-07", { ready: false, reasons: ["not-reviewed", "unaccepted"] }],
         ["us-house-08", { ready: false, reasons: ["unknown-contest"] }],
@@ -670,7 +676,7 @@ describe("review-list: ready", () => {
     // A failure of the whole run is every contest's reason.
     data = setup({ unfetchable: "- not an entry\n" });
     assert.deepStrictEqual(
-      ready(data.ballotDir, ["us-house-07", "supreme-court-retention-a"]),
+      readyOf(data.ballotDir, ["us-house-07", "supreme-court-retention-a"]),
       new Map([
         ["us-house-07", { ready: false, reasons: ["unfetchable-invalid"] }],
         ["supreme-court-retention-a", { ready: false, reasons: ["unfetchable-invalid"] }],
