@@ -10,6 +10,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { apiRecords } = require("./api-text");
 const { parseArticle } = require("./article");
 const { EXCERPT_LENGTH, ID_PATTERN, ROLES, VIEW } = require("./constants");
 const { hiddenTitles, readYamlDocument } = require("./data-files");
@@ -86,8 +87,10 @@ const resolveTarget = (target) => {
   return isSnapshotPath(rel) ? rel : null;
 };
 
-// Each cited snapshot, read once: { ballot, tier, statementsOnly, body, fields,
-// hash } or null when it is missing or not a regular file. `fields` is its
+// Each cited snapshot, read once: { ballot, tier, statementsOnly, body, records,
+// fields, hash } or null when it is missing or not a regular file. `records`
+// is an api snapshot's records, each read as a body on its own
+// (snapshot-format.md, Body), and null for any other method. `fields` is its
 // parsed front matter ({} when it cannot be read) and `hash` the sha256 of the
 // whole file. `ballot` is true for a
 // _ballot snapshot whose front matter does not give a companion role, so a
@@ -104,6 +107,7 @@ const snapshotReader = (ballotDir, YAML) => {
       const bytes = fs.readFileSync(file);
       const text = bytes.toString("utf8");
       const front = FRONT_MATTER.exec(text);
+      const body = front ? text.slice(front[0].length) : text;
       let fields = {};
       try {
         fields = (front && YAML.parse(front[1] ?? "")) || {};
@@ -115,7 +119,8 @@ const snapshotReader = (ballotDir, YAML) => {
         ballot: rel.startsWith("sources/_ballot/") && !COMPANION_ROLES.includes(role),
         tier: Object.hasOwn(TIER_RANK, fields.tier ?? "") ? fields.tier : null,
         statementsOnly: typeof fields.statements_only === "boolean" ? fields.statements_only : null,
-        body: bodyText(front ? text.slice(front[0].length) : text),
+        body: bodyText(body),
+        records: fields.method === "api" ? apiRecords(body).map(bodyText) : null,
         fields,
         hash: sha256(bytes),
       };
@@ -197,8 +202,12 @@ const claimFailures = (claim, at, contest, { view, titles, readSnapshot }) => {
   const length = [...normalizeLine(claim.excerpt)].length;
   if (length < EXCERPT_LENGTH.min || length > EXCERPT_LENGTH.max)
     failures.push(new Failure(at, "excerpt-length"));
-  if (!findExcerpt(snapshot.body, claim.excerpt))
-    failures.push(new Failure(at, "excerpt-not-found"));
+  const found = (snapshot.records ?? [snapshot.body]).some((record) =>
+    findExcerpt(record, claim.excerpt),
+  );
+  if (!found && snapshot.records && findExcerpt(snapshot.body, claim.excerpt))
+    failures.push(new Failure(at, "excerpt-crosses-record"));
+  else if (!found) failures.push(new Failure(at, "excerpt-not-found"));
   return failures;
 };
 

@@ -70,15 +70,15 @@ describe("source-tiers.md: the tier, owner and source come only from tiers.yaml"
     const result = await fetchVia(
       data,
       {
-        "https://county.example.gov/go": {
+        "https://news.example.com/go": {
           status: 302,
           headers: { location: "https://news.example.com/opinion/piece" },
         },
         "https://news.example.com/opinion/piece": { body: COUNTY_PAGE },
       },
-      [BALLOT, "us-house-07", "_race", "piece", "https://county.example.gov/go"],
+      [BALLOT, "us-house-07", "_race", "piece", "https://news.example.com/go"],
     );
-    assert.equal(result.status, 0);
+    assert.equal(result.status, 0, result.stdout);
     const field = Object.fromEntries(
       frontMatter(data.read(`${BALLOT}/sources/us-house-07/_race/piece.md`)),
     );

@@ -87,7 +87,7 @@ It checks, for every claim (Claim lines):
 - the claim line has its tag and its link, with link text `s` and a number, and the next line is its excerpt; any other line of the article that is not a heading, a section state or blank fails too (`claim-format`);
 - the link resolves, relative to the article, to an existing snapshot file under the article's own contest (`sources/<contest>/`) or under `sources/_ballot/`, whose every part `fetch-snapshot` could have named (`claim-format`), so a claim never cites another contest's snapshot, which no review rule reads as misfiled; a claim whose link does not resolve still gets every check below that does not need its snapshot;
 - a claim citing the sample ballot (the `link:` line of `ballot-view.md`) quotes one whole span of `ballot-view.md`, and a claim citing any other `role: sample_ballot` snapshot, or citing one while there is no `ballot-view.md`, fails, and so does a claim citing a `_ballot` snapshot whose front matter does not give a companion role (`candidate_list`, `pamphlet`, `write_in_list` or `withdrawal_notice`), so a sample ballot whose role cannot be read is never matched like an ordinary source (`ballot-excerpt`);
-- any other excerpt is 20 to 400 characters once normalized (`excerpt-length`) and is found in its own snapshot's body (`excerpt-not-found`);
+- any other excerpt is 20 to 400 characters once normalized (`excerpt-length`) and is found in its own snapshot's body (`excerpt-not-found`); in a `method: api` snapshot it must be found within one record, the lines between two blank lines ([snapshot-format.md](snapshot-format.md#body)), and one found only across a record boundary fails `excerpt-crosses-record` instead;
 - the claim text and excerpt hold no `<!--` or `-->`, read both raw and normalized, so a fullwidth or dash-folded marker counts too (`comment-marker`);
 - the claim text and excerpt hold no bidi control (Unicode `Bidi_Control`: U+061C, U+200E, U+200F, U+202A to U+202E and U+2066 to U+2069), which can reorder what a reader sees while normalizing drops it, so a review key would not change with it ([review-list.md](review-list.md#item-keys)) (`claim-format`);
 - the tag fits the cited snapshot's front matter (source-tiers.md, Claim tags): its tier is the snapshot's `tier`, a plain tag is `T1` to `T3` on a snapshot that is not `statements_only`, and `T2i` cites a T2 snapshot that is not `statements_only`; a tag outside the table, or a snapshot whose `tier` or `statements_only` (`true` or `false`) cannot be read, fails too (`tag-mismatch`);
@@ -120,6 +120,7 @@ After an article's failures, `coverage` lists each snapshot under `sources/<cont
 | Code | Meaning |
 | --- | --- |
 | `excerpt-not-found` | The excerpt is not in the body of the snapshot the claim links to |
+| `excerpt-crosses-record` | The excerpt is in its `api` snapshot's body only across a blank line, so it splices fields of two records |
 | `excerpt-length` | The excerpt is under 20 or over 400 characters (a sample-ballot excerpt is checked by `ballot-excerpt` instead) |
 | `tag-mismatch` | The claim tag does not fit the snapshot's tier or `statements_only` |
 | `says-missing` | A "Says:" claim does not start with `Says:`, or a `says-only` section holds another claim |

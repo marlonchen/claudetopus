@@ -184,9 +184,11 @@ const makeDataRepo = (options = {}) => {
 // the original URL in the X-Original-Url header.
 const startServer = async (routes) => {
   const seen = [];
+  const headers = [];
   const server = http.createServer((req, res) => {
     const original = req.headers["x-original-url"];
     seen.push(original);
+    headers.push(req.headers);
     const route = routes[original];
     if (!route) {
       res.writeHead(404, { "content-type": "text/plain" });
@@ -203,6 +205,7 @@ const startServer = async (routes) => {
   return {
     target: `127.0.0.1:${server.address().port}`,
     seen,
+    headers,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 };
@@ -299,18 +302,29 @@ const runInTty = (script, args, { cwd, env = {}, answer = "y", pipe = "none" }) 
     );
   });
 
+// A closing paragraph long enough that every article page clears fetch-snapshot's
+// short-page rule (snapshot-format.md, Unfetchable pages): no digits, names or ids.
+const ARTICLE_FILLER =
+  "This notice is published for general information about the election. " +
+  "Voters with questions about where, when or how to vote should contact the election " +
+  "office during business hours, or read the guides the office publishes before each " +
+  "election. Nothing in this notice endorses any candidate, party or ballot question, " +
+  "and the office does not answer questions about the positions of any candidate. " +
+  "Corrections to this notice are posted on this page as soon as they are made, " +
+  "and earlier versions are kept on request.";
 // A page Readability can read: an article between navigation and a footer.
 const articlePage = (title, paragraphs) => `<!doctype html>
 <html><head><title>${title}</title></head>
 <body>
 <nav><a href="/">Home</a> <a href="/about">About</a></nav>
 <article><h1>${title}</h1>
-${paragraphs.map((p) => `<p>${p}</p>`).join("\n")}
+${[...paragraphs, ARTICLE_FILLER].map((p) => `<p>${p}</p>`).join("\n")}
 </article>
 <footer>Copyright Example</footer>
 </body></html>`;
 
 module.exports = {
+  ARTICLE_FILLER,
   BALLOT,
   DEFAULT_ADDRESSES,
   DEFAULT_BALLOT,

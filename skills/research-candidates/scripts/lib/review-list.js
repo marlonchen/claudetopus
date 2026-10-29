@@ -272,13 +272,14 @@ const readUnfetchable = (ballotDir) => {
 
 // The contest's unfetchable entries that go on its list: not a domain refusal,
 // and not saved since by a snapshot of the same contest and subject whose url
-// is the entry's, fetched on or after it. One per key, in log order.
+// or requested_url is the entry's, fetched on or after it. One per key, in log order.
 const entryItems = (id, { entries, snapshots, check }) => {
   const saved = ({ url, subject, date }) =>
     snapshots.some((rel) => {
       if (!rel.startsWith(`sources/${id}/${subject}/`)) return false;
       const fields = check.readSnapshot(rel)?.fields;
-      return fields?.url === url && String(fields.fetched ?? "") >= date;
+      const sameUrl = fields?.url === url || fields?.requested_url === url;
+      return sameUrl && String(fields.fetched ?? "") >= date;
     });
   const items = new Map();
   for (const entry of entries) {

@@ -439,6 +439,33 @@ describe("review-list: what an item shows", () => {
       entryKey({ url: "https://news.example.com/jane?page=2", where: "us-house-07/jane-example" }),
     ]);
   });
+
+  it("clears an unfetchable entry by the URL a later snapshot was asked for, or landed on", async () => {
+    const data = setup({
+      unfetchable: `- https://news.example.com/jane-old | us-house-07/jane-example | 2026-10-20 | login redirect
+- https://news.example.com/jane-moved | us-house-07/jane-example | 2026-10-20 | http 404
+- https://news.example.com/jane-other | us-house-07/jane-example | 2026-10-20 | short page
+`,
+    });
+    plant(
+      data,
+      "sources/us-house-07/jane-example/moved.md",
+      snapshot({
+        subject: "jane-example",
+        url: "https://news.example.com/jane-moved",
+        body: "Jane Example moved her campaign office to Main Street.",
+        extra: "requested_url: https://news.example.com/jane-old\n",
+      }),
+    );
+    await readEvery(data);
+    await reviewList(data);
+    const listed = Object.entries(itemsOf(data))
+      .filter(([, item]) => item.why.length === 0)
+      .map(([key]) => key);
+    assert.deepStrictEqual(listed, [
+      entryKey({ url: "https://news.example.com/jane-other", where: "us-house-07/jane-example" }),
+    ]);
+  });
 });
 
 describe("review-list: retention and measure contests", () => {

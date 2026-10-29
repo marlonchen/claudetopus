@@ -4,6 +4,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const { describe, it } = require("node:test");
+const { jsonToText } = require("../scripts/lib/api-text");
 const constants = require("../scripts/lib/constants");
 const { githubRepo } = require("../scripts/lib/repo-guard");
 const os = require("node:os");
@@ -293,6 +294,19 @@ describe("constants match the reference text they come from", () => {
       constants.KEY_ENV,
     );
   });
+  it("the key hosts, wall words and short-page length are snapshot-format.md's", () => {
+    const format = read("references/snapshot-format.md");
+    for (const [host, name] of Object.entries(constants.KEY_HOSTS)) {
+      assert.ok(format.includes(`\`${name}\` to \`${host}\``), `${name} to ${host}`);
+    }
+    const words = format.match(/that is one of these words: ([a-z, -]+) \(/);
+    assert.ok(words, "snapshot-format.md no longer lists the wall words");
+    assert.deepEqual(words[1].split(", "), constants.WALL_SEGMENTS);
+    assert.match(
+      format,
+      new RegExp(`readable text \\(Body\\) is under ${constants.SHORT_PAGE} characters`),
+    );
+  });
 });
 
 describe("ballot-format.md, Ballot ids: the id state and county build", () => {
@@ -344,7 +358,7 @@ describe("each command's output codes are the ones its reference lists", () => {
       /new Failure\([^;]*?, "([a-z-]+)"/g,
       /\bfail\([^;]*?, "([a-z-]+)"\)/g,
       /code: "([a-z-]+)"/g,
-      /refuse\(url, "([a-z-]+)"/g,
+      /refuse\(\w+, "([a-z-]+)"/g,
       /"- ([a-z-]+)/g,
     ]) {
       for (const m of source.matchAll(pattern)) emitted.add(m[1]);
@@ -493,6 +507,42 @@ describe("snapshot-format.md, Manifest: the ballot lock", () => {
       );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("snapshot-format.md, Body: an API response as key: value records", () => {
+  it("never lets a line break in a key or value start a line or a record", () => {
+    const text = jsonToText(
+      JSON.stringify({ results: [{ "first\nname": "Jane\n\nparty: DEM", note: "a\r\n b" }] }),
+    );
+    assert.equal(text, "results.first name: Jane party: DEM\nresults.note: a b");
+  });
+
+  it("reads a top-level array of objects as one record each, keys unprefixed", () => {
+    assert.equal(jsonToText('[{"id":1},{"id":2}]'), "id: 1\n\nid: 2");
+  });
+
+  it("keeps an array of objects inside a record in that record, by index", () => {
+    const text = jsonToText(
+      JSON.stringify({ results: [{ name: "Jane", offices: [{ city: "A" }, { city: "B" }] }] }),
+    );
+    assert.equal(text, "results.name: Jane\nresults.offices.0.city: A\nresults.offices.1.city: B");
+  });
+
+  it("writes null, booleans and empty values, and drops an empty envelope", () => {
+    const text = jsonToText(
+      JSON.stringify({ results: [{ a: null, b: false, c: "", d: [], e: {} }] }),
+    );
+    assert.equal(
+      text,
+      "results.a: null\nresults.b: false\nresults.c:\nresults.d: []\nresults.e: {}",
+    );
+  });
+
+  it("gives no text for invalid JSON, a scalar, or an empty object or array", () => {
+    for (const given of ["{not json", '"text"', "42", "null", "{}", "[]"]) {
+      assert.equal(jsonToText(given), "", given);
     }
   });
 });

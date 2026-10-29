@@ -11,6 +11,7 @@
 // ignored, so the variable can never send a page anywhere but this machine.
 
 const { domainToUnicode } = require("node:url");
+const { KEY_HOSTS, WALL_SEGMENTS } = require("./constants");
 const { combineHops, matchUrl } = require("./tiers");
 
 const MAX_HOPS = 10;
@@ -41,10 +42,16 @@ const cleanUrl = (url) => {
   return clean;
 };
 
+// An API's key goes only to its own host, over https, as a header and never in
+// the URL; any key parameter the caller gave that host is dropped.
 const request = (url, accept) => {
-  const sent = withoutFragment(url);
   const target = process.env.RESEARCH_CANDIDATES_TEST_HTTP_TARGET;
   const headers = { "user-agent": "research-candidates fetch-snapshot", accept };
+  const keyEnv = Object.hasOwn(KEY_HOSTS, url.hostname) ? KEY_HOSTS[url.hostname] : null;
+  const sent = keyEnv ? cleanUrl(url) : withoutFragment(url);
+  if (keyEnv && url.protocol === "https:" && process.env[keyEnv]) {
+    headers["x-api-key"] = process.env[keyEnv];
+  }
   const options = { redirect: "manual", headers, signal: AbortSignal.timeout(TIMEOUT_MS) };
   if (target && TEST_TARGET.test(target)) {
     headers["x-original-url"] = sent.href;
@@ -101,6 +108,12 @@ const isPdf = (bytes) => Buffer.from(bytes.subarray(0, 5)).toString("latin1") ==
 
 const refuse = (url, code, reason) => ({ url, refused: { code, reason } });
 
+// The host with one leading `www.` dropped, so example.com and www.example.com are one site.
+const site = (url) => url.hostname.replace(/^www\./, "");
+// A path segment, case folded and up to its first dot, names a login or subscribe page.
+const isWall = (url) =>
+  url.pathname.split("/").some((part) => WALL_SEGMENTS.includes(part.toLowerCase().split(".")[0]));
+
 // Every spelling of a URL the privacy check reads: as given (the argument or
 // the Location header), parsed, and with its host in Unicode, since parsing
 // turns a Unicode host into punycode. Each is checked on its own, so no
@@ -120,18 +133,28 @@ const fromHeader = (value) => {
 
 // Returns { url, hops, html, tiers } for a saved page (`pdf` holding the bytes
 // in place of `html` for a PDF, which only `options.pdf` accepts: one sent as
-// application/pdf, or as an octet stream whose bytes start %PDF-), or { url,
+// application/pdf, or as an octet stream whose bytes start %PDF-; `json`
+// holding the text for a JSON response, which only `options.json` accepts), or { url,
 // refused: { code, reason } } with the URL to log (the refused hop, or the
 // final URL) and the unfetchable.md reason. `hops` is every URL requested, in
 // order. The caller has privacy-checked `startUrl`; `checkPrivate(texts)`
 // throws on a private value in any of `texts`, and runs on each redirect's
 // Location before it is parsed and on every spelling once it is, so no URL is
 // requested, tier-matched or returned for logging unchecked. With
-// `options.t1`, every hop must be T1 before it is requested.
+// `options.t1`, every hop must be T1 before it is requested. With
+// `options.walls`, redirects that land on another site or on a login or
+// subscribe page are refused, logged under `startUrl`.
 const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
   const matches = [];
   const hops = [];
-  const accept = options.pdf ? "text/html, application/pdf" : "text/html";
+  // HTML first, so a server that negotiates never answers an article URL with JSON.
+  const accept = [
+    "text/html",
+    options.pdf && "application/pdf",
+    options.json && "application/json;q=0.9",
+  ]
+    .filter(Boolean)
+    .join(", ");
   let url = startUrl;
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
     if (!isHttp(url)) return refuse(url, "not-http", "not http");
@@ -161,6 +184,15 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
       checkPrivate(spellings(url, given));
       continue;
     }
+    // Judged by the URL the redirects landed on, whatever it answered.
+    if (options.walls && hop > 0 && site(url) !== site(startUrl)) {
+      await response.body?.cancel();
+      return refuse(startUrl, "off-site-redirect", "off-site redirect");
+    }
+    if (options.walls && hop > 0 && isWall(url)) {
+      await response.body?.cancel();
+      return refuse(startUrl, "login-redirect", "login redirect");
+    }
     if (response.status !== 200) {
       await response.body?.cancel();
       return refuse(url, "http-error", `http ${response.status}`);
@@ -169,7 +201,13 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
     const pdf = options.pdf && /^\s*application\/pdf\b/i.test(contentType);
     // County sites often send a PDF as a download; its first bytes decide.
     const octets = options.pdf && /^\s*(application|binary)\/octet-stream\b/i.test(contentType);
-    if (!pdf && !octets && !/^\s*(text\/html|application\/xhtml\+xml)\b/i.test(contentType)) {
+    const json = options.json && /^\s*application\/([\w.-]+\+)?json\b/i.test(contentType);
+    if (
+      !pdf &&
+      !octets &&
+      !json &&
+      !/^\s*(text\/html|application\/xhtml\+xml)\b/i.test(contentType)
+    ) {
       await response.body?.cancel();
       return refuse(url, "not-html", "not html");
     }
@@ -183,6 +221,7 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
     if (!bytes) return refuse(url, "too-large", "too large");
     if (octets && !isPdf(bytes)) return refuse(url, "not-html", "not html");
     if (pdf || octets) return { url, hops, pdf: bytes, tiers: combined };
+    if (json) return { url, hops, json: decode(bytes, contentType), tiers: combined };
     return { url, hops, html: decode(bytes, contentType), tiers: combined };
   }
   return refuse(url, "too-many-redirects", "too many redirects");

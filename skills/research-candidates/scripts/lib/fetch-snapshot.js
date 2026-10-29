@@ -2,10 +2,12 @@
 
 // fetch-snapshot <election>/<ballot-id> <contest> <subject> <name> <url>
 //
-// Save one web page as a write-once snapshot under
+// Save one web page or API response as a write-once snapshot under
 // <ballot>/sources/<contest>/<subject>/<name>.md (snapshot-format.md). Its
 // tier, statements_only, owner and source name come only from the matched
-// tiers.yaml entries; a page that cannot be saved is logged to unfetchable.md.
+// tiers.yaml entries; a page that cannot be saved, including one whose
+// redirects land on another site or a login page and a short teaser
+// (Unfetchable pages), is logged to unfetchable.md.
 // A URL holding a private value (Rule 7) is refused before anything else
 // reads it, on every hop, and only its class code is printed: it is never
 // requested and never logged, since the URL is the private text.
@@ -15,8 +17,9 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { jsonToText } = require("./api-text");
 const ballotImport = require("./ballot-import").main;
-const { ID_PATTERN } = require("./constants");
+const { ID_PATTERN, SHORT_PAGE } = require("./constants");
 const { loadBallot, loadPrivateValues, loadTiers } = require("./data-files");
 const { openBallot, parseBallot, parseHttpUrl } = require("./fetch-common");
 const { cleanUrl, fetchPage, spellings } = require("./fetch-page");
@@ -95,7 +98,7 @@ const plainFetch = (argv) =>
     checkPrivate(spellings(args.url, args.given));
     const entries = loadTiers(root, args.ballot, values);
 
-    const page = await fetchPage(entries, args.url, checkPrivate);
+    const page = await fetchPage(entries, args.url, checkPrivate, { json: true, walls: true });
     if (page.refused) {
       logUnfetchable(ballotDir, page.url, where, page.refused.reason);
       throw new Failure(where, page.refused.code);
@@ -104,18 +107,29 @@ const plainFetch = (argv) =>
     if (target.subjects.has(page.tiers.owner) && page.tiers.owner !== args.subject) {
       throw new Failure(where, "owner-not-subject");
     }
-    const text = htmlToText(page.html);
+    const method = page.json === undefined ? "html" : "api";
+    const raw = method === "api" ? page.json : page.html;
+    const text = method === "api" ? jsonToText(raw) : htmlToText(raw);
+    // A page that echoes a key, raw or as decoded: never saved, and never logged.
+    const key = findRefusal([raw, text], values, ["key"]);
+    if (key) throw new Failure(where, key);
     if (!text) {
       logUnfetchable(ballotDir, page.url, where, "no readable text");
       throw new Failure(where, "no-readable-text");
+    }
+    // A paywall teaser reads as a short article (snapshot-format.md, Unfetchable pages).
+    if (method === "html" && [...text].length < SHORT_PAGE) {
+      logUnfetchable(ballotDir, args.url, where, "short page");
+      throw new Failure(where, "short-page");
     }
 
     const fileText = snapshotText(
       {
         source: page.tiers.source,
         url: cleanUrl(page.url).href,
+        requested_url: cleanUrl(args.url).href,
         fetched: today(),
-        method: "html",
+        method,
         tier: page.tiers.tier,
         statements_only: page.tiers.statements_only,
         subject: args.subject,

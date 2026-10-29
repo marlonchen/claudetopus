@@ -3,7 +3,7 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 const { describe, it } = require("node:test");
-const { BALLOT, articlePage, startServer } = require("./harness");
+const { ARTICLE_FILLER, BALLOT, articlePage, startServer } = require("./harness");
 const {
   COUNTY_PAGE,
   PLAIN,
@@ -35,11 +35,22 @@ describe("fetch-snapshot saves a tiered HTML page as a write-once snapshot", () 
     const fields = frontMatter(saved);
     assert.deepEqual(
       fields.map(([key]) => key),
-      ["source", "url", "fetched", "method", "tier", "statements_only", "subject", "owner"],
+      [
+        "source",
+        "url",
+        "requested_url",
+        "fetched",
+        "method",
+        "tier",
+        "statements_only",
+        "subject",
+        "owner",
+      ],
     );
     const field = Object.fromEntries(fields);
     assert.equal(field.source, "Exampleton County elections");
     assert.equal(field.url, "https://county.example.gov/");
+    assert.equal(field.requested_url, "https://county.example.gov/");
     assert.match(field.fetched, /^\d{4}-\d{2}-\d{2}$/);
     assert.equal(field.method, "html");
     assert.equal(field.tier, "T1");
@@ -58,6 +69,28 @@ describe("fetch-snapshot saves a tiered HTML page as a write-once snapshot", () 
       `${sha256(saved)}  sources/us-house-07/_race/county-page.md\n`,
     );
     assert.deepEqual(data.list(`${BALLOT}/.partial`), []);
+  });
+
+  it("records the URL it was asked for beside the one the redirects landed on", async () => {
+    const data = repo();
+    const given = "https://county.example.gov/news?id=7&api_key=DEMO_KEY#top";
+    const result = await fetchVia(
+      data,
+      {
+        "https://county.example.gov/news?id=7&api_key=DEMO_KEY": {
+          status: 301,
+          headers: { location: "/elections/certified" },
+        },
+        "https://county.example.gov/elections/certified": { body: COUNTY_PAGE },
+      },
+      [...PLAIN.slice(0, 4), given],
+    );
+    assert.equal(result.status, 0, result.stdout);
+    const field = Object.fromEntries(
+      frontMatter(data.read(`${BALLOT}/sources/us-house-07/_race/county-page.md`)),
+    );
+    assert.equal(field.url, "https://county.example.gov/elections/certified");
+    assert.equal(field.requested_url, "https://county.example.gov/news?id=7");
   });
 
   it("writes a re-fetch to a new numbered file and never overwrites one", async () => {
@@ -121,7 +154,7 @@ describe("fetch-snapshot saves a tiered HTML page as a write-once snapshot", () 
   it("falls back to the page body when Readability finds no article", async () => {
     const data = repo();
     const page =
-      "<html><body><nav>Menu</nav><div>Filing deadline: August 1.</div>" +
+      `<html><body><nav>Menu</nav><div>Filing deadline: August 1. ${ARTICLE_FILLER}</div>` +
       "<script>var tracker = 1;</script><footer>Footer</footer></body></html>";
     const result = await fetchVia(data, { "https://county.example.gov/": { body: page } }, PLAIN);
     assert.equal(result.status, 0);

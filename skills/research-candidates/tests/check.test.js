@@ -205,6 +205,63 @@ describe("check: excerpts against their own snapshot", () => {
   });
 });
 
+describe("check: records in an api snapshot", () => {
+  const TOTALS = `results.name: OTHER, PAT
+results.receipts: 1234567.89
+
+results.name: EXAMPLE, JANE
+results.receipts: 5000`;
+  const claims = (...excerpts) =>
+    `${ARTICLE}${excerpts
+      .map(
+        (excerpt) => `
+- Reported receipts \`T1\` [s3](../sources/us-house-07/jane-example/fec-totals.md)
+  > ${excerpt}
+`,
+      )
+      .join("")}`;
+  const withTotals = (article, method = "api") => {
+    const data = setup({ article });
+    plant(
+      data,
+      "sources/us-house-07/jane-example/fec-totals.md",
+      snapshot("jane-example", TOTALS, "", { tier: "T1" }).replace(
+        "method: html",
+        `method: ${method}`,
+      ),
+    );
+    return data;
+  };
+
+  it("matches an excerpt within one record, across its lines", async () => {
+    const data = withTotals(claims("results.name: EXAMPLE, JANE results.receipts: 5000"));
+    const result = await check(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+  });
+
+  it("fails an excerpt that crosses a record boundary", async () => {
+    const data = withTotals(
+      claims(
+        "results.receipts: 1234567.89 results.name: EXAMPLE, JANE",
+        "results.receipts: 1234567.89 results.name: OTHER, PAT",
+      ),
+    );
+    await failsWith(data, [
+      "articles/us-house-07.md:18 excerpt-crosses-record",
+      "articles/us-house-07.md:21 excerpt-not-found",
+    ]);
+  });
+
+  it("reads the blank line as a record boundary only in an api snapshot", async () => {
+    const data = withTotals(
+      claims("results.receipts: 1234567.89 results.name: EXAMPLE, JANE"),
+      "html",
+    );
+    const result = await check(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+  });
+});
+
 describe("check: sample-ballot excerpts", () => {
   it("accepts a whole ballot-view.md span of any length, and nothing else", async () => {
     const data = setup({
