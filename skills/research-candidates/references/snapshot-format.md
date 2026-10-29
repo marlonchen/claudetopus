@@ -149,7 +149,7 @@ After saving a snapshot that is not `_ballot`, whose `method` is not `api`, whos
 
 ## Unfetchable log
 
-`fetch-snapshot` appends sources it could not save to `<ballot-id>/unfetchable.md`. The log sits outside `sources/` because it is append-only, not write-once. One line per entry, with the URL cleaned as above:
+`fetch-snapshot` appends sources it could not save to `<ballot-id>/unfetchable.md`, in one synced write holding the ballot lock, so a reader that holds it never sees half a line. When the log's last line has no newline (an append a crash cut short), the entry starts on a new line: the torn line stays, for `review-list` to fail as `unfetchable-invalid` by its line, and no entry after it is lost. The log sits outside `sources/` because it is append-only, not write-once. One line per entry, with the URL cleaned as above:
 
 ```text
 - <url> | <contest>/<subject> | <date> | <reason>

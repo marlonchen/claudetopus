@@ -21,7 +21,7 @@ const { Failure, Failures, runCommand } = require("./output");
 const { scan } = require("./privacy");
 const { isSnapshotPath, verifyManifest } = require("./snapshot-hash");
 const { FRONT_MATTER } = require("./snapshot-file");
-const { withLock } = require("./snapshot-store");
+const { sha256, withLock } = require("./snapshot-store");
 const { TIER_RANK } = require("./tiers");
 
 // The _ballot roles the compile agent reads whole (ballot-format.md, Ballot view).
@@ -86,8 +86,10 @@ const resolveTarget = (target) => {
   return isSnapshotPath(rel) ? rel : null;
 };
 
-// Each cited snapshot, read once: { ballot, tier, statementsOnly, body } or
-// null when it is missing or not a regular file. `ballot` is true for a
+// Each cited snapshot, read once: { ballot, tier, statementsOnly, body, fields,
+// hash } or null when it is missing or not a regular file. `fields` is its
+// parsed front matter ({} when it cannot be read) and `hash` the sha256 of the
+// whole file. `ballot` is true for a
 // _ballot snapshot whose front matter does not give a companion role, so a
 // sample ballot whose role cannot be read is never matched like an ordinary
 // source. `tier` and `statementsOnly` are null when the front matter does not
@@ -99,7 +101,8 @@ const snapshotReader = (ballotDir, YAML) => {
     const file = path.join(ballotDir, rel);
     let read = null;
     if (fs.lstatSync(file, { throwIfNoEntry: false })?.isFile()) {
-      const text = fs.readFileSync(file, "utf8");
+      const bytes = fs.readFileSync(file);
+      const text = bytes.toString("utf8");
       const front = FRONT_MATTER.exec(text);
       let fields = {};
       try {
@@ -113,6 +116,8 @@ const snapshotReader = (ballotDir, YAML) => {
         tier: Object.hasOwn(TIER_RANK, fields.tier ?? "") ? fields.tier : null,
         statementsOnly: typeof fields.statements_only === "boolean" ? fields.statements_only : null,
         body: bodyText(front ? text.slice(front[0].length) : text),
+        fields,
+        hash: sha256(bytes),
       };
     }
     cache.set(rel, read);
@@ -153,13 +158,24 @@ const holdsTitle = (text, titles) => {
   return [text, unhyphen(text)].some((t) => scan(t, values, ["title"]).length > 0);
 };
 
-// The failures of one claim, located `at` (its claim line), in report order.
-// A claim whose link does not resolve still gets every check that does not
-// need its snapshot.
-const claimFailures = (claim, at, { view, titles, readSnapshot }) => {
-  const rel = resolveTarget(claim.target);
+// Is a resolved snapshot path one an article of `contest` may cite: filed
+// under the contest, or a _ballot snapshot?
+const citable = (rel, contest) =>
+  rel.startsWith(`sources/${contest}/`) || rel.startsWith("sources/_ballot/");
+
+// A bidi control reorders what a reader sees, and normalizing drops it, so a
+// review key would not change with it (review-list.md, Item keys).
+const BIDI = /\p{Bidi_Control}/u;
+
+// The failures of one claim of `contest`, located `at` (its claim line), in
+// report order. A claim whose link does not resolve, or names another
+// contest's snapshot, still gets every check that does not need its snapshot.
+const claimFailures = (claim, at, contest, { view, titles, readSnapshot }) => {
+  const resolved = resolveTarget(claim.target);
+  const rel = resolved && citable(resolved, contest) ? resolved : null;
   const snapshot = rel && readSnapshot(rel);
-  const failures = snapshot ? [] : [new Failure(at, "claim-format")];
+  const reordered = [claim.text, claim.excerpt].some((t) => BIDI.test(t));
+  const failures = snapshot && !reordered ? [] : [new Failure(at, "claim-format")];
   if (hasCommentMarker([claim.text, claim.excerpt]))
     failures.push(new Failure(at, "comment-marker"));
   if (holdsTitle(claim.text, titles)) failures.push(new Failure(at, "title-in-claim"));
@@ -197,16 +213,36 @@ const allContests = (ballotDir) => {
     .sort();
 };
 
+// What every article's check reads once: the ballot view, the hidden titles
+// and one snapshot reader. ballot.yaml's failure goes to `failureLines`.
+const checkContext = (ballotDir, YAML, failureLines) => ({
+  view: readView(ballotDir),
+  titles: readHiddenTitles(ballotDir, failureLines),
+  readSnapshot: snapshotReader(ballotDir, YAML),
+});
+
+// The failure lines of `contest`'s parsed article, located under `rel`, in
+// line order.
+const articleCheck = (rel, contest, article, context) => {
+  // [line, Failure] pairs, so the article's failures print in line order.
+  const found = article.failures.map(({ line, code }) => [
+    line,
+    new Failure(`${rel}:${line}`, code),
+  ]);
+  for (const claim of article.claims) {
+    for (const failure of claimFailures(claim, `${rel}:${claim.line}`, contest, context))
+      found.push([claim.line, failure]);
+  }
+  found.sort((a, b) => a[0] - b[0]);
+  return found.map(([, failure]) => failure.line);
+};
+
 const check = (ballotDir, given) => {
   // Loaded first, so a missing install is one deps-missing, not a failure per claim.
   const YAML = load("yaml");
   const failureLines = verifyManifest(ballotDir).map((f) => f.line);
   const contests = given.length ? given : allContests(ballotDir);
-  const context = {
-    view: readView(ballotDir),
-    titles: readHiddenTitles(ballotDir, failureLines),
-    readSnapshot: snapshotReader(ballotDir, YAML),
-  };
+  const context = checkContext(ballotDir, YAML, failureLines);
   for (const contest of contests) {
     const rel = `articles/${contest}.md`;
     const file = path.join(ballotDir, rel);
@@ -215,17 +251,7 @@ const check = (ballotDir, given) => {
       continue;
     }
     const article = parseArticle(fs.readFileSync(file, "utf8"));
-    // [line, Failure] pairs, so the article's failures print in line order.
-    const found = article.failures.map(({ line, code }) => [
-      line,
-      new Failure(`${rel}:${line}`, code),
-    ]);
-    for (const claim of article.claims) {
-      for (const failure of claimFailures(claim, `${rel}:${claim.line}`, context))
-        found.push([claim.line, failure]);
-    }
-    found.sort((a, b) => a[0] - b[0]);
-    failureLines.push(...found.map(([, failure]) => failure.line));
+    failureLines.push(...articleCheck(rel, contest, article, context));
   }
   if (failureLines.length) throw new Failures(failureLines);
   return [`snapshots.sha256 checked`, ...contests.map((c) => `articles/${c}.md checked`)];
@@ -239,4 +265,12 @@ const main = (argv) =>
     return withLock(ballotDir, () => check(ballotDir, contests));
   });
 
-module.exports = { allContests, main, parseArgs, resolveTarget };
+module.exports = {
+  LETTER_HYPHEN,
+  allContests,
+  articleCheck,
+  checkContext,
+  main,
+  parseArgs,
+  resolveTarget,
+};

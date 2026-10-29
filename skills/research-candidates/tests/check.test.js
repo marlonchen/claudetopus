@@ -457,6 +457,24 @@ describe("check: comment markers", () => {
       "articles/us-house-07.md:30 comment-marker",
     ]);
   });
+
+  it("fails a bidi control in a claim or excerpt, which reorders what is shown but not its key", async () => {
+    const data = setup();
+    withClaims(data, [
+      ["T2", "Served two terms on the ‮draob‬", "bio", BOARD],
+      ["T2", "Served two terms", "bio", `She served two ⁧terms⁩ on the Exampleton school board`],
+      ["T2", "Served two terms‏", "bio", BOARD],
+      ["T2", "Served two terms؜", "bio", BOARD],
+      // A zero-width space reorders nothing.
+      ["T2", "Served two​ terms", "bio", BOARD],
+    ]);
+    await failsWith(data, [
+      "articles/us-house-07.md:18 claim-format",
+      "articles/us-house-07.md:21 claim-format",
+      "articles/us-house-07.md:24 claim-format",
+      "articles/us-house-07.md:27 claim-format",
+    ]);
+  });
 });
 
 describe("check: printed titles in claims and excerpts", () => {
@@ -638,6 +656,17 @@ Jane is a teacher.
       targets.map((_, i) => `articles/us-house-07.md:${18 + 3 * i} claim-format`),
     );
     assert.ok(!result.stdout.includes("Precinct"));
+    assert.strictEqual(result.status, 1);
+  });
+
+  it("fails a link to another contest's snapshot, which review-list would not read as misfiled", async () => {
+    const rel = "sources/supreme-court-retention-a/pat-example/bio.md";
+    const data = setup({
+      article: `${ARTICLE}\n- Served two terms on the school board \`T2\` [s9](../${rel})\n  > She served two terms on the Exampleton school board, from 2014 to 2022\n`,
+    });
+    plant(data, rel, snapshot("pat-example", BIO));
+    const result = await check(data);
+    assert.strictEqual(result.stdout, "articles/us-house-07.md:18 claim-format\n");
     assert.strictEqual(result.status, 1);
   });
 });

@@ -29,8 +29,9 @@ const isDate = (date) => {
   return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
 };
 
-// The contest's log as { logged, faults }: logged holds `<subject>\t<item>`
-// for each well-formed line; faults are locations, the log line of each line
+// The contest's log as { logged, dates, faults }: logged holds
+// `<subject>\t<item>` for each well-formed line, and dates the set of their
+// dates; faults are locations, the log line of each line
 // that does not split into the four fields, does not end in a newline, names
 // another contest, or has a malformed subject, item or date, and the log when
 // it, or search-log/, is not a regular file or directory (a symlink is
@@ -42,9 +43,10 @@ const readSearchLog = (ballotDir, contest, type) => {
   const dir = lstat("search-log");
   // undefined when there is no log; null when search-log/ is not a directory.
   const file = dir && (dir.isDirectory() ? lstat(rel) : null);
-  if (file === undefined) return { logged, faults: [] };
-  if (!file?.isFile()) return { logged, faults: [rel] };
+  if (file === undefined) return { logged, dates: new Set(), faults: [] };
+  if (!file?.isFile()) return { logged, dates: new Set(), faults: [rel] };
   const faults = [];
+  const dates = new Set();
   const lines = fs.readFileSync(path.join(ballotDir, rel), "utf8").split("\n");
   const unended = lines.pop();
   if (unended !== "") lines.push(null);
@@ -57,10 +59,14 @@ const readSearchLog = (ballotDir, contest, type) => {
       (subject === "_race" || ID_PATTERN.test(subject)) &&
       CHECKLIST_ITEMS[type].includes(item) &&
       isDate(date);
-    if (wellFormed) logged.add(`${subject}\t${item}`);
-    else faults.push(`${rel}:${i + 1}`);
+    if (!wellFormed) {
+      faults.push(`${rel}:${i + 1}`);
+      continue;
+    }
+    logged.add(`${subject}\t${item}`);
+    dates.add(date);
   }
-  return { logged, faults };
+  return { logged, dates, faults };
 };
 
 const parseArgs = (argv) => {
@@ -111,4 +117,4 @@ const main = (argv) =>
     return [`${rel} logged`];
   });
 
-module.exports = { main, readSearchLog };
+module.exports = { isDate, main, readSearchLog };

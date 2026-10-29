@@ -146,9 +146,13 @@ const statesOf = (part) => [
 ];
 
 // The failures of one article, as [line, Failure] pairs (line 0 for one
-// located by the article alone).
+// located by the article alone), and what it matched: `subjects`, each
+// matched block's subject id, and `names`, each matched section's name as
+// sections.md gives it, both keyed by the parsed block or section.
 const articleFailures = (rel, article, contest, logged) => {
   const found = [];
+  const subjects = new Map();
+  const names = new Map();
   const fail = (line, code) =>
     found.push([line ?? 0, new Failure(line ? `${rel}:${line}` : rel, code)]);
 
@@ -170,9 +174,10 @@ const articleFailures = (rel, article, contest, logged) => {
 
   for (const [index, block] of blocks.pairs) {
     const expected = contest.blocks[index];
-    const names = expected.sections;
+    subjects.set(block, expected.subject);
+    const sectionNames = expected.sections;
     const sections = matchInOrder(
-      names.map((name) => heading(contest.type, name)),
+      sectionNames.map((name) => heading(contest.type, name)),
       block.sections,
     );
     for (const s of sections.faults) fail(s.line, "section-missing");
@@ -183,10 +188,11 @@ const articleFailures = (rel, article, contest, logged) => {
       if (!matched.has(s)) for (const i of s.issues) fail(i.line, "section-missing");
 
     for (const [i, part] of sections.pairs) {
-      checkSection(names[i], part, { contest, subject: expected.subject, logged, fail });
+      names.set(part, sectionNames[i]);
+      checkSection(sectionNames[i], part, { contest, subject: expected.subject, logged, fail });
     }
   }
-  return found;
+  return { found, subjects, names };
 };
 
 // One section's states, issues and claims (article-format.md, Section states).
@@ -257,6 +263,26 @@ const uncited = (ballotDir, contest, article) => {
   return [...new Set(lines)];
 };
 
+// The coverage of `contest`'s parsed article: { failures, subjects, names },
+// failures in report order, then what articleFailures matched.
+const coverArticle = (ballotDir, contest, article) => {
+  // Lines for subjects the contest no longer lists are never looked up.
+  const log = readSearchLog(ballotDir, contest.id, contest.type);
+  const { found, subjects, names } = articleFailures(
+    `articles/${contest.id}.md`,
+    article,
+    contest,
+    log.logged,
+  );
+  // Stable, so failures on one line keep the order they were found in.
+  found.sort((a, b) => a[0] - b[0]);
+  const failures = [
+    ...found.map(([, f]) => f),
+    ...log.faults.map((at) => new Failure(at, "search-not-logged")),
+  ];
+  return { failures, subjects, names };
+};
+
 const coverage = (ballotDir, given) => {
   const contests = readContests(ballotDir);
   const lines = [];
@@ -276,15 +302,7 @@ const coverage = (ballotDir, given) => {
       continue;
     }
     const article = parseArticle(fs.readFileSync(file, "utf8"));
-    // Lines for subjects the contest no longer lists are never looked up.
-    const log = readSearchLog(ballotDir, id, contest.type);
-    const found = articleFailures(rel, article, contest, log.logged);
-    // Stable, so failures on one line keep the order they were found in.
-    found.sort((a, b) => a[0] - b[0]);
-    const failures = [
-      ...found.map(([, f]) => f),
-      ...log.faults.map((at) => new Failure(at, "search-not-logged")),
-    ];
+    const { failures } = coverArticle(ballotDir, contest, article);
     lines.push(...failures.map((f) => f.line), ...uncited(ballotDir, id, article));
     if (failures.length) failed = true;
     else lines.push(`${rel} passed`);
@@ -301,4 +319,4 @@ const main = (argv) =>
     return withLock(ballotDir, () => coverage(ballotDir, contests));
   });
 
-module.exports = { main };
+module.exports = { coverArticle, main, readContests };
