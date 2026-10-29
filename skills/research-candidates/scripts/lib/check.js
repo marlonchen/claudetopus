@@ -12,8 +12,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { parseArticle } = require("./article");
 const { EXCERPT_LENGTH, ID_PATTERN, ROLES, VIEW } = require("./constants");
-const { hiddenTitles } = require("./ballot-privacy");
-const { readYamlDocument } = require("./data-files");
+const { hiddenTitles, readYamlDocument } = require("./data-files");
 const { figuresBacked } = require("./figures");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
@@ -62,16 +61,19 @@ const readView = (ballotDir) => {
   return { link, spans };
 };
 
-// The printed titles of contests with a display_title (ballot-format.md), or
-// a Failure when ballot.yaml cannot be read. ballot-check validates the rest.
-const readHiddenTitles = (ballotDir) => {
+// The printed titles of contests with a display_title (ballot-format.md). When
+// ballot.yaml cannot be read, its failure goes to `failureLines` and there are
+// none. ballot-check validates the rest.
+const readHiddenTitles = (ballotDir, failureLines) => {
   try {
     return hiddenTitles(
       readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS(),
     );
   } catch (error) {
-    if (error instanceof Failure) return error;
-    throw error;
+    if (!(error instanceof Failure) || !["file-missing", "yaml-invalid"].includes(error.code))
+      throw error;
+    failureLines.push(error.line);
+    return [];
   }
 };
 
@@ -88,8 +90,9 @@ const resolveTarget = (target) => {
 // null when it is missing or not a regular file. `ballot` is true for a
 // _ballot snapshot whose front matter does not give a companion role, so a
 // sample ballot whose role cannot be read is never matched like an ordinary
-// source. `tier` is null when the front matter does not give one.
-const snapshotReader = (ballotDir) => {
+// source. `tier` and `statementsOnly` are null when the front matter does not
+// give them.
+const snapshotReader = (ballotDir, YAML) => {
   const cache = new Map();
   return (rel) => {
     if (cache.has(rel)) return cache.get(rel);
@@ -100,7 +103,7 @@ const snapshotReader = (ballotDir) => {
       const front = FRONT_MATTER.exec(text);
       let fields = {};
       try {
-        fields = (front && load("yaml").parse(front[1] ?? "")) || {};
+        fields = (front && YAML.parse(front[1] ?? "")) || {};
       } catch {
         fields = {};
       }
@@ -108,7 +111,7 @@ const snapshotReader = (ballotDir) => {
       read = {
         ballot: rel.startsWith("sources/_ballot/") && !COMPANION_ROLES.includes(role),
         tier: Object.hasOwn(TIER_RANK, fields.tier ?? "") ? fields.tier : null,
-        statementsOnly: fields.statements_only === true,
+        statementsOnly: typeof fields.statements_only === "boolean" ? fields.statements_only : null,
         body: bodyText(front ? text.slice(front[0].length) : text),
       };
     }
@@ -119,10 +122,12 @@ const snapshotReader = (ballotDir) => {
 
 // Does a tag, parsed by CLAIM_TAG, fit the snapshot (source-tiers.md, Claim
 // tags)? A plain tag is T1 to T3 on a snapshot that is not statements_only,
-// an `s` tag any tier, and an `i` tag a T2 snapshot that is not statements_only; every tag's tier is the
-// snapshot's own.
+// an `s` tag any tier, and an `i` tag a T2 snapshot that is not
+// statements_only; every tag's tier is the snapshot's own. A snapshot whose
+// tier or statements_only cannot be read fits no tag.
 const tagFits = (tag, snapshot) => {
-  if (!tag || !snapshot.tier || tag.tier !== snapshot.tier) return false;
+  if (!tag || !snapshot.tier || snapshot.statementsOnly === null) return false;
+  if (tag.tier !== snapshot.tier) return false;
   if (tag.mark === "s") return true;
   if (snapshot.statementsOnly) return false;
   return tag.mark === "i" ? tag.tier === "T2" : tag.tier !== "T4";
@@ -135,6 +140,18 @@ const hasCommentMarker = (texts) =>
     [text, normalizeLine(text)].some((t) => t.includes("<!--") || t.includes("-->")),
   );
 
+// A hyphen between two letters, which a pdftotext break can leave in a word.
+const LETTER_HYPHEN = /(?<=\p{L})-(?=\p{L})/gu;
+
+// Does the excerpt hold a hidden printed title, matched as publish matches it
+// (SKILL.md steps 6.2 and 6.3): as written, then with every hyphen between two
+// letters removed, against each title with and without its own hyphens?
+const holdsTitle = (excerpt, titles) => {
+  const unhyphen = (text) => normalizeLine(text).replace(LETTER_HYPHEN, "");
+  const values = { title: [...titles, ...titles.map(unhyphen)] };
+  return [excerpt, unhyphen(excerpt)].some((text) => scan(text, values, ["title"]).length > 0);
+};
+
 // The failures of one claim, located `at` (its claim line), in report order.
 const claimFailures = (claim, at, { view, titles, readSnapshot }) => {
   const rel = resolveTarget(claim.target);
@@ -143,9 +160,7 @@ const claimFailures = (claim, at, { view, titles, readSnapshot }) => {
   const failures = [];
   if (hasCommentMarker([claim.text, claim.label, claim.excerpt]))
     failures.push(new Failure(at, "comment-marker"));
-  // Matched as the publish privacy scan matches it (SKILL.md step 6.3).
-  if (scan(claim.excerpt, { title: titles }, ["title"]).length)
-    failures.push(new Failure(at, "title-in-excerpt"));
+  if (holdsTitle(claim.excerpt, titles)) failures.push(new Failure(at, "title-in-excerpt"));
   const parsed = CLAIM_TAG.exec(claim.tag);
   const tag = parsed && { tier: parsed[1], mark: parsed[2] };
   if (!tagFits(tag, snapshot)) failures.push(new Failure(at, "tag-mismatch"));
@@ -179,14 +194,14 @@ const allContests = (ballotDir) => {
 };
 
 const check = (ballotDir, given) => {
+  // Loaded first, so a missing install is one deps-missing, not a failure per claim.
+  const YAML = load("yaml");
   const failureLines = verifyManifest(ballotDir).map((f) => f.line);
   const contests = given.length ? given : allContests(ballotDir);
-  const titles = readHiddenTitles(ballotDir);
-  if (titles instanceof Failure) failureLines.push(titles.line);
   const context = {
     view: readView(ballotDir),
-    titles: titles instanceof Failure ? [] : titles,
-    readSnapshot: snapshotReader(ballotDir),
+    titles: readHiddenTitles(ballotDir, failureLines),
+    readSnapshot: snapshotReader(ballotDir, YAML),
   };
   for (const contest of contests) {
     const rel = `articles/${contest}.md`;

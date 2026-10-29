@@ -28,11 +28,21 @@ const PHRASE = new RegExp(
   "giu",
 );
 
+// A character NFKC turns into digits it does not show as digits: a superscript,
+// a vulgar fraction, a circled number. Fullwidth digits read as digits.
+const FOLDED_DIGITS = /[^\p{ASCII}\uFF10-\uFF19]/gu;
+const hideFoldedDigits = (text) =>
+  text.replace(FOLDED_DIGITS, (c) => {
+    const folded = c.normalize("NFKC");
+    return folded !== c && /\p{Nd}/u.test(folded) ? "\uFFFD" : c;
+  });
+
 // Each figure in `text`, written one way: lower case, no space before `%`, a
-// space for a hyphen. Digit figures are taken out before phrases are read, so
-// the scale word of "5 million" is never read again on its own.
+// space for a hyphen. A folded digit breaks its figure, so 10⁶ is never read
+// as 106. Digit figures are taken out before phrases are read, so the scale
+// word of "5 million" is never read again on its own.
 const figures = (text) => {
-  const line = normalizeLine(text);
+  const line = normalizeLine(hideFoldedDigits(text));
   const written = [...line.matchAll(FIGURE)].map((m) => m[0].replace(" %", "%"));
   const worded = line.replace(FIGURE, " | ").match(PHRASE) ?? [];
   return [...written, ...worded].map((figure) => figure.toLowerCase().replaceAll("-", " "));

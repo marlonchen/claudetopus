@@ -104,7 +104,16 @@ describe("article-format.md, Figures: each claimed figure is copied from its own
   });
 
   it("reads digits as normalized, so fullwidth digits count", () => {
-    passes([["Raised $１,000", "raised 1,000"]]);
+    passes([
+      ["Raised $１,000", "raised 1,000"],
+      ["Raised $2½ million", "raised $2½ million"],
+    ]);
+    // A superscript or fraction breaks its figure rather than folding into digits.
+    fails([
+      ["A budget of $10⁶", "district 106"],
+      ["A budget of $106", "a budget of 10⁶"],
+      ["Raised $2½ million", "raised 21 and 2 million"],
+    ]);
     fails([
       ["Raised $２,000", "raised 1,000"],
       ["Lost ٥٠٠ votes", "lost 500 votes"],

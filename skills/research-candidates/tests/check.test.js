@@ -371,7 +371,7 @@ describe("check: claim tags", () => {
     ]);
   });
 
-  it("fails a tag on a snapshot whose tier cannot be read", async () => {
+  it("fails a tag on a snapshot whose tier or statements_only cannot be read", async () => {
     const data = setup();
     plant(data, "sources/us-house-07/jane-example/bare.md", `${BOARD}\n`);
     plant(
@@ -379,13 +379,27 @@ describe("check: claim tags", () => {
       "sources/us-house-07/jane-example/odd.md",
       snapshot("jane-example", BOARD, "", { tier: "[T2" }),
     );
+    plant(
+      data,
+      "sources/us-house-07/jane-example/quoted.md",
+      snapshot("jane-example", BOARD, "", { statementsOnly: '"false"' }),
+    );
+    plant(
+      data,
+      "sources/us-house-07/jane-example/unsaid.md",
+      snapshot("jane-example", BOARD).replace("statements_only: false\n", ""),
+    );
     withClaims(data, [
       ["T2", "Served two terms", "bare", BOARD],
       ["T2", "Served two terms", "odd", BOARD],
+      ["T2", "Served two terms", "quoted", BOARD],
+      ["T2", "Served two terms", "unsaid", BOARD],
     ]);
     await failsWith(data, [
       "articles/us-house-07.md:18 tag-mismatch",
       "articles/us-house-07.md:21 tag-mismatch",
+      "articles/us-house-07.md:24 tag-mismatch",
+      "articles/us-house-07.md:27 tag-mismatch",
     ]);
   });
 });
@@ -457,7 +471,7 @@ describe("check: printed titles in excerpts", () => {
       "sources/us-house-07/jane-example/race.md",
       snapshot(
         "jane-example",
-        "She is running for REPRESENTATIVE IN CONGRESS, 7TH DISTRICT this fall, in Congress.",
+        "She is running for REPRE-\nSENTATIVE IN CONGRESS, 7TH DISTRICT this fall, in Congress.",
       ),
     );
     withClaims(data, [
@@ -474,10 +488,18 @@ describe("check: printed titles in excerpts", () => {
         "running for REPRESENTATIVE IN CONGRESS, 7TH DISTRICT",
       ],
       ["T2", "Runs for this office", "race", "She is running for REPRESENTATIVE IN CONGRESS"],
+      // The pdftotext break read unjoined, as publish reads it (SKILL.md step 6.2).
+      [
+        "T2",
+        "Runs for this office",
+        "race",
+        "running for REPRE-SENTATIVE IN CONGRESS, 7TH DISTRICT",
+      ],
     ]);
     await failsWith(data, [
       "articles/us-house-07.md:18 title-in-excerpt",
       "articles/us-house-07.md:21 title-in-excerpt",
+      "articles/us-house-07.md:27 title-in-excerpt",
     ]);
   });
 
@@ -501,6 +523,18 @@ describe("check: printed titles in excerpts", () => {
     await failsWith(data, ["ballot.yaml yaml-invalid"]);
     fs.rmSync(data.file(`${BALLOT}/ballot.yaml`));
     await failsWith(data, ["ballot.yaml file-missing"]);
+  });
+});
+
+describe("check: dependencies", () => {
+  it("answers one deps-missing when its dependencies are not installed", async () => {
+    const data = setup();
+    const result = await runCli("check", [BALLOT], {
+      cwd: data.root,
+      env: { ...data.env, RESEARCH_CANDIDATES_DEPS: data.file(".no-deps") },
+    });
+    assert.strictEqual(result.stdout, "scripts/install-deps deps-missing\n");
+    assert.strictEqual(result.status, 1);
   });
 });
 
@@ -534,6 +568,8 @@ Jane is a teacher.
       ["T2", 'Served <a href="https://news.example.com">two terms</a>', "bio", BOARD],
       ["T2", "Served two terms, see https://news.example.com/story", "bio", BOARD],
       ["T2", "Served two terms, see www.example.com", "bio", BOARD],
+      ["T2", "Served two terms, write jane@example.com", "bio", BOARD],
+      ["T2", "Served two terms, see mailto:jane", "bio", BOARD],
       ["T2", "Served two terms on the board [sic]", "bio", BOARD],
     ]);
     await failsWith(data, [
@@ -544,6 +580,8 @@ Jane is a teacher.
       "articles/us-house-07.md:30 claim-format",
       "articles/us-house-07.md:33 claim-format",
       "articles/us-house-07.md:36 claim-format",
+      "articles/us-house-07.md:39 claim-format",
+      "articles/us-house-07.md:42 claim-format",
     ]);
   });
 

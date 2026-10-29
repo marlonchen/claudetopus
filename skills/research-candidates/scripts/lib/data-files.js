@@ -1,7 +1,8 @@
 "use strict";
 
-// Parsers for the data files fetch-snapshot and ballot-check read: ballot.yaml
-// (only the ids fetch-snapshot needs; ballot-check validates the rest),
+// Parsers for the data files fetch-snapshot, ballot-check and check read:
+// ballot.yaml (only the ids fetch-snapshot needs and the printed titles check
+// needs; ballot-check validates the rest),
 // tiers.yaml, and the private values in private.yaml and addresses.yaml.
 // Failures are located by file and, where there is one, the entry's line,
 // never by a private value.
@@ -71,6 +72,12 @@ const loadBallot = (root, ballot, location = `${ballot}/ballot.yaml`) => {
   }
   return { contests, people };
 };
+
+// The printed titles of contests with a display_title, from ballot.yaml as read.
+const hiddenTitles = (data) =>
+  (Array.isArray(data?.contests) ? data.contests : [])
+    .filter((c) => c?.display_title !== undefined && typeof c.title === "string")
+    .map((c) => c.title);
 
 // The classes a tiers.yaml match or source may not hold (ballot-format.md, Tiers).
 const TIERS_CLASSES = ["address", "zip", "label", "private-string"];
@@ -250,6 +257,7 @@ module.exports = {
   addressValues,
   ballotDirs,
   ballotEntries,
+  hiddenTitles,
   isDir,
   loadAddresses,
   loadBallot,

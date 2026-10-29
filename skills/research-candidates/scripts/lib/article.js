@@ -20,10 +20,11 @@ const HEADING = /^(#{1,4}) (\S.*)$/;
 const CLAIM = /^- (\S.*?) `([^`]+)` \[([^\]]+)\]\(([^()\s]+)\)$/;
 const EXCERPT = /^ +> (\S.*)$/;
 // Claim text that holds a second code span or link: a backtick, an inline or
-// reference link, an autolink, an HTML tag or a bare URL. Text the figure
-// check strips would otherwise hide a figure from it (article-format.md, Figures).
+// reference link, an autolink, an HTML tag, a bare URL or email address, or a
+// mailto: link. Text the figure check strips would otherwise hide a figure
+// from it (article-format.md, Figures).
 const EXTRA_SPAN =
-  /`|\]\(|\]\[|<[a-z][a-z0-9+.-]*:|<[^\s<>@]+@|<\/?[a-z][^<>]*>|\b[a-z][a-z0-9+.-]*:\/\/|\bwww\./i;
+  /`|\]\(|\]\[|<[a-z][a-z0-9+.-]*:|<[^\s<>@]+@|<\/?[a-z][^<>]*>|\b[a-z][a-z0-9+.-]*:\/\/|\bwww\.|\bmailto:|[^\s@<>]@[^\s@<>]+\.[a-z]/i;
 
 const parseArticle = (text) => {
   const lines = text.split("\n");
