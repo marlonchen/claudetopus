@@ -150,7 +150,7 @@
 
 **Context:** Found in the /ship run 5 pre-landing review (2026-10-19, cycle 2) after the discovery agent's free-text reply was removed as an injection channel; the owner chose to defer it to the scripts build rather than add spec text mid-review.
 
-**Depends on / blocked by:** `fetch-snapshot` and `coverage` being built. **Spec written (2026-10-26):** `search-log/<contest>.tsv`, `fetch-snapshot --searched` and the `search-not-logged` code (snapshot-format.md, Search log), pinned by spec-parity.
+**Depends on / blocked by:** `fetch-snapshot` and `coverage` being built. **Spec written (2026-10-26):** `search-log/<contest>.tsv`, `fetch-snapshot --searched` and the `search-not-logged` code (snapshot-format.md, Search log), pinned by spec-parity. **Built (ticket 09):** `fetch-snapshot --searched` appends the log under the ballot lock, and `coverage` fails an Unknown it does not back and every malformed log line.
 
 **Priority:** P2
 

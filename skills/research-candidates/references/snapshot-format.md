@@ -78,6 +78,18 @@ fetch-snapshot --ballot --file <election>/<ballot-id> <role> <path> <url>
 - `--file`: `file-not-in-downloads` (the path, with symlinks resolved, is not under `downloads/`), `bad-file` (not a regular file; not a PDF or HTML file by both its extension and its first bytes, `%PDF-` or a tag; or an HTML file that names no charset in a `<meta>` and is not valid UTF-8). The file is read once, before the prompt, and that copy is saved.
 - PDFs: `pdftotext-missing` (install poppler), `pdf-unreadable` (also a conversion that takes over a minute), `pdf-no-text`.
 
+The discovery agent logs a checklist item it has run (Search log) with:
+
+```text
+fetch-snapshot --searched <election>/<ballot-id> <contest> <subject> <item>
+```
+
+The agents' fetch tool fixes the ballot and the contest, so the agent gives only the subject and the item. Once its arguments parse, it checks Rule 8 and finishes any interrupted save, as a plain fetch does, then appends the line while it holds the ballot lock and prints `search-log/<contest>.tsv logged`. It reads only `ballot.yaml`, never `tiers.yaml`, `private.yaml` or `addresses.yaml`, since every field it writes is an id `ballot.yaml` lists, `_race`, an item number or the date. Its codes are the plain fetch's Rule 8, argument and data-file codes (`usage`, `bad-ballot`, `unknown-ballot`, `unknown-contest`, `unknown-subject`, `file-missing`, `yaml-invalid`, `ballot-invalid`), located the same way, and:
+
+- `bad-item`: an item that is not one the contest's type uses, located `<contest>/<subject>`;
+- `search-log-invalid`: the log, or `search-log/`, is not a regular file or directory (a symlink is neither), or the log holds a line `coverage` would fail (Search log), such as a last line with no newline, which the next line would join, located `search-log/<contest>.tsv`;
+- `ballot-locked` and `internal-error`.
+
 ## Names
 
 Use a short kebab-case name for the source (`fec-totals.md`). Re-fetching writes a new file with a numeric suffix (`fec-totals-2.md`); a file is never overwritten. A suffix always means a re-fetch, so `fetch-snapshot` refuses a name that ends in `-` and digits (`bad-name`). Numbers in names are fine: `check` strips link targets, link text and inline code before looking for figures.
@@ -129,7 +141,7 @@ They skip only regular files that are operating-system and editor leftovers (`.D
 
 `fetch-snapshot` refuses a subject that is not a candidate or official id the contest lists (or `_race`, for a measure) or an item its type does not use, and writes no line for it. Each line is one append ending in a newline, so lines from discovery agents running at once never interleave. The log is append-only, and a later run of the same item adds another line.
 
-`coverage` reads it: a section, or a Positions issue, in the state `Unknown, no source found` needs a line for its subject and each checklist item [sections.md](sections.md) maps to that section (an issue uses the items of Positions), or it fails with `search-not-logged` ([article-format.md](article-format.md)). It also fails with `search-not-logged`, located by log line, on a line that does not split into the four fields, does not end in a newline, has a `<contest>` that is not the file's name, or has a malformed item or date. A line for a subject the contest no longer lists is ignored, and a missing log has no lines. The log proves only that the search ran, not what it found, so a line never makes a section anything but Unknown.
+`coverage` reads it: a section, or a Positions issue, in the state `Unknown, no source found` needs a line for its subject and each checklist item [sections.md](sections.md) maps to that section (an issue uses the items of Positions), or it fails with `search-not-logged` ([article-format.md](article-format.md)). It also fails with `search-not-logged`, located by log line, on a line that does not split into the four fields, does not end in a newline, has a `<contest>` that is not the file's name, or has a malformed subject, item or date, and located by the log, on a log or `search-log/` that is not a regular file or directory. `fetch-snapshot` judges the log by the same rules and appends to none that fails them. A line for a subject the contest no longer lists is ignored, and a missing log has no lines. The log proves only that the search ran, not what it found, so a line never makes a section anything but Unknown.
 
 ## Saved copies
 

@@ -7,11 +7,18 @@
 // judges structure (which blocks and sections, in which order, in which
 // states): that is coverage's, from what this returns.
 //
-// Returns { title, blocks, claims, failures }: title { text, line } or null;
-// blocks [{ name, line, sections: [{ name, line, states, claims, issues:
-// [{ name, line, states, claims }] }] }]; claims [{ line, text, tag, label,
-// target, excerpt, excerptLine, block, section, issue }], each also under its
-// section or issue; failures [{ line, code }], in line order.
+// Returns { title, titles, blocks, claims, rejected, strays, failures }:
+// titles, every `#` heading as { text, line }, and title, the first or null;
+// blocks [{ name, line, sections: [{ name, line, states, claims, rejected,
+// issues: [{ name, line, states, claims, rejected }] }] }]; claims [{ line,
+// text, tag, label, target, excerpt, excerptLine, block, section, issue }],
+// each also under its section or issue; rejected, each claim line failed as
+// claim-format, as { line, target }, also under its section or issue, so it
+// still counts as a claim there (a `- ` line with no tag or link is one too,
+// with target null); strays, the lines of each heading, state or
+// claim with no block or section to sit in (a `###` before any `##`, a `####`
+// or a state or claim before a block's first `###`), so nothing the tree
+// leaves out is lost; failures [{ line, code }], in line order.
 
 const { SECTION_STATES } = require("./constants");
 
@@ -31,9 +38,11 @@ const EXTRA_SPAN =
 const parseArticle = (text) => {
   const lines = text.split("\n");
   if (lines.at(-1) === "") lines.pop();
-  let title = null;
+  const titles = [];
   const blocks = [];
   const claims = [];
+  const rejected = [];
+  const strays = [];
   const failures = [];
   let block = null;
   let section = null;
@@ -41,6 +50,12 @@ const parseArticle = (text) => {
   // The claim whose excerpt must be the next line, and whether it was.
   let pending = null;
   const fail = (line) => failures.push({ line, code: "claim-format" });
+  const reject = (claim) => {
+    fail(claim.line);
+    const entry = { line: claim.line, target: claim.target };
+    rejected.push(entry);
+    (claim.issue ?? claim.section)?.rejected.push(entry);
+  };
 
   for (const [i, raw] of lines.entries()) {
     const n = i + 1;
@@ -50,7 +65,7 @@ const parseArticle = (text) => {
       const claim = pending;
       pending = null;
       if (excerpt && claim.malformed) {
-        fail(claim.line);
+        reject(claim);
         continue;
       }
       if (excerpt) {
@@ -60,14 +75,14 @@ const parseArticle = (text) => {
         (claim.issue ?? claim.section)?.claims.push(claim);
         continue;
       }
-      fail(claim.line);
+      reject(claim);
     }
     if (line === "") continue;
     const heading = HEADING.exec(line);
     if (heading) {
       const level = heading[1].length;
       const name = heading[2];
-      if (level === 1) title ??= { text: name, line: n };
+      if (level === 1) titles.push({ text: name, line: n });
       if (level === 2) {
         block = { name, line: n, sections: [] };
         blocks.push(block);
@@ -75,18 +90,23 @@ const parseArticle = (text) => {
         issue = null;
       }
       if (level === 3) {
-        section = { name, line: n, states: [], claims: [], issues: [] };
-        block?.sections.push(section);
+        section = { name, line: n, states: [], claims: [], rejected: [], issues: [] };
+        if (block) block.sections.push(section);
+        else strays.push(n);
         issue = null;
       }
       if (level === 4) {
-        issue = { name, line: n, states: [], claims: [] };
-        section?.issues.push(issue);
+        // With no section, the states and claims under it are strays too.
+        issue = section && { name, line: n, states: [], claims: [], rejected: [] };
+        if (issue) section.issues.push(issue);
+        else strays.push(n);
       }
       continue;
     }
     if (SECTION_STATES.includes(line)) {
-      (issue ?? section)?.states.push({ state: line, line: n });
+      const container = issue ?? section;
+      if (container) container.states.push({ state: line, line: n });
+      else strays.push(n);
       continue;
     }
     const claim = CLAIM.exec(line);
@@ -104,12 +124,19 @@ const parseArticle = (text) => {
         issue,
       };
       if (EXTRA_SPAN.test(claim[1]) || !LABEL.test(claim[3])) pending.malformed = true;
+      if (!section) strays.push(n);
+      continue;
+    }
+    // A claim line without its tag or link: failed as before, and still a claim.
+    if (line.startsWith("- ")) {
+      reject({ line: n, target: null, section, issue });
+      if (!section) strays.push(n);
       continue;
     }
     fail(n);
   }
-  if (pending) fail(pending.line);
-  return { title, blocks, claims, failures };
+  if (pending) reject(pending);
+  return { title: titles[0] ?? null, titles, blocks, claims, rejected, strays, failures };
 };
 
 module.exports = { parseArticle };

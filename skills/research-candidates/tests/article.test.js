@@ -154,3 +154,61 @@ Unknown, no source found.
     ]);
   });
 });
+
+describe("article-format.md: what the parser leaves outside the section tree", () => {
+  it("lists every # heading in order, the first as the title", () => {
+    const { title, titles } = parseArticle("## Jane Example\n\n# us-house-07\n\n# other\n");
+    assert.deepStrictEqual(title, { text: "us-house-07", line: 3 });
+    assert.deepStrictEqual(titles, [title, { text: "other", line: 5 }]);
+  });
+
+  it("lists, as strays, a heading, state or claim with no section or block to sit in", () => {
+    const text = `# us-house-07
+
+Unknown, no source found
+
+### A. On the ballot
+
+## Jane Example
+
+- Listed on the ballot \`T1\` [s1](../sources/_ballot/sample-ballot.md)
+  > Jane Example Example Party
+
+#### Health care
+
+### B. Background
+
+Unknown, no source found
+`;
+    const { strays, blocks } = parseArticle(text);
+    assert.deepStrictEqual(strays, [3, 5, 9, 12]);
+    assert.deepStrictEqual(
+      blocks[0].sections.map((s) => s.name),
+      ["B. Background"],
+    );
+  });
+
+  it("lists a state under a #### that has no section as a stray too", () => {
+    const text = "# c\n\n## Jane\n\n#### Foo\n\nUnknown, no source found\n\n### A. On the ballot\n";
+    assert.deepStrictEqual(parseArticle(text).strays, [5, 7]);
+  });
+
+  it("keeps a claim line with no tag or link as a rejected claim of its section", () => {
+    const text = `## Jane Example
+
+### B. Background
+
+- Served two terms [s1](../sources/us-house-07/jane-example/bio.md)
+  > She served two terms on the Exampleton school board
+`;
+    const { blocks, rejected, failures } = parseArticle(text);
+    const entry = { line: 5, target: null };
+    assert.deepStrictEqual(rejected, [entry]);
+    assert.deepStrictEqual(blocks[0].sections[0].rejected, [entry]);
+    // check's failures are as before: the claim line and the excerpt with no claim.
+    assert.deepStrictEqual(
+      failures.map((f) => f.line),
+      [5, 6],
+    );
+  });
+});

@@ -60,19 +60,94 @@ const SECTIONS = {
 };
 // sections.md, Positions issues: the office types a candidate contest may carry.
 const OFFICE_TYPES = ["federal", "state", "local", "judicial"];
+// sections.md, Positions issues: each office type's issues, in order. A
+// judicial contest has none: its Positions is the exempt section below.
+const POSITIONS_ISSUES = {
+  federal: [
+    "Taxes and spending",
+    "Economy and jobs",
+    "Health care",
+    "Immigration",
+    "Abortion",
+    "Energy and environment",
+    "Foreign policy and defense",
+  ],
+  state: [
+    "Taxes and the state budget",
+    "Economy and jobs",
+    "Education",
+    "Health care",
+    "Public safety",
+    "Energy and environment",
+    "Abortion",
+  ],
+  local: [
+    "Taxes and budget",
+    "Public safety",
+    "Schools",
+    "Housing and development",
+    "Roads and transit",
+  ],
+  judicial: [],
+};
+// sections.md, Not part of this office's job: the one exempt section.
+const EXEMPTION = { type: "candidate", office_type: "judicial", section: "Positions" };
+// sections.md: the sections a withdrawn candidate who is still printed keeps.
+const WITHDRAWN_SECTIONS = ["On the ballot"];
+// sections.md, the Rule column: the sections marked `says-only`.
+const SAYS_ONLY = {
+  candidate: ["Positions"],
+  retention: ["Statements"],
+  measure: ["Arguments for", "Arguments against"],
+};
+// sections.md, the Discovery checklist items column: the items each section
+// draws on. On the ballot draws on _ballot/ snapshots, never the search log.
+const SECTION_ITEMS = {
+  candidate: {
+    Background: ["4", "5"],
+    "Record in public office": ["1", "2"],
+    Money: ["1", "2"],
+    Positions: ["5"],
+    "Controversies and cases": ["2", "3", "4"],
+  },
+  retention: {
+    "Record in office": ["7"],
+    "Evaluation findings": ["7"],
+    Discipline: ["7"],
+    Statements: ["7"],
+  },
+  measure: {
+    "What it does": ["6"],
+    "Fiscal effect": ["6"],
+    "Arguments for": ["6"],
+    "Arguments against": ["6"],
+    "Independent analysis": ["6"],
+  },
+};
+// snapshot-format.md, Search log: the checklist items each contest type logs.
+const CHECKLIST_ITEMS = { candidate: ["1", "2", "3", "4", "5"], measure: ["6"], retention: ["7"] };
+// ballot-format.md: a candidate's status.
+const STATUSES = ["on_ballot", "withdrawn_still_printed", "certified_write_in"];
 
 module.exports = {
   BALLOT_ID_PATTERN,
+  CHECKLIST_ITEMS,
   ELECTION_PATTERN,
   EXCERPT_LENGTH,
+  EXEMPTION,
   ID_PATTERN,
   KEY_ENV,
   LEDGER,
   LEFTOVER,
   OFFICE_TYPES,
+  POSITIONS_ISSUES,
   ROLES,
+  SAYS_ONLY,
+  SECTION_ITEMS,
   SECTION_STATES,
   SECTIONS,
   SOURCE_REPO_ID,
+  STATUSES,
   VIEW,
+  WITHDRAWN_SECTIONS,
 };

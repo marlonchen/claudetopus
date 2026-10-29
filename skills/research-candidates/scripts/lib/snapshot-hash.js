@@ -133,4 +133,4 @@ const verifyManifest = (ballotDir) => {
   return failures;
 };
 
-module.exports = { isSnapshotPath, verifyManifest };
+module.exports = { isSnapshotPath, locate, verifyManifest, walk };

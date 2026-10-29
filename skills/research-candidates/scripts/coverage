@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+"use strict";
+
+// Thin entry point; the command lives in lib/ where Biome lints it.
+require("./lib/coverage").main(process.argv.slice(2));

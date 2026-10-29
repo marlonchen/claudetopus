@@ -184,6 +184,61 @@ describe("constants match the reference text they come from", () => {
     const types = [...sections.matchAll(/^\| `([a-z]+)` \|/gm)].map((m) => m[1]);
     assert.deepEqual(types, constants.OFFICE_TYPES);
   });
+  it("the Positions issues, section rules and checklist items are sections.md's", () => {
+    const sections = read("references/sections.md");
+    const issues = Object.fromEntries(
+      [...sections.matchAll(/^\| `([a-z]+)` \| [^|]+ \| ([^|]+) \|$/gm)].map((m) => [
+        m[1],
+        m[2].startsWith("None") ? [] : m[2].trim().split("; "),
+      ]),
+    );
+    assert.deepEqual(issues, constants.POSITIONS_ISSUES);
+    const tables = {
+      candidate: "Candidate contests",
+      retention: "Retention contests",
+      measure: "Measures",
+    };
+    for (const [type, heading] of Object.entries(tables)) {
+      const start = sections.indexOf(`## ${heading}`);
+      const rows = [
+        ...sections
+          .slice(start, sections.indexOf("\n## ", start + 1))
+          .matchAll(/^\| [A-Z]\. ([^|]+?) \| [^|]+ \| ([^|]+?) \| ([^|]*?) ?\|$/gm),
+      ];
+      const saysOnly = rows.filter((m) => m[3].includes("`says-only`")).map((m) => m[1]);
+      assert.deepEqual(saysOnly, constants.SAYS_ONLY[type], type);
+      const items = rows
+        .filter((m) => !m[2].includes("_ballot/"))
+        .map((m) => [m[1], m[2].split(", ")]);
+      assert.deepEqual(Object.fromEntries(items), constants.SECTION_ITEMS[type], type);
+    }
+    assert.match(
+      sections,
+      new RegExp(`gets the ${constants.WITHDRAWN_SECTIONS.join(" and ")} section only`),
+    );
+    const { type, office_type, section } = constants.EXEMPTION;
+    assert.strictEqual(type, "candidate");
+    assert.match(
+      sections,
+      new RegExp(
+        `A candidate contest marked \`office_type: ${office_type}\` in \`ballot.yaml\` has its ${section} section in the state \`Not part of this office's job\``,
+      ),
+    );
+  });
+  it("the search log items and the candidate statuses are the references'", () => {
+    const { candidate, measure, retention } = constants.CHECKLIST_ITEMS;
+    assert.deepEqual(candidate, ["1", "2", "3", "4", "5"]);
+    assert.match(
+      read("references/snapshot-format.md"),
+      new RegExp(
+        `1-5 for a candidate contest, ${measure} for a measure, ${retention} for a retention contest`,
+      ),
+    );
+    assert.match(
+      read("references/ballot-format.md"),
+      new RegExp(`status: on_ballot +# ${constants.STATUSES.join(" \\| ")}$`, "m"),
+    );
+  });
   it("the excerpt length and section states are article-format.md's", () => {
     const article = read("references/article-format.md");
     const { min, max } = constants.EXCERPT_LENGTH;
@@ -245,13 +300,15 @@ describe("each command's output codes are the ones its reference lists", () => {
     const section = format.slice(start, format.indexOf("\n## ", start + 1));
     return new Set([...section.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]));
   };
-  // The codes a lib file can print: new Failure(location, "code"), refusals
-  // ({ code: "..." }, refuse(url, "...")) and the fixed "- code" lines a command prints itself.
+  // The codes a lib file can print: new Failure(location, "code"), a fail(..., "code")
+  // helper's last argument, refusals ({ code: "..." }, refuse(url, "...")) and the fixed
+  // "- code" lines a command prints itself.
   const emittedBy = (file) => {
     const source = fs.readFileSync(path.join(SKILL_DIR, "scripts", "lib", file), "utf8");
     const emitted = new Set();
     for (const pattern of [
       /new Failure\([^;]*?, "([a-z-]+)"/g,
+      /\bfail\([^;]*?, "([a-z-]+)"\)/g,
       /code: "([a-z-]+)"/g,
       /refuse\(url, "([a-z-]+)"/g,
       /"- ([a-z-]+)/g,
@@ -265,15 +322,26 @@ describe("each command's output codes are the ones its reference lists", () => {
   const BALLOT_CHECK = ["ballot-check.js", "ballot-match.js", "ballot-privacy.js"];
   // check's own modules (article-format.md, Command line).
   const CHECK = ["check.js", "article.js", "figures.js", "snapshot-hash.js"];
+  // coverage's own module (article-format.md, Command line).
+  const COVERAGE = ["coverage.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");
     const files = fs
       .readdirSync(path.join(SKILL_DIR, "scripts", "lib"))
-      .filter((f) => f !== "install-deps.js" && !BALLOT_CHECK.includes(f) && !CHECK.includes(f));
+      .filter(
+        (f) => f !== "install-deps.js" && ![...BALLOT_CHECK, ...CHECK, ...COVERAGE].includes(f),
+      );
     const emitted = new Set(files.flatMap((f) => [...emittedBy(f)]));
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
     for (const code of emitted) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+  });
+
+  it("coverage: every code is in article-format.md's Command line section", () => {
+    const listed = listedIn("article-format.md");
+    const own = new Set(COVERAGE.flatMap((f) => [...emittedBy(f)]));
+    assert.ok(own.size >= 8, `only ${own.size} codes found in coverage`);
+    for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
 
   it("ballot-check: every code is in ballot-format.md's Command line section", () => {
