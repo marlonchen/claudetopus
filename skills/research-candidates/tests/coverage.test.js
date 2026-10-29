@@ -177,13 +177,24 @@ describe("coverage: sections and Positions issues", () => {
     ]);
   });
 
-  it("fails sections out of order, at each one after the furthest placed", async () => {
+  it("fails sections out of order, at the fewest that must move", async () => {
+    // A swap: two must move, and the earlier placed one stays.
     const swapped = edited("### B. Background", "### X")
       .replace("### D. Money", "### B. Background")
       .replace("### X", "### D. Money");
     await failsWith(setup({ article: swapped }), [
       `${AT}:${lineOf(swapped, "### C. Record in public office")} section-missing`,
       `${AT}:${lineOf(swapped, "### B. Background")} section-missing`,
+    ]);
+    // A section that jumped ahead is the one at fault, not every one it passed.
+    const controversies = section("F. Controversies and cases", UNKNOWN);
+    const jumped = edited(
+      `## Jane Example\n\n`,
+      `## Jane Example\n\n${controversies}\n`,
+      ARTICLE.replace(`\n${controversies}`, ""),
+    );
+    await failsWith(setup({ article: jumped }), [
+      `${AT}:${lineOf(jumped, "### F. Controversies and cases")} section-missing`,
     ]);
   });
 
@@ -268,18 +279,19 @@ describe("coverage: section states", () => {
 });
 
 describe("coverage: the says-only rule", () => {
-  it("fails a Positions claim without an s tag or without Says:", async () => {
+  it("fails a Positions claim without an s tag, leaving Says: to check", async () => {
     const plain = edited(
       says("jane-example"),
       claim("jane-example", { text: "Says: lower taxes" }),
     );
     const at = lineOf(plain, "#### Taxes and spending") + 2;
     await failsWith(setup({ article: plain }), [`${AT}:${at} says-missing`]);
+    // check fails an s tag without Says:, so coverage does not report it again.
     const unsaid = edited(
       says("jane-example"),
       claim("jane-example", { text: "Wants lower taxes", tag: "T4s" }),
     );
-    await failsWith(setup({ article: unsaid }), [`${AT}:${at} says-missing`]);
+    assert.strictEqual((await coverage(setup({ article: unsaid }))).stdout, `${AT} passed\n`);
   });
 
   it("leaves claims in other sections to their own tags", async () => {
@@ -325,9 +337,21 @@ describe("coverage: an Unknown needs the search log", () => {
 
   it("reads a line only for its own subject", async () => {
     const swapped = FULL_LOG.replaceAll("jane-example", "pat-example");
-    const result = await coverage(setup({ log: swapped }));
-    assert.strictEqual(result.status, 1);
-    assert.ok(!result.stdout.includes("search-log/"), "a line for another subject failed");
+    await failsWith(setup({ log: swapped }), [
+      `${AT}:${unknownAt("### C. Record in public office")} search-not-logged`,
+      `${AT}:${unknownAt("#### Health care")} search-not-logged`,
+      `${AT}:${unknownAt("### F. Controversies and cases")} search-not-logged`,
+    ]);
+  });
+
+  it("fails every Unknown, and the log, when search-log/ is not a directory", async () => {
+    const data = setup({ log: null });
+    data.write(`${BALLOT}/search-log`, "");
+    const unknowns = ARTICLE.split("\n").flatMap((l, i) => (l === UNKNOWN ? [i + 1] : []));
+    await failsWith(data, [
+      ...unknowns.map((n) => `${AT}:${n} search-not-logged`),
+      "search-log/us-house-07.tsv search-not-logged",
+    ]);
   });
 
   it("ignores a well-formed line for a subject the contest no longer lists", async () => {
@@ -505,6 +529,20 @@ describe("coverage: the judicial exemption", () => {
     await failsWith(setup({ ballot, article: nr }), [
       `${AT}:${lineOf(nr, "### E. Positions")} section-state`,
     ]);
+    // all defers every other section, and Positions keeps the exemption.
+    const all = judicial.replace("    vote_for: 1\n", "    vote_for: 1\n    not_researched: all\n");
+    let deferred = exempt;
+    for (const s of [
+      "B. Background",
+      "C. Record in public office",
+      "D. Money",
+      "F. Controversies and cases",
+    ])
+      deferred = setSection(deferred, s, NOT_RESEARCHED);
+    assert.strictEqual(
+      (await coverage(setup({ ballot: all, article: deferred, log: null }))).stdout,
+      `${AT} passed\n`,
+    );
   });
 });
 
@@ -547,10 +585,7 @@ describe("coverage: retention contests", () => {
   });
 
   it("holds Statements to the says-only rule", async () => {
-    const article = RETENTION.replace("Says: fair courts` ", "Fair courts` ").replace(
-      "Says: fair courts",
-      "Fair courts",
-    );
+    const article = RETENTION.replace("Says: fair courts `T1s`", "Fair courts `T1`");
     const result = await coverage(retention(article, LOG7), [BALLOT, "supreme-court-retention-a"]);
     assert.strictEqual(
       result.stdout,
@@ -596,7 +631,16 @@ describe("coverage: measures", () => {
       `articles/question-1.md:${lineOf(MEASURE, "### D. Arguments against") + 2} says-missing\n`,
     );
     const unlogged = await coverage(measure(null), [BALLOT, "question-1"]);
-    assert.match(unlogged.stdout, /search-not-logged/);
+    assert.strictEqual(
+      unlogged.stdout,
+      [
+        `${lineOf(MEASURE, "### B. Fiscal effect") + 2} search-not-logged`,
+        `${lineOf(MEASURE, "### D. Arguments against") + 2} says-missing`,
+        `${lineOf(MEASURE, "### E. Independent analysis") + 2} search-not-logged`,
+      ]
+        .map((l) => `articles/question-1.md:${l}\n`)
+        .join(""),
+    );
   });
 });
 
@@ -692,5 +736,18 @@ describe("coverage: lines check fails as claim-format", () => {
     const result = await coverage(data);
     assert.strictEqual(result.stdout, `${AT} passed\n`);
     assert.strictEqual(result.status, 0);
+  });
+
+  it("counts a claim line with no tag or link as its section's claim too", async () => {
+    for (const line of [
+      "- Served two terms [s1](../sources/us-house-07/jane-example/bio.md)",
+      "- Served two terms `T2`",
+    ]) {
+      const article = edited(
+        `### B. Background\n\n${claim("jane-example")}`,
+        `### B. Background\n\n${line}\n  > She served two terms on the Exampleton school board`,
+      );
+      assert.strictEqual((await coverage(setup({ article }))).stdout, `${AT} passed\n`, line);
+    }
   });
 });

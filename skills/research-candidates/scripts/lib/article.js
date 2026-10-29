@@ -14,7 +14,8 @@
 // text, tag, label, target, excerpt, excerptLine, block, section, issue }],
 // each also under its section or issue; rejected, each claim line failed as
 // claim-format, as { line, target }, also under its section or issue, so it
-// still counts as a claim there; strays, the lines of each heading, state or
+// still counts as a claim there (a `- ` line with no tag or link is one too,
+// with target null); strays, the lines of each heading, state or
 // claim with no block or section to sit in (a `###` before any `##`, a `####`
 // or a state or claim before a block's first `###`), so nothing the tree
 // leaves out is lost; failures [{ line, code }], in line order.
@@ -95,8 +96,9 @@ const parseArticle = (text) => {
         issue = null;
       }
       if (level === 4) {
-        issue = { name, line: n, states: [], claims: [], rejected: [] };
-        if (section) section.issues.push(issue);
+        // With no section, the states and claims under it are strays too.
+        issue = section && { name, line: n, states: [], claims: [], rejected: [] };
+        if (issue) section.issues.push(issue);
         else strays.push(n);
       }
       continue;
@@ -122,6 +124,12 @@ const parseArticle = (text) => {
         issue,
       };
       if (EXTRA_SPAN.test(claim[1]) || !LABEL.test(claim[3])) pending.malformed = true;
+      if (!section) strays.push(n);
+      continue;
+    }
+    // A claim line without its tag or link: failed as before, and still a claim.
+    if (line.startsWith("- ")) {
+      reject({ line: n, target: null, section, issue });
       if (!section) strays.push(n);
       continue;
     }

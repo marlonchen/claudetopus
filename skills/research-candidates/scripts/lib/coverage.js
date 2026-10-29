@@ -15,9 +15,7 @@ const path = require("node:path");
 const { parseArticle } = require("./article");
 const { allContests, parseArgs, resolveTarget } = require("./check");
 const {
-  CHECKLIST_ITEMS,
   EXEMPTION,
-  ID_PATTERN,
   OFFICE_TYPES,
   POSITIONS_ISSUES,
   SAYS_ONLY,
@@ -30,7 +28,7 @@ const {
 const { readYamlDocument } = require("./data-files");
 const { openBallot } = require("./fetch-common");
 const { Failure, Failures, runCommand } = require("./output");
-const { logPath } = require("./search-log");
+const { readSearchLog } = require("./search-log");
 const { locate, walk } = require("./snapshot-hash");
 const { withLock } = require("./snapshot-store");
 
@@ -38,47 +36,6 @@ const [UNKNOWN, NOT_RESEARCHED, NOT_JOB] = SECTION_STATES;
 const ON_BALLOT = SECTIONS.candidate[0];
 // source-tiers.md, Claim tags: a "Says:" tag.
 const SAYS_TAG = /^T[1-4]s$/;
-
-// The search log (snapshot-format.md, Search log).
-const DATE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
-
-// Is `date` a real YYYY-MM-DD date?
-const isDate = (date) => {
-  const m = DATE.exec(date);
-  if (!m) return false;
-  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-  return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
-};
-
-// The contest's log as { logged, failures }: logged holds `<subject>\t<item>`
-// for each well-formed line whose subject is in `subjects`; failures are
-// search-not-logged, located by log line, for each line that does not split
-// into the four fields, does not end in a newline, names another contest, or
-// has a malformed subject, item or date. A missing log has no lines.
-const readSearchLog = (ballotDir, contest, type, subjects) => {
-  const rel = logPath(contest);
-  const logged = new Set();
-  const failures = [];
-  const stat = fs.lstatSync(path.join(ballotDir, rel), { throwIfNoEntry: false });
-  if (!stat) return { logged, failures };
-  if (!stat.isFile()) return { logged, failures: [new Failure(rel, "search-not-logged")] };
-  const lines = fs.readFileSync(path.join(ballotDir, rel), "utf8").split("\n");
-  const unended = lines.pop();
-  if (unended !== "") lines.push(null);
-  for (const [i, line] of lines.entries()) {
-    const fields = line?.split("\t") ?? [];
-    const [logContest, subject, item, date] = fields;
-    const wellFormed =
-      fields.length === 4 &&
-      logContest === contest &&
-      (subject === "_race" || ID_PATTERN.test(subject)) &&
-      CHECKLIST_ITEMS[type].includes(item) &&
-      isDate(date);
-    if (!wellFormed) failures.push(new Failure(`${rel}:${i + 1}`, "search-not-logged"));
-    else if (subjects.has(subject)) logged.add(`${subject}\t${item}`);
-  }
-  return { logged, failures };
-};
 
 const isText = (value) => typeof value === "string" && value !== "";
 
@@ -142,6 +99,22 @@ const readContests = (ballotDir) => {
 const heading = (type, name) =>
   `${String.fromCharCode(65 + SECTIONS[type].indexOf(name))}. ${name}`;
 
+// The positions in `indexes` of a longest run whose values rise: the items
+// that stay put. Every other item is out of order, so the fewest headings
+// that must move are at fault, and a heading that jumped ahead is blamed
+// rather than every heading it passed. Ties keep the earliest run.
+const inOrder = (indexes) => {
+  // runs[i]: the longest rising run ending at i, as positions.
+  const runs = [];
+  for (const [i, index] of indexes.entries()) {
+    let run = [];
+    for (let j = 0; j < i; j++)
+      if (indexes[j] < index && runs[j].length > run.length) run = runs[j];
+    runs.push([...run, i]);
+  }
+  return new Set(runs.reduce((a, b) => (b.length > a.length ? b : a), []));
+};
+
 // Match headed items ({ name, line }) to the `expected` names, in order and
 // once each. Returns the matched [index, item] pairs, the items at fault (not
 // expected, a repeat, or out of order; an out-of-order one is still matched)
@@ -150,7 +123,6 @@ const matchInOrder = (expected, items) => {
   const pairs = [];
   const faults = [];
   const used = new Set();
-  let last = -1;
   for (const item of items) {
     const index = expected.findIndex((name, i) => name === item.name && !used.has(i));
     if (index === -1) {
@@ -159,9 +131,9 @@ const matchInOrder = (expected, items) => {
     }
     used.add(index);
     pairs.push([index, item]);
-    if (index < last) faults.push(item);
-    else last = index;
   }
+  const kept = inOrder(pairs.map(([index]) => index));
+  faults.push(...pairs.filter((_, i) => !kept.has(i)).map(([, item]) => item));
   const missing = expected.map((_, i) => i).filter((i) => !used.has(i));
   return { pairs, faults, missing };
 };
@@ -221,10 +193,10 @@ const articleFailures = (rel, article, contest, logged) => {
 const checkSection = (name, part, { contest, subject, logged, fail }) => {
   const { type } = contest;
   const issueClaims = part.issues.flatMap((i) => i.claims);
+  // An s-tagged claim that does not start with Says: is check's to fail.
   if (SAYS_ONLY[type].includes(name)) {
     for (const claim of [...part.claims, ...issueClaims])
-      if (!SAYS_TAG.test(claim.tag) || !claim.text.startsWith("Says:"))
-        fail(claim.line, "says-missing");
+      if (!SAYS_TAG.test(claim.tag)) fail(claim.line, "says-missing");
   }
   // An Unknown needs a log line for the subject and each item the section draws on.
   const backed = (state) => {
@@ -273,7 +245,10 @@ const checkSection = (name, part, { contest, subject, logged, fail }) => {
 // The snapshots under sources/<contest>/ that no claim of the article cites,
 // as `<path> uncited` lines, each path located as check locates it.
 const uncited = (ballotDir, contest, article) => {
-  const targets = [...article.claims, ...article.rejected].map((c) => resolveTarget(c.target));
+  // A rejected line with no link has no target.
+  const targets = [...article.claims, ...article.rejected]
+    .filter((c) => c.target)
+    .map((c) => resolveTarget(c.target));
   const cited = new Set(targets.filter(Boolean));
   const lines = walk(ballotDir)
     .filter(({ rel, kind }) => kind === "file" && rel.startsWith(`sources/${contest}/`))
@@ -301,12 +276,15 @@ const coverage = (ballotDir, given) => {
       continue;
     }
     const article = parseArticle(fs.readFileSync(file, "utf8"));
-    const subjects = new Set(contest.blocks.map((b) => b.subject));
-    const log = readSearchLog(ballotDir, id, contest.type, subjects);
+    // Lines for subjects the contest no longer lists are never looked up.
+    const log = readSearchLog(ballotDir, id, contest.type);
     const found = articleFailures(rel, article, contest, log.logged);
     // Stable, so failures on one line keep the order they were found in.
     found.sort((a, b) => a[0] - b[0]);
-    const failures = [...found.map(([, f]) => f), ...log.failures];
+    const failures = [
+      ...found.map(([, f]) => f),
+      ...log.faults.map((at) => new Failure(at, "search-not-logged")),
+    ];
     lines.push(...failures.map((f) => f.line), ...uncited(ballotDir, id, article));
     if (failures.length) failed = true;
     else lines.push(`${rel} passed`);

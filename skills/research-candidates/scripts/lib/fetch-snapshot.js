@@ -66,7 +66,8 @@ const logUnfetchable = (ballotDir, url, where, reason) => {
 };
 
 const MODES = { "--ballot": ballotImport, "--searched": searched };
-const main = (argv) => (MODES[argv[0]] ?? plainFetch)(argv);
+// Own keys only, so `constructor` or `toString` is a ballot plainFetch refuses.
+const main = (argv) => (Object.hasOwn(MODES, argv[0]) ? MODES[argv[0]] : plainFetch)(argv);
 
 const plainFetch = (argv) =>
   runCommand(async () => {

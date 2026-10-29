@@ -222,6 +222,12 @@ describe("output holds only location code [key] lines", () => {
     }
     const badBallot = await fetchSnapshot(data, ["2026-general/../x", ...PLAIN.slice(1)]);
     assert.equal(badBallot.stdout, "- bad-ballot\n");
+    // Value: protects=a first argument naming an Object.prototype key is a ballot, not a mode; fails_when=main looks modes up through the prototype chain; why_new=--searched made modes a lookup table; seam=none; no_claim=other bad ballot spellings
+    for (const key of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      const result = await fetchSnapshot(data, [key, ...PLAIN.slice(1)]);
+      assert.equal(result.stdout, "- bad-ballot\n", key);
+      assert.equal(result.status, 1, key);
+    }
     // Value: protects=only an http(s) URL argument is accepted; fails_when=parseArgs drops the isHttp check or the URL parse guard; why_new=no test passed a bad URL argument; seam=none; no_claim=URLs that parse but are unreachable
     for (const url of ["ftp://county.example.gov/", "file:///etc/passwd", "not a url"]) {
       const badUrl = await fetchSnapshot(data, [...PLAIN.slice(0, 4), url]);
