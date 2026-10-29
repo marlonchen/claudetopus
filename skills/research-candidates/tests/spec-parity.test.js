@@ -2554,7 +2554,7 @@ describe("ReviewItemKeys", () => {
   it("every promised re-list trigger maps to a field in the key", () => {
     const keys = between(REVIEW, "## Item keys");
     const fields = keys.match(
-      /The key is the first 16 hex digits \(64 bits\) of a sha256 hash of (.+?)\. Snapshots are write-once/,
+      /The key is the first 32 hex digits \(128 bits\) of a sha256 hash of (.+?)\. Snapshots are write-once/,
     )?.[1];
     assert.ok(fields, "review-list.md no longer lists the key's fields");
     const want = [
@@ -2725,19 +2725,20 @@ describe("OwnerDecisions", () => {
     assert.match(step2, /never fetch a lookup result/);
   });
 
-  it("the first-run baseline accepts only claims found whole in their own excerpt", () => {
+  it("the first-run baseline accepts only claims that are a whole sentence of their excerpt", () => {
     const accepted = between(REVIEW, "## Accepted keys");
     assert.match(
       accepted,
       /accepted as the baseline only when a script can check its wording itself/,
     );
-    assert.match(accepted, /is found whole in its own excerpt, on word boundaries/);
+    assert.match(accepted, /is one whole sentence of its own excerpt, of at least three words/);
+    assert.match(accepted, /so a fragment that drops a `not` or a qualifier is never whole/);
     assert.match(accepted, /so its silence accepts nothing/);
     // The list itself carries the claims the baseline turns away.
     const list = between(REVIEW, "## What goes on it");
     assert.match(
       list,
-      /on the first run, every claim whose text is not found whole in its own excerpt/,
+      /on the first run, every claim whose text is not one whole sentence of its own excerpt/,
     );
   });
 

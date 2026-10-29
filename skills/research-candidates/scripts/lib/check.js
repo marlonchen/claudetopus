@@ -158,11 +158,17 @@ const holdsTitle = (text, titles) => {
   return [text, unhyphen(text)].some((t) => scan(t, values, ["title"]).length > 0);
 };
 
-// The failures of one claim, located `at` (its claim line), in report order.
-// A claim whose link does not resolve still gets every check that does not
-// need its snapshot.
-const claimFailures = (claim, at, { view, titles, readSnapshot }) => {
-  const rel = resolveTarget(claim.target);
+// Is a resolved snapshot path one an article of `contest` may cite: filed
+// under the contest, or a _ballot snapshot?
+const citable = (rel, contest) =>
+  rel.startsWith(`sources/${contest}/`) || rel.startsWith("sources/_ballot/");
+
+// The failures of one claim of `contest`, located `at` (its claim line), in
+// report order. A claim whose link does not resolve, or names another
+// contest's snapshot, still gets every check that does not need its snapshot.
+const claimFailures = (claim, at, contest, { view, titles, readSnapshot }) => {
+  const resolved = resolveTarget(claim.target);
+  const rel = resolved && citable(resolved, contest) ? resolved : null;
   const snapshot = rel && readSnapshot(rel);
   const failures = snapshot ? [] : [new Failure(at, "claim-format")];
   if (hasCommentMarker([claim.text, claim.excerpt]))
@@ -202,16 +208,36 @@ const allContests = (ballotDir) => {
     .sort();
 };
 
+// What every article's check reads once: the ballot view, the hidden titles
+// and one snapshot reader. ballot.yaml's failure goes to `failureLines`.
+const checkContext = (ballotDir, YAML, failureLines) => ({
+  view: readView(ballotDir),
+  titles: readHiddenTitles(ballotDir, failureLines),
+  readSnapshot: snapshotReader(ballotDir, YAML),
+});
+
+// The failure lines of `contest`'s parsed article, located under `rel`, in
+// line order.
+const articleCheck = (rel, contest, article, context) => {
+  // [line, Failure] pairs, so the article's failures print in line order.
+  const found = article.failures.map(({ line, code }) => [
+    line,
+    new Failure(`${rel}:${line}`, code),
+  ]);
+  for (const claim of article.claims) {
+    for (const failure of claimFailures(claim, `${rel}:${claim.line}`, contest, context))
+      found.push([claim.line, failure]);
+  }
+  found.sort((a, b) => a[0] - b[0]);
+  return found.map(([, failure]) => failure.line);
+};
+
 const check = (ballotDir, given) => {
   // Loaded first, so a missing install is one deps-missing, not a failure per claim.
   const YAML = load("yaml");
   const failureLines = verifyManifest(ballotDir).map((f) => f.line);
   const contests = given.length ? given : allContests(ballotDir);
-  const context = {
-    view: readView(ballotDir),
-    titles: readHiddenTitles(ballotDir, failureLines),
-    readSnapshot: snapshotReader(ballotDir, YAML),
-  };
+  const context = checkContext(ballotDir, YAML, failureLines);
   for (const contest of contests) {
     const rel = `articles/${contest}.md`;
     const file = path.join(ballotDir, rel);
@@ -220,17 +246,7 @@ const check = (ballotDir, given) => {
       continue;
     }
     const article = parseArticle(fs.readFileSync(file, "utf8"));
-    // [line, Failure] pairs, so the article's failures print in line order.
-    const found = article.failures.map(({ line, code }) => [
-      line,
-      new Failure(`${rel}:${line}`, code),
-    ]);
-    for (const claim of article.claims) {
-      for (const failure of claimFailures(claim, `${rel}:${claim.line}`, context))
-        found.push([claim.line, failure]);
-    }
-    found.sort((a, b) => a[0] - b[0]);
-    failureLines.push(...found.map(([, failure]) => failure.line));
+    failureLines.push(...articleCheck(rel, contest, article, context));
   }
   if (failureLines.length) throw new Failures(failureLines);
   return [`snapshots.sha256 checked`, ...contests.map((c) => `articles/${c}.md checked`)];
@@ -244,4 +260,12 @@ const main = (argv) =>
     return withLock(ballotDir, () => check(ballotDir, contests));
   });
 
-module.exports = { allContests, check, main, parseArgs, resolveTarget, snapshotReader };
+module.exports = {
+  LETTER_HYPHEN,
+  allContests,
+  articleCheck,
+  checkContext,
+  main,
+  parseArgs,
+  resolveTarget,
+};

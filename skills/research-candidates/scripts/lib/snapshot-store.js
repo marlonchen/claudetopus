@@ -255,6 +255,19 @@ const checkLog = (file, code) => {
 // Append one line to an append-only log in one synced write.
 const appendLine = (file, line) => writeSynced(file, line, "a");
 
+// Create `file` whole and once: write a synced temp file, then link it into
+// place exclusively, so a crash leaves no partial file and an existing file,
+// or a link put in its place, fails EEXIST.
+const writeOnce = (file, text) => {
+  const tmp = `${file}.tmp-${crypto.randomBytes(8).toString("hex")}`;
+  writeSynced(tmp, text, "wx");
+  try {
+    fs.linkSync(tmp, file);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+};
+
 module.exports = {
   HASH_LINE,
   MANIFEST,
@@ -267,4 +280,5 @@ module.exports = {
   save,
   sha256,
   withLock,
+  writeOnce,
 };

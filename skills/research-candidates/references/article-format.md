@@ -85,7 +85,7 @@ check <election>/<ballot-id> [<contest>]...
 It checks, for every claim (Claim lines):
 
 - the claim line has its tag and its link, with link text `s` and a number, and the next line is its excerpt; any other line of the article that is not a heading, a section state or blank fails too (`claim-format`);
-- the link resolves, relative to the article, to an existing snapshot file under `sources/` whose every part `fetch-snapshot` could have named (`claim-format`); a claim whose link does not resolve still gets every check below that does not need its snapshot;
+- the link resolves, relative to the article, to an existing snapshot file under the article's own contest (`sources/<contest>/`) or under `sources/_ballot/`, whose every part `fetch-snapshot` could have named (`claim-format`), so a claim never cites another contest's snapshot, which no review rule reads as misfiled; a claim whose link does not resolve still gets every check below that does not need its snapshot;
 - a claim citing the sample ballot (the `link:` line of `ballot-view.md`) quotes one whole span of `ballot-view.md`, and a claim citing any other `role: sample_ballot` snapshot, or citing one while there is no `ballot-view.md`, fails, and so does a claim citing a `_ballot` snapshot whose front matter does not give a companion role (`candidate_list`, `pamphlet`, `write_in_list` or `withdrawal_notice`), so a sample ballot whose role cannot be read is never matched like an ordinary source (`ballot-excerpt`);
 - any other excerpt is 20 to 400 characters once normalized (`excerpt-length`) and is found in its own snapshot's body (`excerpt-not-found`);
 - the claim text and excerpt hold no `<!--` or `-->`, read both raw and normalized, so a fullwidth or dash-folded marker counts too (`comment-marker`);
@@ -129,7 +129,7 @@ After an article's failures, `coverage` lists each snapshot under `sources/<cont
 | `comment-marker` | A claim or excerpt contains `<!--` or `-->` |
 | `private-match` | Reported by `publish`: a claim or excerpt matches the privacy scan (SKILL.md step 6.3) |
 | `private-source` | Reported by `publish`: a cited snapshot's `source:` name matches the privacy scan |
-| `claim-format` | A claim line is malformed, or its link points at a missing snapshot or one outside `sources/` |
+| `claim-format` | A claim line is malformed, or its link points at a missing snapshot or one outside its contest's `sources/<contest>/` and `sources/_ballot/` |
 | `block-missing` | A candidate, official or measure block is missing, out of ballot order, or under the wrong `#` or `##` heading |
 | `section-missing` | A section is missing, out of order or duplicated |
 | `section-state` | A section or Positions issue has no state, more than one, or a state it may not use, or `Not researched yet` is used for some candidates in a section but not all, or in a section the contest's `not_researched` does not list, or a listed section is in another state |

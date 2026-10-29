@@ -1,284 +1,58 @@
 "use strict";
 
 const assert = require("node:assert");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const { afterEach, describe, it } = require("node:test");
-const { BALLOT, makeDataRepo, runCli } = require("./harness");
-const { claimKey, entryKey, isVerbatim, ready } = require("../scripts/lib/review-list");
+const { BALLOT, DEFAULT_BALLOT } = require("./harness");
+const {
+  claimKey,
+  entryKey,
+  hasAllegation,
+  isVerbatim,
+  ready,
+} = require("../scripts/lib/review-list");
+const {
+  ARTICLE,
+  CLAIMS,
+  FORGED,
+  JANE_BIO,
+  JANE_MINUTES,
+  JOHN_NEWS,
+  LINES,
+  PAYWALLED,
+  R,
+  SNAPSHOTS,
+  UNFETCHABLE,
+  addRetention,
+  afterFirstRun,
+  claim,
+  itemsOf,
+  keyList,
+  keysOf,
+  mark,
+  neutrality,
+  plant,
+  readEvery,
+  readUnaccepted,
+  repos,
+  retentionArticle,
+  reviewList,
+  section,
+  setup,
+  sha256,
+  snapshot,
+} = require("./review-list-fixture");
 
 // review-list (review-list.md, Command line), run as a subprocess against a
-// temp data repo (seam 1), plus its key and readiness functions.
+// temp data repo (seam 1, review-list-fixture.js), plus its key, word and
+// readiness functions.
 
-const repos = [];
 afterEach(() => {
   while (repos.length) repos.pop().cleanup();
 });
 
-const sha256 = (text) => crypto.createHash("sha256").update(text).digest("hex");
-
-const UNKNOWN = "Unknown, no source found";
-// sections.md, Positions issues, for a federal office.
-const FEDERAL_ISSUES = [
-  "Taxes and spending",
-  "Economy and jobs",
-  "Health care",
-  "Immigration",
-  "Abortion",
-  "Energy and environment",
-  "Foreign policy and defense",
-];
-
-const SAMPLE_BALLOT = "sources/_ballot/sample-ballot.md";
-const JANE_BIO = "sources/us-house-07/jane-example/bio.md";
-const JANE_SITE = "sources/us-house-07/jane-example/site.md";
-const JOHN_NEWS = "sources/us-house-07/john-sample/news.md";
-
-// A snapshot as fetch-snapshot saves it.
-const snapshot = ({
-  subject,
-  url,
-  body,
-  tier = "T2",
-  statementsOnly = false,
-  owner = "third-party",
-  extra = "",
-}) => `---
-source: Example News
-url: ${url}
-fetched: 2026-10-20
-method: html
-tier: ${tier}
-statements_only: ${statementsOnly}
-subject: ${subject}
-owner: ${owner}
-${extra}---
-${body}
-`;
-
-const SNAPSHOTS = {
-  [SAMPLE_BALLOT]: snapshot({
-    subject: "_ballot",
-    url: "https://county.example.gov/",
-    tier: "T1",
-    extra: "role: sample_ballot\n",
-    body: "OFFICIAL SAMPLE BALLOT\nJane Example\nExample Party\nJohn Sample\nSample Party",
-  }),
-  [JANE_BIO]: snapshot({
-    subject: "jane-example",
-    url: "https://news.example.com/jane",
-    body: `Jane Example grew up in Exampleton and taught school for twelve years.
-She served two terms on the Exampleton school board and chaired its finance committee.
-Jane Example said she would "cut property taxes for every family" if elected.
-A former aide accused Jane Example of misusing campaign funds, which she denies.`,
-  }),
-  [JANE_SITE]: snapshot({
-    subject: "jane-example",
-    url: "https://janeexample.com/issues",
-    tier: "T4",
-    statementsOnly: true,
-    owner: "jane-example",
-    body: "Jane Example will cut property taxes for every family in Exampleton.",
-  }),
-  [JOHN_NEWS]: snapshot({
-    subject: "john-sample",
-    url: "https://news.example.com/john",
-    body: `John Sample ran a hardware store in Exampleton for many years.
-Jane Example voted against the school budget last spring.`,
-  }),
-};
-
-const claim = (text, tag, target, excerpt) =>
-  `- ${text} \`${tag}\` [s1](../${target})\n  > ${excerpt}`;
-
-const SERVED =
-  "She served two terms on the Exampleton school board and chaired its finance committee.";
-
-// Each claim of the article, by what the first run should make of it.
-const CLAIMS = {
-  janeBallot: claim(
-    "Jane Example Example Party",
-    "T1",
-    SAMPLE_BALLOT,
-    "Jane Example Example Party",
-  ),
-  verbatim: claim("She served two terms on the Exampleton school board", "T2", JANE_BIO, SERVED),
-  reworded: claim("Was a member of the school board", "T2", JANE_BIO, SERVED),
-  alleged: claim(
-    "A former aide accused Jane Example of misusing campaign funds",
-    "T2",
-    JANE_BIO,
-    "A former aide accused Jane Example of misusing campaign funds, which she denies.",
-  ),
-  misfiled: claim(
-    "Jane Example voted against the school budget last spring",
-    "T2",
-    JOHN_NEWS,
-    "Jane Example voted against the school budget last spring.",
-  ),
-  interprets: claim(
-    "Jane Example grew up in Exampleton",
-    "T2i",
-    JANE_BIO,
-    "Jane Example grew up in Exampleton and taught school for twelve years.",
-  ),
-  curly: claim(
-    "Says: “cut property taxes for every family”",
-    "T4s",
-    JANE_SITE,
-    "Jane Example will cut property taxes for every family in Exampleton.",
-  ),
-  attributed: claim(
-    "Says: cut property taxes for every family",
-    "T2s",
-    JANE_BIO,
-    'Jane Example said she would "cut property taxes for every family" if elected.',
-  ),
-  always: claim("She served two terms on the Exampleton school board", "T2", JANE_BIO, SERVED),
-  johnBallot: claim("John Sample Sample Party", "T1", SAMPLE_BALLOT, "John Sample Sample Party"),
-  johnStore: claim(
-    "John Sample ran a hardware store in Exampleton",
-    "T2",
-    JOHN_NEWS,
-    "John Sample ran a hardware store in Exampleton for many years.",
-  ),
-};
-
-const section = (heading, body = UNKNOWN) => `### ${heading}\n\n${body}\n`;
-const block = (name, parts) =>
-  [
-    `## ${name}\n`,
-    section("A. On the ballot", parts.onBallot),
-    section("B. Background", parts.background),
-    section("C. Record in public office", parts.record),
-    section("D. Money", parts.money),
-    "### E. Positions\n",
-    ...FEDERAL_ISSUES.map((issue) => `#### ${issue}\n\n${parts.positions?.[issue] ?? UNKNOWN}\n`),
-    section("F. Controversies and cases", parts.controversies),
-  ].join("\n");
-
-const ARTICLE = `# us-house-07\n\n${block("Jane Example", {
-  onBallot: CLAIMS.janeBallot,
-  background: [CLAIMS.verbatim, CLAIMS.reworded, CLAIMS.alleged].join("\n"),
-  record: CLAIMS.misfiled,
-  money: CLAIMS.interprets,
-  positions: { "Taxes and spending": CLAIMS.curly, "Economy and jobs": CLAIMS.attributed },
-  controversies: CLAIMS.always,
-})}\n${block("John Sample", { onBallot: CLAIMS.johnBallot, background: CLAIMS.johnStore })}`;
-
-// The 1-based line of a claim in `article` (the nth with that text).
-const lineOf = (article, text, nth = 1) => {
-  const first = text.split("\n")[0];
-  let seen = 0;
-  const index = article.split("\n").findIndex((l) => l === first && ++seen === nth);
-  assert.ok(index !== -1, `no claim ${first} in the article`);
-  return index + 1;
-};
-const LINES = Object.fromEntries(
-  Object.entries(CLAIMS).map(([name, text]) => [
-    name,
-    lineOf(ARTICLE, text, name === "always" ? 2 : 1),
-  ]),
-);
-
-const FULL_LOG = ["jane-example", "john-sample"]
-  .flatMap((id) => ["1", "2", "3", "4", "5"].map((i) => `us-house-07\t${id}\t${i}\t2026-10-20\n`))
-  .join("");
-
-// Listed: a fetch that failed. Left off: a domain refusal, a URL a later
-// snapshot saved, another contest's entry and a ballot-level one.
-const UNFETCHABLE = `- https://news.example.com/paywalled | us-house-07/jane-example | 2026-10-20 | http 403
-- https://elsewhere.example.org/jane | us-house-07/jane-example | 2026-10-20 | domain not in tiers.yaml
-- https://news.example.com/jane | us-house-07/jane-example | 2026-10-19 | network error
-- https://news.example.com/other | us-house-08/someone | 2026-10-20 | http 404
-- https://county.example.gov/x | _ballot | 2026-10-20 | http 500
-`;
-
-const R = "review/us-house-07";
-
-const setup = ({ article = ARTICLE, unfetchable = UNFETCHABLE } = {}) => {
-  const data = makeDataRepo();
-  repos.push(data);
-  let manifest = "";
-  for (const [rel, text] of Object.entries(SNAPSHOTS)) {
-    manifest += `${sha256(text)}  ${rel}\n`;
-    data.write(`${BALLOT}/${rel}`, text);
-  }
-  data.write(`${BALLOT}/snapshots.sha256`, manifest);
-  data.write(
-    `${BALLOT}/ballot-view.md`,
-    `link: ${SAMPLE_BALLOT}\nJane Example Example Party\nJohn Sample Sample Party\n`,
-  );
-  data.write(`${BALLOT}/articles/us-house-07.md`, article);
-  data.write(`${BALLOT}/search-log/us-house-07.tsv`, FULL_LOG);
-  if (unfetchable !== null) data.write(`${BALLOT}/unfetchable.md`, unfetchable);
-  return data;
-};
-
-const reviewList = (data, args = [BALLOT]) =>
-  runCli("review-list", args, { cwd: data.root, env: data.env });
-
-// --keys, as { line: { state, key } }.
-const keysOf = async (data) => {
-  const result = await reviewList(data, ["--keys", BALLOT]);
-  assert.strictEqual(result.status, 0, result.stdout);
-  return Object.fromEntries(
-    result.stdout
-      .trim()
-      .split("\n")
-      .map((l) => {
-        const [at, state, key] = l.split(" ");
-        return [Number(at.split(":")[1]), { state, key }];
-      }),
-  );
-};
-
-const neutrality = (data, reviewed, flags = []) =>
-  data.write(
-    `${BALLOT}/${R}.neutrality.md`,
-    `<!-- reviewed: ${reviewed.join(" ")} -->\n${flags.map(([k, r]) => `- ${k} | ${r}\n`).join("")}`,
-  );
-
-// The review file's items, as { key: { checked, why } }, why being the
-// reasons on its why line (none for an unfetchable entry).
-const itemsOf = (data) => {
-  const items = {};
-  let last = null;
-  for (const line of data.read(`${BALLOT}/${R}.md`).split("\n")) {
-    const item = /^- \[([ x])\] .* <!-- id:([0-9a-f]{16}) -->$/.exec(line);
-    if (item) {
-      last = item[2];
-      items[last] = { checked: item[1] === "x", why: [] };
-    }
-    const why = /^ {2}- why: (.+) \(articles\/us-house-07\.md:\d+\)$/.exec(line);
-    if (why) items[last].why = why[1].split(", ");
-  }
-  return items;
-};
-
-const keyList = (data) =>
-  data.exists(`${BALLOT}/${R}.accepted`)
-    ? data.read(`${BALLOT}/${R}.accepted`).split("\n").filter(Boolean)
-    : [];
-
-// A data repo after a first run that flagged johnStore; returns it and the keys by claim name.
-const afterFirstRun = async () => {
-  const data = setup();
-  const byLine = await keysOf(data);
-  const keys = Object.fromEntries(Object.entries(LINES).map(([n, l]) => [n, byLine[l].key]));
-  neutrality(data, Object.values(keys), [[keys.johnStore, "the quote drops its context"]]);
-  const result = await reviewList(data);
-  assert.strictEqual(result.status, 0, result.stdout);
-  return { data, keys };
-};
-
-const PAYWALLED = entryKey({
-  url: "https://news.example.com/paywalled",
-  where: "us-house-07/jane-example",
-});
-
 describe("review-list --keys", () => {
-  it("prints each claim's location, whether it is accepted and a 64-bit key, writing nothing", async () => {
+  it("prints each claim's location, whether it is accepted and a 128-bit key, writing nothing", async () => {
     const data = setup();
     const result = await reviewList(data, ["--keys", BALLOT]);
     assert.strictEqual(result.status, 0, result.stdout);
@@ -289,7 +63,7 @@ describe("review-list --keys", () => {
         .sort((a, b) => a - b)
         .map((n) => `articles/us-house-07.md:${n}`),
     );
-    for (const l of lines) assert.match(l, / unaccepted [0-9a-f]{16}$/);
+    for (const l of lines) assert.match(l, / unaccepted [0-9a-f]{32}$/);
     // Same text, tag, excerpt and snapshot in two sections: two keys.
     const keys = await keysOf(data);
     assert.notStrictEqual(keys[LINES.verbatim].key, keys[LINES.always].key);
@@ -309,6 +83,15 @@ describe("review-list --keys", () => {
     assert.notStrictEqual(after[LINES.verbatim].key, before[LINES.verbatim].key);
     assert.strictEqual(after[LINES.misfiled].key, before[LINES.misfiled].key);
   });
+
+  it("keeps a key when the claim only gains a character normalizing drops", async () => {
+    const data = setup();
+    const before = await keysOf(data);
+    const hidden = ARTICLE.replace("Was a member of", "Was a mem\u200bber of");
+    data.write(`${BALLOT}/articles/us-house-07.md`, hidden);
+    const after = await keysOf(data);
+    assert.strictEqual(after[LINES.reworded].key, before[LINES.reworded].key);
+  });
 });
 
 describe("review-list: the first run", () => {
@@ -318,7 +101,7 @@ describe("review-list: the first run", () => {
     assert.strictEqual(result.stdout, `${R}.neutrality.md neutrality-missing\n`);
     assert.strictEqual(result.status, 1);
     const keys = Object.values(await keysOf(data)).map((k) => k.key);
-    for (const reviewed of [keys.slice(1), [...keys, "0123456789abcdef"]]) {
+    for (const reviewed of [keys.slice(1), [...keys, FORGED]]) {
       neutrality(data, reviewed);
       result = await reviewList(data);
       assert.strictEqual(result.stdout, `${R}.neutrality.md:1 neutrality-stale\n`);
@@ -327,20 +110,26 @@ describe("review-list: the first run", () => {
     assert.deepStrictEqual(data.list(`${BALLOT}/review`), ["us-house-07.neutrality.md"]);
   });
 
-  it("lists every mechanical item and baselines only verbatim claims nothing else lists", async () => {
+  it("lists every mechanical item and baselines only whole-sentence claims nothing else lists", async () => {
     const { data, keys } = await afterFirstRun();
-    // Verbatim, and verbatim once Says: and curly enclosing quotes are dropped.
-    const baseline = [keys.janeBallot, keys.verbatim, keys.curly, keys.johnBallot];
+    // A whole sample-ballot span, and whole sentences once Says: and curly
+    // enclosing quotes are dropped. The pamphlet's Says: claim is _ballot's,
+    // so its third-party owner is no attribution.
+    const baseline = [keys.janeBallot, keys.verbatim, keys.curly, keys.pamphlet, keys.johnBallot];
     assert.deepStrictEqual(
       data.read(`${BALLOT}/${R}.baseline`).split("\n").filter(Boolean),
       baseline,
     );
     assert.deepStrictEqual(itemsOf(data), {
+      // Found whole in its excerpt, but not a whole sentence of it.
+      [keys.fragment]: { checked: false, why: ["not-verbatim"] },
       [keys.reworded]: { checked: false, why: ["not-verbatim"] },
-      [keys.alleged]: { checked: false, why: ["allegation-word"] },
+      [keys.alleged]: { checked: false, why: ["allegation-word", "not-verbatim"] },
       [keys.misfiled]: { checked: false, why: ["misfiled"] },
-      [keys.interprets]: { checked: false, why: ["t2i"] },
-      [keys.attributed]: { checked: false, why: ["attribution"] },
+      [keys.interprets]: { checked: false, why: ["t2i", "not-verbatim"] },
+      [keys.attributed]: { checked: false, why: ["attribution", "not-verbatim"] },
+      // A rival's own campaign site, filed under the rival.
+      [keys.rival]: { checked: false, why: ["attribution", "misfiled"] },
       [keys.always]: { checked: false, why: ["always-reviewed"] },
       // A verbatim claim the neutrality pass flags.
       [keys.johnStore]: { checked: false, why: ["neutrality"] },
@@ -355,29 +144,26 @@ describe("review-list: the first run", () => {
 
   it("prints what it wrote and that the contest is not ready", async () => {
     const data = setup();
-    neutrality(
-      data,
-      Object.values(await keysOf(data)).map((k) => k.key),
-    );
+    await readEvery(data);
     const result = await reviewList(data);
     assert.strictEqual(
       result.stdout,
       `${R}.baseline written\n${R}.md written\narticles/us-house-07.md not-ready\n`,
     );
   });
-});
 
-// The review file with the item of each key marked [x].
-const mark = (data, ...keys) => {
-  const rel = `${BALLOT}/${R}.md`;
-  let text = data.read(rel);
-  for (const key of keys) {
-    const marked = text.replace(new RegExp(`^- \\[ \\](.* <!-- id:${key} -->)$`, "m"), "- [x]$1");
-    assert.notStrictEqual(marked, text, `no unchecked item ${key}`);
-    text = marked;
-  }
-  data.write(rel, text);
-};
+  it("refuses a review file a reset left behind, marks and all, writing nothing", async () => {
+    const data = setup();
+    const keys = await keysOf(data);
+    await readEvery(data);
+    data.write(`${BALLOT}/${R}.md`, `- [x] Was a member <!-- id:${keys[LINES.reworded].key} -->\n`);
+    const result = await reviewList(data);
+    assert.strictEqual(result.stdout, `${R}.md review-invalid\n`);
+    assert.strictEqual(result.status, 1);
+    assert.strictEqual(data.exists(`${BALLOT}/${R}.baseline`), false);
+    assert.strictEqual(data.exists(`${BALLOT}/${R}.accepted`), false);
+  });
+});
 
 describe("review-list: marks", () => {
   it("appends marked keys to .accepted once, and ignores a mark with no item", async () => {
@@ -387,7 +173,7 @@ describe("review-list: marks", () => {
     const rel = `${BALLOT}/${R}.md`;
     data.write(
       rel,
-      `${data.read(rel)}- [x] forged <!-- id:0123456789abcdef -->\n- [x] again <!-- id:${keys.verbatim} -->\n`,
+      `${data.read(rel)}- [x] forged <!-- id:${FORGED} -->\n- [x] again <!-- id:${keys.verbatim} -->\n`,
     );
     let result = await reviewList(data);
     assert.strictEqual(result.stdout, `${R}.md written\narticles/us-house-07.md not-ready\n`);
@@ -399,6 +185,74 @@ describe("review-list: marks", () => {
     result = await reviewList(data);
     assert.strictEqual(result.status, 0);
     assert.deepStrictEqual(keyList(data), [keys.reworded, keys.always]);
+  });
+
+  it("counts marks on CRLF lines and lines with trailing spaces", async () => {
+    const { data, keys } = await afterFirstRun();
+    mark(data, keys.always, keys.misfiled);
+    const rel = `${BALLOT}/${R}.md`;
+    const lines = data.read(rel).split("\n");
+    data.write(
+      rel,
+      lines
+        .map((l) => (l.includes(keys.misfiled) ? `${l}  ` : l))
+        .join("\r\n")
+        .replace(/\r\n$/, "\n"),
+    );
+    const result = await reviewList(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.deepStrictEqual(keyList(data), [keys.misfiled, keys.always]);
+  });
+
+  it("keeps an item open when a neutrality flag came after the researcher marked it", async () => {
+    const { data, keys } = await afterFirstRun();
+    mark(data, keys.misfiled);
+    // The pass runs again before review-list and now flags the marked item.
+    await readUnaccepted(data, [[keys.misfiled, "a vote described as a stance"]]);
+    let result = await reviewList(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.deepStrictEqual(keyList(data), []);
+    assert.deepStrictEqual(itemsOf(data)[keys.misfiled], {
+      checked: false,
+      why: ["misfiled", "neutrality"],
+    });
+    assert.match(data.read(`${BALLOT}/${R}.md`), /^ {2}- neutrality: a vote described/m);
+    // Marked again, with the flag in view, it counts.
+    mark(data, keys.misfiled);
+    result = await reviewList(data);
+    assert.deepStrictEqual(keyList(data), [keys.misfiled]);
+  });
+
+  it("does not count a mark whose item did not show every reason the key has now", async () => {
+    const { data, keys } = await afterFirstRun();
+    mark(data, keys.alleged);
+    const rel = `${BALLOT}/${R}.md`;
+    // As if the item had been written before allegation words caught it.
+    data.write(
+      rel,
+      data.read(rel).replace(/- why: allegation-word, not-verbatim \(/, "- why: not-verbatim ("),
+    );
+    await reviewList(data);
+    assert.deepStrictEqual(keyList(data), []);
+    assert.deepStrictEqual(itemsOf(data)[keys.alleged], {
+      checked: false,
+      why: ["allegation-word"],
+    });
+  });
+
+  it("ignores a torn last line of .accepted and drops it before the next append", async () => {
+    const { data, keys } = await afterFirstRun();
+    mark(data, keys.always);
+    await reviewList(data);
+    const rel = `${BALLOT}/${R}.accepted`;
+    data.write(rel, `${data.read(rel)}0123456789ab`);
+    let result = await reviewList(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.strictEqual(itemsOf(data)[keys.always].checked, true);
+    mark(data, keys.misfiled);
+    result = await reviewList(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.strictEqual(data.read(rel), `${keys.always}\n${keys.misfiled}\n`);
   });
 
   it("rebuilds a missing review file from the baseline and .accepted, never as a first run", async () => {
@@ -441,10 +295,7 @@ describe("review-list: marks", () => {
     );
     result = await reviewList(data);
     assert.strictEqual(result.stdout, `${R}.neutrality.md:1 neutrality-stale\n`);
-    neutrality(
-      data,
-      unaccepted.map((k) => k.key),
-    );
+    await readUnaccepted(data);
     result = await reviewList(data);
     assert.strictEqual(result.status, 0, result.stdout);
     const items = itemsOf(data);
@@ -463,16 +314,164 @@ describe("review-list: marks", () => {
       .filter(([, item]) => !item.checked)
       .map(([key]) => key);
     mark(data, ...open);
-    const result = await reviewList(data);
+    let result = await reviewList(data);
     assert.strictEqual(result.stdout, `${R}.md written\narticles/us-house-07.md ready\n`);
     assert.ok(keyList(data).includes(PAYWALLED));
     assert.deepStrictEqual(ready(ballotDir, "us-house-07"), { ready: true, reasons: [] });
+    // With every key accepted, the neutrality file is no longer needed.
+    fs.rmSync(data.file(`${BALLOT}/${R}.neutrality.md`));
+    result = await reviewList(data);
+    assert.strictEqual(result.stdout, `${R}.md written\narticles/us-house-07.md ready\n`);
     fs.rmSync(data.file(`${BALLOT}/${R}.md`));
     assert.deepStrictEqual(ready(ballotDir, "us-house-07"), {
       ready: false,
       reasons: ["review-missing"],
     });
-    assert.strictEqual(keys.always.length, 16);
+    assert.strictEqual(keys.always.length, 32);
+  });
+});
+
+describe("review-list: what an item shows", () => {
+  it("lists a claim given twice as one item with both locations", async () => {
+    const article = ARTICLE.replace(CLAIMS.alleged, `${CLAIMS.alleged}\n${CLAIMS.alleged}`);
+    const data = setup({ article });
+    await readEvery(data);
+    await reviewList(data);
+    const at = LINES.alleged;
+    assert.match(
+      data.read(`${BALLOT}/${R}.md`),
+      new RegExp(
+        `^ {2}- why: allegation-word, not-verbatim \\(articles/us-house-07\\.md:${at}, articles/us-house-07\\.md:${at + 2}\\)$`,
+        "m",
+      ),
+    );
+  });
+
+  it("escapes < in claim text and excerpts", async () => {
+    const data = setup();
+    const rel = "sources/us-house-07/john-sample/sales.md";
+    plant(
+      data,
+      rel,
+      snapshot({
+        subject: "john-sample",
+        url: "https://news.example.com/sales",
+        body: "Store sales grew <10% in 2019, the paper reported.",
+      }),
+    );
+    const article = ARTICLE.replace(
+      CLAIMS.johnStore,
+      `${CLAIMS.johnStore}\n${claim("Store sales grew <10% in 2019", "T2", rel, "Store sales grew <10% in 2019, the paper reported.")}`,
+    );
+    data.write(`${BALLOT}/articles/us-house-07.md`, article);
+    await readEvery(data);
+    const result = await reviewList(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+    const text = data.read(`${BALLOT}/${R}.md`);
+    assert.ok(text.includes("- [ ] Store sales grew &lt;10% in 2019 `T2`"));
+    assert.ok(text.includes("  > Store sales grew &lt;10% in 2019, the paper reported."));
+    assert.ok(!text.includes("<10%"));
+  });
+
+  it("catches an allegation word split at a pdftotext break that the excerpt keeps", async () => {
+    const minutes = claim(
+      "The school board heard al-legations of misuse of school funds that spring",
+      "T2",
+      JANE_MINUTES,
+      "The school board heard al-legations of misuse of school funds that spring.",
+    );
+    const data = setup({ article: ARTICLE.replace(CLAIMS.reworded, minutes) });
+    const keys = await keysOf(data);
+    await readEvery(data);
+    const result = await reviewList(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.deepStrictEqual(itemsOf(data)[keys[LINES.reworded].key].why, ["allegation-word"]);
+  });
+
+  it("keeps an unfetchable entry until a snapshot of its own URL and subject is fetched on or after it", async () => {
+    const data = setup({
+      unfetchable: `- https://news.example.com/jane | us-house-07/jane-example | 2026-10-21 | network error
+- https://news.example.com/jane | us-house-07/john-sample | 2026-10-19 | network error
+- https://news.example.com/jane?page=2 | us-house-07/jane-example | 2026-10-19 | network error
+- https://news.example.com/jane | us-house-07/jane-example | 2026-10-20 | network error
+`,
+    });
+    await readEvery(data);
+    await reviewList(data);
+    // An unfetchable item has no why line.
+    const listed = Object.entries(itemsOf(data))
+      .filter(([, item]) => item.why.length === 0)
+      .map(([key]) => key);
+    // Fetched before the entry, under another subject, or another URL: listed.
+    // Fetched the same day: saved since.
+    assert.deepStrictEqual(listed, [
+      entryKey({ url: "https://news.example.com/jane", where: "us-house-07/jane-example" }),
+      entryKey({ url: "https://news.example.com/jane", where: "us-house-07/john-sample" }),
+      entryKey({ url: "https://news.example.com/jane?page=2", where: "us-house-07/jane-example" }),
+    ]);
+  });
+});
+
+describe("review-list: retention and measure contests", () => {
+  it("always reviews a retention official's Discipline", async () => {
+    const data = setup({ unfetchable: null });
+    addRetention(data);
+    await readEvery(data, "supreme-court-retention-a");
+    const result = await reviewList(data, [BALLOT, "supreme-court-retention-a"]);
+    assert.strictEqual(result.status, 0, result.stdout);
+    const items = Object.values(itemsOf(data, "supreme-court-retention-a"));
+    assert.deepStrictEqual(items, [
+      { checked: false, why: ["always-reviewed", "allegation-word"] },
+    ]);
+  });
+
+  it("keys a measure claim by the contest id and exempts it from attribution", async () => {
+    const ballot = `${DEFAULT_BALLOT}  - id: measure-a
+    type: measure
+    jurisdiction: Exampleton County
+    title: Measure A
+`;
+    const data = setup({ ballot, unfetchable: null });
+    const rel = "sources/measure-a/_race/arguments.md";
+    const text = snapshot({
+      subject: "_race",
+      url: "https://news.example.com/measure-a",
+      body: "Supporters say the measure would fix every road in the county.",
+    });
+    plant(data, rel, text);
+    const says = "Says: the measure would fix every road in the county";
+    const excerpt = "Supporters say the measure would fix every road in the county.";
+    data.write(
+      `${BALLOT}/articles/measure-a.md`,
+      [
+        "# measure-a\n",
+        "## measure-a\n",
+        section("A. What it does"),
+        section("B. Fiscal effect"),
+        section("C. Arguments for", claim(says, "T2s", rel, excerpt)),
+        section("D. Arguments against"),
+        section("E. Independent analysis"),
+      ].join("\n"),
+    );
+    data.write(`${BALLOT}/search-log/measure-a.tsv`, "measure-a\t_race\t6\t2026-10-20\n");
+    const [only] = Object.values(await keysOf(data, "measure-a"));
+    assert.strictEqual(
+      only.key,
+      claimKey({
+        subject: "measure-a",
+        section: "C. Arguments for",
+        text: says,
+        tag: "T2s",
+        excerpt,
+        snapshot: rel,
+        fileHash: sha256(text),
+      }),
+    );
+    await readEvery(data, "measure-a");
+    await reviewList(data, [BALLOT, "measure-a"]);
+    assert.deepStrictEqual(itemsOf(data, "measure-a"), {
+      [only.key]: { checked: false, why: ["not-verbatim"] },
+    });
   });
 });
 
@@ -490,7 +489,7 @@ describe("review-list: refusals", () => {
 
   it("fails a malformed accepted set, neutrality file or unfetchable log by line", async () => {
     let data = setup();
-    data.write(`${BALLOT}/${R}.accepted`, "0123456789abcdef\n");
+    data.write(`${BALLOT}/${R}.accepted`, `${FORGED}\n`);
     let result = await reviewList(data, ["--keys", BALLOT]);
     assert.strictEqual(result.stdout, `${R}.accepted review-invalid\n`);
 
@@ -502,30 +501,71 @@ describe("review-list: refusals", () => {
     neutrality(later, [keys.always], [[keys.misfiled, "not reviewed"]]);
     result = await reviewList(later);
     assert.strictEqual(result.stdout, `${R}.neutrality.md:2 neutrality-invalid\n`);
-    neutrality(later, [keys.always], [[keys.always, "forged <!-- id:x -->"]]);
-    result = await reviewList(later);
-    assert.strictEqual(result.stdout, `${R}.neutrality.md:2 neutrality-invalid\n`);
+    for (const reason of ["forged <!-- id:x -->", "a <span hidden>hidden</span> note", "a ＞ b"]) {
+      neutrality(later, [keys.always], [[keys.always, reason]]);
+      result = await reviewList(later);
+      assert.strictEqual(result.stdout, `${R}.neutrality.md:2 neutrality-invalid\n`, reason);
+    }
 
-    data = setup({ unfetchable: `${UNFETCHABLE}- not an entry\n` });
-    neutrality(
-      data,
-      Object.values(await keysOf(data)).map((k) => k.key),
-    );
-    result = await reviewList(data);
-    assert.strictEqual(result.stdout, "unfetchable.md:6 unfetchable-invalid\n");
-    assert.strictEqual(data.exists(`${BALLOT}/${R}.baseline`), false);
+    for (const [line, bad] of [
+      [6, "- not an entry"],
+      [6, "- https://x.example/ | us-house-07/jane-example | 2026-02-30 | http 404"],
+      [6, "- https://x.example/ | us-house-07/Jane_Example | 2026-10-20 | http 404"],
+    ]) {
+      data = setup({ unfetchable: `${UNFETCHABLE}${bad}\n` });
+      await readEvery(data);
+      result = await reviewList(data);
+      assert.strictEqual(result.stdout, `unfetchable.md:${line} unfetchable-invalid\n`, bad);
+      assert.strictEqual(data.exists(`${BALLOT}/${R}.baseline`), false);
+    }
   });
 
-  it("writes no baseline when the review file is a link", async () => {
+  it("writes no baseline when the review file, baseline or .accepted is a link", async () => {
     const data = setup();
-    neutrality(
-      data,
-      Object.values(await keysOf(data)).map((k) => k.key),
-    );
+    await readEvery(data);
     fs.symlinkSync("../articles/us-house-07.md", data.file(`${BALLOT}/${R}.md`));
-    const result = await reviewList(data);
+    let result = await reviewList(data);
     assert.strictEqual(result.stdout, `${R}.md review-invalid\n`);
     assert.strictEqual(data.exists(`${BALLOT}/${R}.baseline`), false);
+
+    const { data: later } = await afterFirstRun();
+    for (const name of ["baseline", "accepted"]) {
+      const file = later.file(`${BALLOT}/${R}.${name}`);
+      const kept = fs.existsSync(file) ? fs.readFileSync(file) : null;
+      fs.rmSync(file, { force: true });
+      fs.symlinkSync("us-house-07.neutrality.md", file);
+      result = await reviewList(later);
+      assert.strictEqual(result.stdout, `${R}.${name} review-invalid\n`);
+      fs.rmSync(file);
+      if (kept) fs.writeFileSync(file, kept);
+    }
+  });
+
+  it("reports a bad unfetchable.md once, and writes each contest that passes", async () => {
+    const data = setup({ unfetchable: "- not an entry\n" });
+    addRetention(data);
+    let result = await reviewList(data);
+    assert.strictEqual(result.stdout, "unfetchable.md:1 unfetchable-invalid\n");
+    assert.strictEqual(result.status, 1);
+
+    data.write(`${BALLOT}/unfetchable.md`, UNFETCHABLE);
+    data.write(
+      `${BALLOT}/articles/supreme-court-retention-a.md`,
+      retentionArticle("The state commission reprimanded Pat Example in 2018."),
+    );
+    await readEvery(data);
+    result = await reviewList(data);
+    assert.strictEqual(
+      result.stdout,
+      [
+        "articles/supreme-court-retention-a.md check-failed",
+        `${R}.baseline written`,
+        `${R}.md written`,
+        "articles/us-house-07.md not-ready",
+        "",
+      ].join("\n"),
+    );
+    assert.strictEqual(result.status, 1);
   });
 
   it("refuses bad arguments", async () => {
@@ -545,6 +585,24 @@ describe("review-list: refusals", () => {
   });
 });
 
+describe("review-list: ready", () => {
+  it("returns every refusal as a reason, never throwing one", async () => {
+    let data = setup();
+    const reasonsOf = (contest = "us-house-07") => ready(data.ballotDir, contest).reasons;
+    assert.deepStrictEqual(reasonsOf(), ["not-reviewed", "unaccepted"]);
+    assert.deepStrictEqual(reasonsOf("us-house-08"), ["unknown-contest"]);
+    assert.deepStrictEqual(reasonsOf("supreme-court-retention-a"), ["file-missing"]);
+    data.write(`${BALLOT}/${R}.accepted`, `${FORGED}\n`);
+    assert.deepStrictEqual(reasonsOf(), ["review-invalid"]);
+    data = setup({ unfetchable: "- not an entry\n" });
+    assert.deepStrictEqual(reasonsOf(), ["unfetchable-invalid"]);
+    data = setup({ article: ARTICLE.replace("for many years.", "for many decades.") });
+    assert.deepStrictEqual(reasonsOf(), ["check-failed"]);
+    data = setup({ article: ARTICLE.replace("### D. Money\n", "") });
+    assert.deepStrictEqual(reasonsOf(), ["coverage-failed"]);
+  });
+});
+
 describe("review-list --refused-hosts", () => {
   it("prints the current run's distinct, IDNA-normalized LDH hosts, and counts the rest", async () => {
     const data = setup({
@@ -552,15 +610,19 @@ describe("review-list --refused-hosts", () => {
 - https://www.example.org/b | us-house-07/john-sample | 2026-10-21 | domain not in tiers.yaml
 - https://bücher.example/c | us-house-07/jane-example | 2026-10-20 | domain not in tiers.yaml
 - http://10.0.0.1/d | us-house-07/jane-example | 2026-10-20 | domain not in tiers.yaml
-- https://old.example.net/e | us-house-07/jane-example | 2026-10-19 | domain not in tiers.yaml
+- https://late.example.net/e | us-house-07/jane-example | 2026-10-19 | domain not in tiers.yaml
+- https://old.example.net/e | us-house-07/jane-example | 2026-10-18 | domain not in tiers.yaml
 - https://other.example.net/f | us-house-08/someone | 2026-10-20 | domain not in tiers.yaml
 - https://news.example.com/g | us-house-07/jane-example | 2026-10-20 | http 404
 `,
     });
     const result = await reviewList(data, ["--refused-hosts", BALLOT, "us-house-07"]);
+    // The day before the run's first log date still counts: a refusal can
+    // come before the first search line, or the run can cross midnight.
     assert.strictEqual(
       result.stdout,
       [
+        "us-house-07 domain-not-in-tiers late.example.net",
         "us-house-07 domain-not-in-tiers www.example.org",
         "us-house-07 domain-not-in-tiers xn--bcher-kva.example",
         "us-house-07 other-hosts 1",
@@ -568,6 +630,43 @@ describe("review-list --refused-hosts", () => {
       ].join("\n"),
     );
     assert.strictEqual(result.status, 0);
+  });
+
+  it("takes the whole latest run of consecutive log dates, and caps what it prints", async () => {
+    const data = setup({ unfetchable: null });
+    data.write(
+      `${BALLOT}/search-log/us-house-07.tsv`,
+      [
+        "us-house-07\tjane-example\t1\t2026-10-12",
+        "us-house-07\tjane-example\t2\t2026-10-19",
+        "us-house-07\tjohn-sample\t1\t2026-10-20",
+        "",
+      ].join("\n"),
+    );
+    const refusal = (host, date) =>
+      `- https://${host}/x | us-house-07/jane-example | ${date} | domain not in tiers.yaml\n`;
+    const many = Array.from({ length: 22 }, (_, i) => `h${String(i + 1).padStart(2, "0")}.example`);
+    const long = `${"a".repeat(60)}.${"b".repeat(36)}.example`;
+    data.write(
+      `${BALLOT}/unfetchable.md`,
+      [
+        refusal("before.example.net", "2026-10-17"),
+        refusal("edge.example.net", "2026-10-18"),
+        refusal(long, "2026-10-20"),
+        ...many.map((h) => refusal(h, "2026-10-20")),
+      ].join(""),
+    );
+    const result = await reviewList(data, ["--refused-hosts", BALLOT, "us-house-07"]);
+    const shown = ["edge.example.net", ...many].sort().slice(0, 20);
+    assert.strictEqual(
+      result.stdout,
+      [
+        ...shown.map((h) => `us-house-07 domain-not-in-tiers ${h}`),
+        "us-house-07 more-hosts 3",
+        "us-house-07 other-hosts 1",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("says when there are none, and refuses a contest ballot.yaml does not list", async () => {
@@ -584,7 +683,7 @@ describe("review-list --refused-hosts", () => {
   });
 });
 
-describe("review-list: keys and verbatim claims", () => {
+describe("review-list: keys, verbatim claims and allegation words", () => {
   const fields = {
     subject: "jane-example",
     section: "B. Background",
@@ -595,9 +694,25 @@ describe("review-list: keys and verbatim claims", () => {
     snapshot: JANE_BIO,
     fileHash: "a".repeat(64),
   };
-  it("changes the key when any one field changes", () => {
+  it("changes the key when any one field changes, but not for a character normalizing drops", () => {
     const key = claimKey(fields);
-    assert.match(key, /^[0-9a-f]{16}$/);
+    // 128 bits: the first 32 hex digits of a sha256 over the JSON field list.
+    assert.strictEqual(
+      key,
+      sha256(
+        JSON.stringify([
+          "claim",
+          "jane-example",
+          "B. Background",
+          "",
+          "Served two terms",
+          "T2",
+          "She served two terms on the board",
+          JANE_BIO,
+          "a".repeat(64),
+        ]),
+      ).slice(0, 32),
+    );
     for (const [name, value] of Object.entries({
       subject: "john-sample",
       section: "F. Controversies and cases",
@@ -616,14 +731,64 @@ describe("review-list: keys and verbatim claims", () => {
       claimKey({ ...fields, text: "Served two terms", tag: "T2" }),
     );
     assert.notStrictEqual(entryKey({ url: "u", where: "w" }), entryKey({ url: "w", where: "u" }));
+    // A zero-width space, or a decomposed accent, is no new key to grind.
+    assert.strictEqual(claimKey({ ...fields, text: "Served two\u200b terms" }), key);
+    const accent = { ...fields, excerpt: "She served two terms in Bogotá" };
+    assert.strictEqual(
+      claimKey({ ...accent, excerpt: accent.excerpt.normalize("NFD") }),
+      claimKey(accent),
+    );
   });
 
-  it("finds the claim whole in its excerpt, without Says: and one pair of quotes", () => {
-    assert.strictEqual(isVerbatim("served two terms", "She served two terms."), true);
-    assert.strictEqual(isVerbatim("Says: “lower taxes”", "We will lower taxes now"), true);
-    assert.strictEqual(isVerbatim("Says: 'lower taxes'", "We will lower taxes now"), true);
-    assert.strictEqual(isVerbatim("served two term", "She served two terms."), false);
-    assert.strictEqual(isVerbatim("Served two terms", "She served two terms."), false);
-    assert.strictEqual(isVerbatim('Says: ""', "anything at all here"), false);
+  it("baselines only a whole sentence of the excerpt, of three words or more", () => {
+    const yes = [
+      ["She served two terms", "She served two terms."],
+      ["She left the board", "She served two terms. She left the board!"],
+      ["Says: “We will lower taxes now”", "“We will lower taxes now.”"],
+      ["Says: 'We will lower taxes now.'", "We will lower taxes now. Then we will go."],
+    ];
+    for (const [text, excerpt] of yes) assert.strictEqual(isVerbatim(text, excerpt), true, text);
+    const no = [
+      // Drops the "not" the excerpt has.
+      ["Says: support the tax increase", "I do not support the tax increase."],
+      ["She served two terms", "She served two terms on the board."],
+      // The excerpt itself starts mid-sentence.
+      ["support the tax increase", "support the tax increase."],
+      // No sentence end in the excerpt.
+      ["She served two terms", "She served two terms"],
+      ["She left", "She left."],
+      ["Served two terms", "She served two terms."],
+      ['Says: ""', "anything at all here."],
+    ];
+    for (const [text, excerpt] of no) assert.strictEqual(isVerbatim(text, excerpt), false, text);
+    // A sample-ballot claim may be its whole span, however short.
+    assert.strictEqual(
+      isVerbatim("Jane Example Example Party", "Jane Example Example Party"),
+      false,
+    );
+    assert.strictEqual(isVerbatim("Pat Example", "Pat Example", true), true);
+    assert.strictEqual(isVerbatim("Pat", "Pat Example", true), false);
+  });
+
+  it("matches every allegation word form, whole, and with a pdftotext hyphen", () => {
+    for (const text of [
+      "a former aide alleging misuse",
+      "the grand jury indicts him",
+      "the court convicts",
+      "the board suspends her",
+      "she resigns",
+      "two scandals",
+      "fraudulently obtained",
+      "arrested for DUI",
+      "was fined",
+      "pleading guilty",
+      "violates the rule",
+      "the al-legations",
+      "an investi-gation",
+    ]) {
+      assert.strictEqual(hasAllegation(text), true, text);
+    }
+    for (const text of ["in charge of the budget", "Sue Example", "settled in Exampleton", "fine"])
+      assert.strictEqual(hasAllegation(text), false, text);
   });
 });

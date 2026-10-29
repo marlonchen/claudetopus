@@ -62,7 +62,8 @@ const logUnfetchable = (ballotDir, url, where, reason) => {
   // A non-http redirect target can hold raw spaces and |, which would forge fields.
   const href = cleanUrl(url).href.replace(/[\s|]/g, encodeURIComponent);
   const line = `- ${href} | ${where} | ${today()} | ${reason}\n`;
-  fs.appendFileSync(path.join(ballotDir, "unfetchable.md"), line);
+  // Under the ballot lock, so review-list never reads a half-written line.
+  withLock(ballotDir, () => fs.appendFileSync(path.join(ballotDir, "unfetchable.md"), line));
 };
 
 const MODES = { "--ballot": ballotImport, "--searched": searched };
