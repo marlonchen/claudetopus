@@ -530,4 +530,4 @@ const main = (argv) =>
     return withLock(ballotDir, () => check(root, ballot, ballotDir, show));
   });
 
-module.exports = { ballotIdPrefix, main };
+module.exports = { ballotIdPrefix, check, main };

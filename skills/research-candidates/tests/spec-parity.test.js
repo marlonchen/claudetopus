@@ -1149,11 +1149,17 @@ describe("FailureCodes", () => {
       ...between(REVIEW, "## Command line").matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g),
     ].map((m) => m[1]);
     assert.ok(reviewCodes.length >= 10, `only ${reviewCodes.length} review-list codes parsed`);
+    // publish's own output codes, listed in page.md's Command line section.
+    const publishCodes = [
+      ...between(PAGE, "## Command line").matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g),
+    ].map((m) => m[1]);
+    assert.ok(publishCodes.length >= 10, `only ${publishCodes.length} publish codes parsed`);
     const known = new Set([
       ...codes,
       ...fetchCodes,
       ...ballotCodes,
       ...reviewCodes,
+      ...publishCodes,
       ...scripts,
       ...ids,
       "says-only",

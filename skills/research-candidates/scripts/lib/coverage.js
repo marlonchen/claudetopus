@@ -83,8 +83,12 @@ const readContest = (contest) => {
 };
 
 // ballot.yaml's contests by id, as readContest reads them.
-const readContests = (ballotDir) => {
-  const data = readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS();
+const readContests = (ballotDir) =>
+  contestsOf(readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS());
+
+// The same, from ballot.yaml already read, so a caller that also shows its
+// raw fields reads the file once.
+const contestsOf = (data) => {
   if (!Array.isArray(data?.contests)) throw new Failure("ballot.yaml", "ballot-invalid");
   const contests = new Map();
   for (const contest of data.contests) {
@@ -319,4 +323,4 @@ const main = (argv) =>
     return withLock(ballotDir, () => coverage(ballotDir, contests));
   });
 
-module.exports = { coverArticle, main, readContests };
+module.exports = { contestsOf, coverArticle, main, readContests };

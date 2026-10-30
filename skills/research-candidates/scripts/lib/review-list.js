@@ -334,12 +334,14 @@ const readClaims = (rel, contest, article, { subjects, names }, { readSnapshot, 
 
 // What a run reads once for every contest: ballot.yaml's contests, check's
 // context, whether the manifest or ballot.yaml fails every article's check,
-// and, with `entries`, the unfetchable log and the snapshot files.
-const runContext = (ballotDir, { entries }) => {
+// and, with `entries`, the unfetchable log and the snapshot files. `given`
+// may hold the `contests` the caller read, and `manifestVerified` when the
+// caller verified the manifest under the same lock.
+const runContext = (ballotDir, { entries }, given = {}) => {
   // Loaded first, so a missing install is one deps-missing, not a failure per contest.
   const YAML = load("yaml");
-  const contests = readContests(ballotDir);
-  const failureLines = verifyManifest(ballotDir).map((f) => f.line);
+  const contests = given.contests ?? readContests(ballotDir);
+  const failureLines = given.manifestVerified ? [] : verifyManifest(ballotDir).map((f) => f.line);
   const check = checkContext(ballotDir, YAML, failureLines);
   return {
     contests,
@@ -368,6 +370,7 @@ const loadContest = (ballotDir, id, ctx) => {
   const covered = coverArticle(ballotDir, contest, article);
   if (covered.failures.length) throw new Failure(rel, "coverage-failed");
   return {
+    article,
     claims: readClaims(rel, contest, article, covered, ctx.check),
     entries: ctx.entries ? entryItems(id, ctx) : [],
   };
@@ -601,16 +604,20 @@ const refusedHosts = (ballotDir, id) => {
 // file), unaccepted, or the code of any failure that stopped the check
 // (unknown-contest, file-missing, check-failed, coverage-failed,
 // review-invalid, unfetchable-invalid, yaml-invalid, ballot-invalid,
-// deps-missing); a failure of the whole run is every contest's. It never
+// deps-missing); a failure of the whole run is every contest's. A contest
+// whose article was read also gets `article`, the parsed article it judged,
+// and `readSnapshot`, the reader its snapshots were hashed through, so publish
+// renders exactly what was judged. `given` is runContext's: publish passes
+// the contests it renders and the manifest its gate verified. It never
 // throws a Failure.
-const ready = (ballotDir, contests) => {
+const ready = (ballotDir, contests, given = {}) => {
   const refused = (error) => {
     if (error instanceof Failure) return { ready: false, reasons: [error.code] };
     throw error;
   };
   let ctx;
   try {
-    ctx = runContext(ballotDir, { entries: true });
+    ctx = runContext(ballotDir, { entries: true }, given);
   } catch (error) {
     return new Map(contests.map((id) => [id, refused(error)]));
   }
@@ -624,7 +631,12 @@ const ready = (ballotDir, contests) => {
       if (first) reasons.push("not-reviewed");
       else if (!lstat(ballotDir, `review/${id}.md`)?.isFile()) reasons.push("review-missing");
       if (!allAccepted(loaded, keys)) reasons.push("unaccepted");
-      answers.set(id, { ready: reasons.length === 0, reasons });
+      answers.set(id, {
+        ready: reasons.length === 0,
+        reasons,
+        article: loaded.article,
+        readSnapshot: ctx.check.readSnapshot,
+      });
     } catch (error) {
       answers.set(id, refused(error));
     }
