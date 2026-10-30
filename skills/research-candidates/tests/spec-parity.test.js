@@ -1689,11 +1689,11 @@ describe("PageCopy", () => {
 });
 
 // Added by /ship test coverage audit.
-// Value: protects=the page CSP loosens only style-src 'unsafe-inline' and font-src data:, as
+// Value: protects=the page CSP loosens only style-src 'unsafe-inline', as
 //   SKILL.md 6.2 states; fails_when=a script-src, 'self' or https: source is added to the CSP;
 //   why_new=no test reads the CSP; seam=none; no_claim=that publish emits this CSP (no script)
 describe("PageCsp", () => {
-  it("every CSP directive but style-src and font-src is 'none', and no script-src exists", () => {
+  it("every CSP directive but style-src is 'none', and no script-src exists", () => {
     const meta = SKILL.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
     assert.ok(meta, "SKILL.md step 6.2 no longer gives the page CSP");
     const directives = Object.fromEntries(
@@ -1704,9 +1704,8 @@ describe("PageCsp", () => {
     );
     assert.strictEqual(directives["default-src"], "'none'", "default-src is not 'none'");
     assert.ok(!("script-src" in directives), "the CSP allows scripts");
-    const loosened = SKILL.match(/`font-src ([^`]+)` exists only for the embedded fonts/);
-    assert.ok(loosened, "SKILL.md no longer limits font-src to the embedded fonts");
-    const allowed = { "style-src": "'unsafe-inline'", "font-src": loosened[1] };
+    assert.match(SKILL, /`style-src 'unsafe-inline'` is the only directive loosened/);
+    const allowed = { "style-src": "'unsafe-inline'" };
     for (const [name, sources] of Object.entries(directives)) {
       assert.strictEqual(sources, allowed[name] ?? "'none'", `CSP ${name} is loosened: ${sources}`);
     }

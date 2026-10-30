@@ -1,8 +1,6 @@
 "use strict";
 
 const assert = require("node:assert");
-const fs = require("node:fs");
-const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
 const { BALLOT, runCli, runInTty } = require("./harness");
 const {
@@ -25,7 +23,6 @@ afterEach(() => {
   while (repos.length) repos.pop().cleanup();
 });
 
-const SKILL_DIR = path.join(__dirname, "..");
 const SITE = `${BALLOT}/site/index.html`;
 const MEETING = "sources/us-house-07/jane-example/meeting.md";
 const OTHERS = [
@@ -168,22 +165,27 @@ describe("publish scan: any other match refuses the whole page", () => {
     assert.ok(!data.exists(SITE));
   });
 
-  it("skips the embedded fonts, checked byte for byte, for ZIPs", async () => {
-    // A ZIP that stands alone in a bundled font's base64 text.
-    const zip = fs
-      .readdirSync(path.join(SKILL_DIR, "fonts"))
-      .filter((f) => f.endsWith(".woff2"))
-      .map((f) => fs.readFileSync(path.join(SKILL_DIR, "fonts", f)).toString("base64"))
-      .map((b64) => /(?<![0-9])[0-9]{5}(?![0-9])/.exec(b64)?.[0])
-      .find(Boolean);
-    assert.ok(zip, "no bundled font holds a standalone 5-digit run");
-    const data = await setup();
-    data.write(
-      "addresses.yaml",
-      `addr-mom:\n  address: 123 Elm Street Apt 4, Springfield, XX ${zip}\n  street: 123 Elm Street\n  ballot: ${BALLOT}\n`,
-    );
-    const result = await publish(data);
-    assert.strictEqual(result.status, 0, result.stdout);
-    assert.match(data.read(SITE), new RegExp(`(?<![0-9])${zip}(?![0-9])`));
+  it("keeps any ballot's private strings and id off the page, not only this one's", async () => {
+    // The page is public: privacy is the family's against the public (SKILL.md step 6.3).
+    const OTHER = "2026-general/xx-exampleton-2/private.yaml";
+    const body = "Jane Example spoke at the Lakeside Village library board meeting.";
+    const dropped = await meetingSetup({ body });
+    dropped.write(OTHER, "private_strings:\n  - Lakeside Village\n");
+    const at = lineOf(dropped, "- Jane Example spoke");
+    const key = await keyAt(dropped, at);
+    assert.deepStrictEqual(lines(await publish(dropped)).slice(0, 3), [
+      `articles/us-house-07.md:${at} private-match ${key}`,
+      `articles/us-house-07.md:${at + 1} private-match ${key}`,
+      "articles/us-house-07.md not-ready private-match",
+    ]);
+    const refused = await meetingSetup({
+      body: "Jane Example spoke at the library board meeting in March.",
+      url: "https://news.example.com/xx-exampleton-2/meeting",
+    });
+    refused.write(OTHER, "private_strings: []\n");
+    const result = await publish(refused);
+    assert.match(lines(result).at(-1), /^site\/index\.html:[0-9]+ private-ballot-id$/);
+    assert.strictEqual(result.status, 1);
+    assert.doesNotMatch(result.stdout, /exampleton-2|Lakeside/i);
   });
 });

@@ -13,24 +13,7 @@ const { Failure } = require("./output");
 const [UNKNOWN, NOT_RESEARCHED, NOT_JOB] = SECTION_STATES;
 
 // SKILL.md step 6.2: the page's fixed CSP.
-const CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'";
-
-// page.md, Type: the four embedded faces, each a file in the skill's fonts/.
-const FONT_FACES = [
-  {
-    file: "atkinson-hyperlegible-next-400.woff2",
-    family: "Atkinson Hyperlegible Next",
-    weight: 400,
-  },
-  {
-    file: "atkinson-hyperlegible-next-700.woff2",
-    family: "Atkinson Hyperlegible Next",
-    weight: 700,
-  },
-  { file: "ballot-serif-400.woff2", family: "Ballot Serif", weight: 400 },
-  { file: "ballot-serif-600.woff2", family: "Ballot Serif", weight: 600 },
-];
+const CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
 
 // page.md, Race screen: a candidate section's chip and heading is its name or
 // its first word ("Record" for "Record in public office").
@@ -384,14 +367,14 @@ const raceHtml = (raw, contest, answer, next, page) => {
   ].join("");
 };
 
-const CSS = `:root{--fg:#1b1d1e;--muted:#55595c;--bg:#ffffff;--quote-bg:#f2f3f1;--line:#d5d8d6;--accent:#0f5f5c;--visited:#5a4a7a;
---body:"Atkinson Hyperlegible Next",-apple-system,system-ui,sans-serif;--serif:"Ballot Serif",Georgia,serif}
-@media (prefers-color-scheme:dark){:root{--fg:#e8e6e1;--muted:#a9aca8;--bg:#141617;--quote-bg:#1e2122;--line:#33383a;--accent:#5fbfb7;--visited:#b3a3d6}}
+const CSS = `:root{--fg:#1b1d1e;--muted:rgb(85,89,92);--bg:#ffffff;--quote-bg:#f2f3f1;--line:#d5d8d6;--accent:#0f5f5c;--visited:#5a4a7a;
+--body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--serif:Georgia,"Times New Roman",serif}
+@media (prefers-color-scheme:dark){:root{--fg:#e8e6e1;--muted:#a9aca8;--bg:rgb(20,22,23);--quote-bg:rgb(30,33,34);--line:rgb(51,56,58);--accent:#5fbfb7;--visited:#b3a3d6}}
 *{box-sizing:border-box}
 html{background:var(--bg)}
 body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.5 var(--body);overflow-wrap:break-word}
 main{max-width:640px;margin:0 auto;padding:16px}
-.race{content-visibility:auto;contain-intrinsic-size:auto 1200px;border-top:1px solid var(--line);margin-top:32px;padding-top:16px}
+.race{content-visibility:auto;contain-intrinsic-size:auto 75rem;border-top:1px solid var(--line);margin-top:32px;padding-top:16px}
 h1{font:600 24px/1.2 var(--serif);margin:8px 0}
 h2{font:600 19px/1.3 var(--serif);margin:24px 0 8px}
 h3,h4{font:700 17px/1.4 var(--body);margin:0}
@@ -436,20 +419,6 @@ blockquote cite{display:block;font:14px var(--body);color:var(--muted);font-styl
 .note{background:var(--quote-bg);border-radius:8px;padding:12px;margin-top:12px}
 .who{margin:8px 0}`;
 
-// Each embedded face as { family, weight, data, start, end }, where [start,
-// end) holds its base64 text in `html`. Anchored on the rule's quotes, which
-// an interpolated value never holds unescaped, so no page text can pose as one.
-const FONT_RULE =
-  /@font-face\{font-family:"([^"<>]*)";font-style:normal;font-weight:([0-9]+);src:url\(data:font\/woff2;base64,([A-Za-z0-9+/]*={0,2})\) format\("woff2"\)\}/dg;
-const embeddedFonts = (html) =>
-  [...html.matchAll(FONT_RULE)].map((m) => ({
-    family: m[1],
-    weight: Number(m[2]),
-    data: Buffer.from(m[3], "base64"),
-    start: m.indices[3][0],
-    end: m.indices[3][1],
-  }));
-
 // The [start, end) offsets of the page's generated dates in `html`: each
 // "Updated" date and each receipt's fetch date, anchored on the markup before
 // them, which an escaped value can never hold.
@@ -469,14 +438,6 @@ const receiptLinks = (answers, archives) =>
         return receiptOf(rel, fields, archives).links.map((link) => link.href);
       }),
     );
-
-const fontCss = (fonts) =>
-  fonts
-    .map(
-      (f) =>
-        `@font-face{font-family:"${f.family}";font-style:normal;font-weight:${f.weight};src:url(data:font/woff2;base64,${f.data.toString("base64")}) format("woff2")}`,
-    )
-    .join("\n");
 
 // page.md, Every screen: the six lines of "How to read this".
 const HOW_TO_READ = [
@@ -528,18 +489,8 @@ const ballotHtml = (raws, answers, page) => {
 // The page. `ballot` is ballot.yaml as read; `contests` coverage's reading of
 // its contests, by id; `answers` ready()'s Map; `updated` the publish date
 // (YYYY-MM-DD); `archives` a Map from snapshot path to its Wayback capture
-// time; `writeInList` whether a write_in_list snapshot exists; `fonts` the
-// FONT_FACES with their bytes as `data`.
-const renderPage = ({
-  ballot,
-  contests,
-  answers,
-  displayName,
-  updated,
-  archives,
-  writeInList,
-  fonts,
-}) => {
+// time; `writeInList` whether a write_in_list snapshot exists.
+const renderPage = ({ ballot, contests, answers, displayName, updated, archives, writeInList }) => {
   const raws = ballot.contests;
   const page = {
     title: `Your ${String(ballot.election).slice(0, 4)} ballot`,
@@ -560,7 +511,7 @@ const renderPage = ({
     `<meta name="robots" content="noindex, nofollow">`,
     `<meta name="referrer" content="no-referrer">`,
     `<title>${esc(page.title)}</title>`,
-    `<style>\n${fontCss(fonts)}\n${CSS}\n</style>`,
+    `<style>\n${CSS}\n</style>`,
     `</head><body><main>`,
     ballotHtml(raws, answers, page),
     ...races,
@@ -571,8 +522,6 @@ const renderPage = ({
 
 module.exports = {
   CSP,
-  FONT_FACES,
-  embeddedFonts,
   esc,
   generatedDates,
   receiptLinks,

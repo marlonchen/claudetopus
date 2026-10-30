@@ -1,8 +1,8 @@
 "use strict";
 
 // The privacy matcher (SKILL.md step 6.3), shared by fetch-snapshot's URL
-// refusals (Rule 7), ballot-check's Private text and Tiers rules and, later,
-// publish. It reports where a
+// refusals (Rule 7), ballot-check's Private text and Tiers rules and
+// publish's privacy scan. It reports where a
 // private value matched and the class of value, never the value or the text.
 //
 // Text is checked in three forms: raw; decoded and folded; and folded again
@@ -189,7 +189,7 @@ const privateForm = (text) =>
 // The searches one private_strings entry makes in one form: the whole entry,
 // then each digit run alone (4+ digits, not a year) or beside each of the
 // entry's other words. `digits` marks a digit-run search, which publish skips
-// inside its generated dates and fonts; a whole entry with no letter is one.
+// inside its generated dates; a whole entry with no letter is one.
 const privateStringSearches = (entry) => {
   const searches = [{ needle: entry, edge: WORD, digits: !/\p{L}/u.test(entry) }];
   const words = entry.split(" ").filter((w) => /[\p{L}\p{Nd}]/u.test(w));
@@ -214,6 +214,33 @@ const searchesFor = (cls, value, variant) => {
   const needle = normalizeValue(value, variant);
   if (cls === "private-string") return needle ? privateStringSearches(needle) : [];
   return [{ needle, edge: WORD }];
+};
+
+// SKILL.md step 6.2: a word needle as a pattern that also finds it split at a
+// pdftotext line break and quoted either way (article-format.md, Matching).
+// Read in form 2, after the dash fold, so every dash and minus is `-` and the
+// ignorables beside it are gone: a hyphen (and a space after it) may sit
+// between any two letters, the needle's own letter hyphens may be dropped,
+// and a space may read as a hyphen. A hyphen beside a digit is never joined.
+const LETTER = /\p{L}/u;
+const LETTER_OR_MARK = /[\p{L}\p{M}]/u;
+const SPLIT = "(?:- ?)?";
+const hyphenPatterns = new Map();
+const hyphenPattern = (needle) => {
+  if (!hyphenPatterns.has(needle)) {
+    const chars = [...needle];
+    let source = WORD.test(chars[0]) ? `(?<!${WORD.source})` : "";
+    chars.forEach((ch, k) => {
+      const [before, after] = [chars[k - 1] ?? "", chars[k + 1] ?? ""];
+      if (ch === " ") source += "[ -]";
+      else if (ch === "-" && LETTER_OR_MARK.test(before) && LETTER.test(after)) source += SPLIT;
+      else source += ch.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
+      if (LETTER_OR_MARK.test(ch) && LETTER.test(after)) source += SPLIT;
+    });
+    if (WORD.test(chars.at(-1))) source += `(?!${WORD.source})`;
+    hyphenPatterns.set(needle, new RegExp(source, "gu"));
+  }
+  return hyphenPatterns.get(needle);
 };
 
 const lineOf = (lineStarts, offset) => {
@@ -260,9 +287,10 @@ const lineFinder = (text) => {
 // and without repeats. `values` maps each class to its values (strings);
 // ZIPs are 5-digit strings, keys are API key values. Options: `skip`, a list
 // of [start, end) offsets in `text` where a digit-run or ZIP search does not
-// count a match lying wholly inside one (publish's generated dates and
-// fonts); `spans`, to add each match's [start, end) offsets as `spans`.
-const scan = (text, values, classes, { skip = [], spans = false } = {}) => {
+// count a match lying wholly inside one (publish's generated dates);
+// `spans`, to add each match's [start, end) offsets as `spans`; `hyphens`, to
+// also find a word value split at a line break (hyphenPattern, step 6.2).
+const scan = (text, values, classes, { skip = [], spans = false, hyphens = false } = {}) => {
   for (const cls of classes) {
     if (!Object.hasOwn(CLASSES, cls)) throw new Error(`unknown privacy class ${cls}`);
   }
@@ -294,8 +322,16 @@ const scan = (text, values, classes, { skip = [], spans = false } = {}) => {
       // A value with no letter or digit would match every separator, so it is no value.
       if (!/[\p{L}\p{N}]/u.test(value)) continue;
       for (const { variant, s } of [{ variant: null, s: raw }, ...folded]) {
+        const split = hyphens && variant?.form === 2;
         for (const { needle, edge, digits } of searchesFor(cls, value, variant)) {
-          for (const i of occurrences(s.text, needle, edge)) hit(cls, s, i, needle.length, digits);
+          if (split && edge === WORD && needle) {
+            for (const m of s.text.matchAll(hyphenPattern(needle))) {
+              hit(cls, s, m.index, m[0].length, digits);
+            }
+          } else {
+            for (const i of occurrences(s.text, needle, edge))
+              hit(cls, s, i, needle.length, digits);
+          }
         }
       }
     }

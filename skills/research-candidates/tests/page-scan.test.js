@@ -64,6 +64,35 @@ describe("publish scan: claims, excerpts and source names (step 6.2)", () => {
         "articles/c.md:2 private-match k0",
       ]);
     }
+    // Any dash, and an invisible character beside it, reads as the break's hyphen.
+    for (const dash of ["\u2012", "\u2013", "\u2014", "\u2212", "\ufe63", "\uff0d", "\u2e3a"]) {
+      const excerpt = `She grew up in Spring${dash}field Township.`;
+      assert.deepStrictEqual(
+        drops([{ ...CLEAN, excerpt }]).lines,
+        ["articles/c.md:2 private-match k0"],
+        excerpt,
+      );
+    }
+    for (const hidden of ["\u00ad-", "-\u200b", "-\u2060", "-\u034f", "\u200d-"]) {
+      const excerpt = `She grew up in Spring${hidden}field Township.`;
+      assert.deepStrictEqual(
+        drops([{ ...CLEAN, excerpt }]).lines,
+        ["articles/c.md:2 private-match k0"],
+        excerpt,
+      );
+    }
+    // A break hyphen beside a hyphen standing for a space, and a value typed with a dash.
+    for (const [excerpt, values] of [
+      ["She grew up in Spring-field-Township.", VALUES],
+      ["She grew up in Spring- field Township.", VALUES],
+      ["She lives on MaryJane Lane.", { ...VALUES, "private-string": ["Mary\u2013Jane Lane"] }],
+    ]) {
+      assert.deepStrictEqual(
+        drops([{ ...CLEAN, excerpt }], values).lines,
+        ["articles/c.md:2 private-match k0"],
+        excerpt,
+      );
+    }
     // A hyphen beside a digit is never joined, and a space is no hyphen.
     for (const excerpt of ["She saw a spring field in the township.", "Pct-1-2 voted."]) {
       assert.deepStrictEqual(drops([{ ...CLEAN, excerpt }]).lines, [], excerpt);
@@ -112,31 +141,17 @@ describe("publish scan: claims, excerpts and source names (step 6.2)", () => {
   });
 });
 
-// A page as page.js lays it out: `body` after one embedded face, `font`.
-const FONT = { family: "F", weight: 400, data: Buffer.from("AAAA99999AAA", "base64") };
-const fontRule = (f) =>
-  `@font-face{font-family:"${f.family}";font-style:normal;font-weight:${f.weight};src:url(data:font/woff2;base64,${f.data.toString("base64")}) format("woff2")}`;
-const pageOf = (body, font = FONT) =>
-  `<!doctype html>\n<html><head><style>\n${fontRule(font)}\n</style></head><body>\n${body}\n</body></html>\n`;
+// A page as page.js lays it out, around `body`.
+const pageOf = (body) =>
+  `<!doctype html>\n<html><head><style>\n:root{}\n</style></head><body>\n${body}\n</body></html>\n`;
 const LINKS = ["https://news.example.com/jane"];
-const codes = (html, { fonts = [FONT], links = LINKS, values = VALUES } = {}) =>
-  scanPage(html, values, { fonts, links }).map((m) => `${m.line} ${m.code}`);
+const codes = (html, { links = LINKS, values = VALUES } = {}) =>
+  scanPage(html, values, { links }).map((m) => `${m.line} ${m.code}`);
 
 describe("publish scan: the rendered page (step 6.3)", () => {
-  it("passes a page with only receipt links, anchors and its own fonts", () => {
-    assert.strictEqual(FONT.data.toString("base64"), "AAAA99999AAA");
+  it("passes a page with only receipt links and anchors", () => {
     const body = `<a href="#ballot">Ballot</a><a class="link" href="https://news.example.com/jane">Original page</a>`;
     assert.deepStrictEqual(codes(pageOf(body)), []);
-  });
-
-  it("refuses a font that differs from the bundled one, and scans it for digits then", () => {
-    const other = { ...FONT, data: Buffer.from("AAAA99999AAB", "base64") };
-    assert.deepStrictEqual(codes(pageOf("", other)), ["3 private-zip", "3 page-font"]);
-    assert.deepStrictEqual(codes(pageOf(""), { fonts: [FONT, FONT] }), ["null page-font"]);
-    assert.deepStrictEqual(codes(pageOf(""), { fonts: [{ ...FONT, weight: 700 }] }), [
-      "3 private-zip",
-      "3 page-font",
-    ]);
   });
 
   it("skips only the generated dates for digit runs, never the same text elsewhere", () => {
@@ -192,7 +207,7 @@ describe("publish scan: the rendered page (step 6.3)", () => {
 
   it("gives each match's span for --show", () => {
     const html = pageOf("<p>near Pct 12 and pct-12</p>");
-    const [match] = scanPage(html, VALUES, { fonts: [FONT], links: [] });
+    const [match] = scanPage(html, VALUES, { links: [] });
     assert.deepStrictEqual(
       match.spans.map(([start, end]) => html.slice(start, end)),
       ["Pct 12", "pct-12"],

@@ -14,11 +14,11 @@ const path = require("node:path");
 const { ballotGate } = require("./ballot-gate");
 const { ID_PATTERN, LEDGER } = require("./constants");
 const { contestsOf } = require("./coverage");
-const { hiddenTitles, loadPrivateValues, readYamlDocument } = require("./data-files");
-const { SKILL_DIR, load } = require("./deps");
+const { familyPrivateValues, hiddenTitles, readYamlDocument } = require("./data-files");
+const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { Failure, Failures, runCommand } = require("./output");
-const { FONT_FACES, receiptLinks, renderPage } = require("./page");
+const { receiptLinks, renderPage } = require("./page");
 const { dropContests, scanPage } = require("./page-scan");
 const { ready } = require("./review-list");
 const { isSnapshotPath } = require("./snapshot-hash");
@@ -146,8 +146,9 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
   if (missing.length)
     throw new Failures(missing.map((id) => new Failure(`review/${id}.md`, "review-missing").line));
   // Step 6.2: a contest whose claims, excerpts or source names hold private
-  // text is not ready (SKILL.md step 6.3).
-  const values = { ...loadPrivateValues(root, ballot), title: hiddenTitles(data) };
+  // text is not ready (SKILL.md step 6.3). The page is public, so private
+  // means any ballot's in this data repo, not only this one's.
+  const values = { ...familyPrivateValues(root, ballot), title: hiddenTitles(data) };
   const drops = dropContests(ids, answers, values);
   const shown = new Map(answers);
   for (const [id, reasons] of drops.dropped) shown.set(id, { ready: false, reasons });
@@ -156,10 +157,6 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
     return isReady ? `articles/${id}.md ready` : `articles/${id}.md not-ready ${reasons.join(",")}`;
   });
   const archives = readArchives(ballotDir);
-  const fonts = FONT_FACES.map((f) => ({
-    ...f,
-    data: fs.readFileSync(path.join(SKILL_DIR, "fonts", f.file)),
-  }));
   const html = renderPage({
     ballot: data,
     contests,
@@ -168,10 +165,9 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
     updated: today(),
     archives,
     writeInList: hasWriteInList(ballotDir),
-    fonts,
   });
   // Step 6.3: any match left on the page refuses all of it, and no page is written.
-  const refusals = scanPage(html, values, { fonts, links: receiptLinks(shown, archives) });
+  const refusals = scanPage(html, values, { links: receiptLinks(shown, archives) });
   const report = [...drops.lines, ...contestLines];
   if (refusals.length)
     throw new Failures([...report, ...refusals.flatMap((r) => refusalLines(html, r, show))]);

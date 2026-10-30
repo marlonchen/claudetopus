@@ -8,7 +8,7 @@
 // hold locations, keys and codes only (Rule 5).
 
 const { KEY_PARAM } = require("./fetch-page");
-const { embeddedFonts, esc, generatedDates } = require("./page");
+const { esc, generatedDates } = require("./page");
 const { CLASSES, forms, lineFinder, normalizeValue, scan, spanOf } = require("./privacy");
 
 // The value classes the scan matches (SKILL.md step 6.3).
@@ -18,8 +18,7 @@ const VALUE_CLASSES = Object.keys(CLASSES);
 // codes in report order: a script, an external src or href that is not a
 // receipt link, and a key parameter (reported as a key, like a key value).
 const MARKUP = { script: "page-script", link: "page-link", "key-param": CLASSES.key };
-const FONT = "page-font";
-const ORDER = [...Object.values(CLASSES), MARKUP.script, MARKUP.link, FONT];
+const ORDER = [...Object.values(CLASSES), MARKUP.script, MARKUP.link];
 
 const SCRIPT = /<script/gi;
 const ATTRIBUTE = /(?<![\w-])(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>=`]+))/dgi;
@@ -53,32 +52,11 @@ const markupMatches = (text, links) => {
   return found;
 };
 
-// A hyphen between two letters, which a pdftotext line break can add to a
-// word or take out of it (article-format.md, Matching).
-const LETTER_HYPHEN = /(?<=\p{L}\p{M}*)[-‐‑](?=\p{L})/gu;
-const unhyphen = (text) => text.replace(LETTER_HYPHEN, "");
-
-// The value sets a claim is matched against: the values as given, and each
-// with its own letter hyphens removed, so "MaryJane Lane" matches
-// Mary-Jane Lane. ZIPs and key values have no letter hyphens to lose.
-const valueSets = (values) => {
-  const joined = Object.fromEntries(
-    Object.entries(values).map(([cls, list]) => [
-      cls,
-      cls === "zip" || cls === "key" ? list : [...new Set(list.map(unhyphen))],
-    ]),
-  );
-  return JSON.stringify(joined) === JSON.stringify(values) ? [values] : [values, joined];
-};
-
-// True when `text`, scanned whole as itself and with its letter hyphens
-// removed, holds a value of any of `sets` or markup the page may not hold.
-const holdsPrivate = (text, sets) =>
-  [...new Set([text, unhyphen(text)])].some(
-    (t) =>
-      markupMatches(t, []).length > 0 ||
-      sets.some((values) => scan(t, values, VALUE_CLASSES).length > 0),
-  );
+// True when `text`, scanned whole, holds a value, also split at a pdftotext
+// line break (privacy.js, hyphenPattern), or markup the page may not hold.
+const holdsPrivate = (text, values) =>
+  markupMatches(text, []).length > 0 ||
+  scan(text, values, VALUE_CLASSES, { hyphens: true }).length > 0;
 
 // Step 6.2: the ready contests a claim, an excerpt or a cited source name
 // drops. `answers` is ready()'s Map, read for `ids` in ballot order. Returns
@@ -87,7 +65,6 @@ const holdsPrivate = (text, sets) =>
 // `private-source` line for each claim citing a snapshot whose `source:`
 // name matched; and `dropped`, a Map from each dropped contest to its reasons.
 const dropContests = (ids, answers, values) => {
-  const sets = valueSets(values);
   const sources = new Map();
   const lines = [];
   const dropped = new Map();
@@ -101,11 +78,11 @@ const dropContests = (ids, answers, values) => {
       reasons.add(code);
     };
     for (const { claim, key, snapshot } of answer.claims) {
-      if (holdsPrivate(claim.text, sets)) report(claim.line, "private-match", key);
-      if (holdsPrivate(claim.excerpt, sets)) report(claim.excerptLine, "private-match", key);
+      if (holdsPrivate(claim.text, values)) report(claim.line, "private-match", key);
+      if (holdsPrivate(claim.excerpt, values)) report(claim.excerptLine, "private-match", key);
       if (!sources.has(snapshot)) {
         const source = answer.readSnapshot(snapshot)?.fields?.source;
-        sources.set(snapshot, typeof source === "string" && holdsPrivate(source, sets));
+        sources.set(snapshot, typeof source === "string" && holdsPrivate(source, values));
       }
       if (sources.get(snapshot)) report(claim.line, "private-source", key);
     }
@@ -115,32 +92,18 @@ const dropContests = (ids, answers, values) => {
 };
 
 // Step 6.3: every { line, code, spans } where the page `html` holds a value
-// or markup it may not, sorted by line and code, or where its embedded fonts
-// differ from `fonts` (FONT_FACES with their bundled bytes as `data`), byte
-// for byte and in order; a missing face has no line. The digit-run and ZIP
-// checks skip only the page's generated dates and the fonts that matched.
-// `links` are the receipt links the page may hold.
-const scanPage = (html, values, { fonts, links }) => {
+// or markup it may not, sorted by line and code. The digit-run and ZIP checks
+// skip only the page's generated dates. `links` are the receipt links the
+// page may hold.
+const scanPage = (html, values, { links }) => {
   const lineAt = lineFinder(html);
   const hits = new Map();
   const hit = (line, code, span) => {
     const key = `${line}\0${code}`;
     if (!hits.has(key)) hits.set(key, { line, code, spans: [] });
-    if (span) hits.get(key).spans.push(span);
+    hits.get(key).spans.push(span);
   };
-  const embedded = embeddedFonts(html);
   const skip = generatedDates(html);
-  for (let k = 0; k < Math.max(embedded.length, fonts.length); k++) {
-    const [found, want] = [embedded[k], fonts[k]];
-    const same =
-      found &&
-      want &&
-      found.family === want.family &&
-      found.weight === want.weight &&
-      found.data.equals(want.data);
-    if (same) skip.push([found.start, found.end]);
-    else hit(found ? lineAt(found.start) : null, FONT);
-  }
   for (const m of scan(html, values, VALUE_CLASSES, { skip, spans: true })) {
     for (const span of m.spans) hit(m.line, CLASSES[m.class], span);
   }
@@ -148,7 +111,7 @@ const scanPage = (html, values, { fonts, links }) => {
     hit(lineAt(m.start), MARKUP[m.class], [m.start, m.end]);
   }
   return [...hits.values()].sort(
-    (a, b) => (a.line ?? 0) - (b.line ?? 0) || ORDER.indexOf(a.code) - ORDER.indexOf(b.code),
+    (a, b) => a.line - b.line || ORDER.indexOf(a.code) - ORDER.indexOf(b.code),
   );
 };
 

@@ -68,14 +68,11 @@ A measure or retention race with a section not researched yet adds the same endi
 
 ## Type
 
-Two open-license fonts, Latin subset, embedded as base64 `woff2` in the inline CSS, so the page makes no external requests (the woff2 files live in this skill's [fonts directory](../fonts/README.md)). Budget: the four faces total at most 200KB of `woff2` before base64, which adds a third, so at most about 270KB in the page; subset further rather than exceed it.
-
-- Atkinson Hyperlegible Next (400, 700) for body and UI. It was designed for low-vision readers, with distinct 1/l/I and 0/O, which matters for dollar figures and vote counts.
-- Source Serif 4 (400, 600) for headings and excerpts, so the source's own words read differently from the summary. Its license reserves the name "Source" for unmodified copies, so the subset faces are named Ballot Serif.
+No embedded fonts: the page uses the reader's system fonts, so it makes no external requests and holds no font data to scan. The body and UI use the system sans-serif (`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`); headings and excerpts use a serif (`Georgia, "Times New Roman", serif`), so the source's own words read differently from the summary.
 
 ## Tokens
 
-Colors are CSS variables on `:root`, with dark values under `prefers-color-scheme: dark`. Contrast was measured with the WCAG formula.
+Colors are CSS variables on `:root`, with dark values under `prefers-color-scheme: dark`. A color whose hex form holds a run of 4 or more digits is written as `rgb()` in the CSS (`#55595c` as `rgb(85,89,92)`), and sizes avoid such runs too (`75rem`, not `1200px`), so the page's fixed CSS can never match a private ZIP or digit run (SKILL.md step 6.3). Contrast was measured with the WCAG formula.
 
 | Token | Light | Dark | Contrast (light / dark) |
 | --- | --- | --- | --- |
@@ -87,16 +84,16 @@ Colors are CSS variables on `:root`, with dark values under `prefers-color-schem
 | `--accent` | `#0f5f5c` (teal) | `#5fbfb7` | 7.5 / 8.3; links, focus ring |
 | `--visited` | `#5a4a7a` | `#b3a3d6` | 7.8 / 7.9 |
 
-- Type scale: body 17px/1.5; h1 24px Source Serif 600; h2 19px; excerpt 17px/1.45 Source Serif; banners, notes and next/back links at body size; labels and source lines 14px minimum. No text smaller than 14px.
+- Type scale: body 17px/1.5; h1 24px serif 600; h2 19px; excerpt 17px/1.45 serif; banners, notes and next/back links at body size; labels and source lines 14px minimum. No text smaller than 14px.
 - Spacing: 4, 8, 12, 16, 24, 32. 16px side gutter; content max width 640px. Headings get more space above than below (24 above, 8 below).
 - Tap targets: list rows, chips, every link and every `<summary>` (the source line, "… full quote", "How to read this") and next/back links are at least 44px tall.
 - Every `<summary>` hides the browser's own disclosure marker (`list-style: none` and `::-webkit-details-marker { display: none }`) and carries both glyphs, each in an `aria-hidden="true"` span: CSS shows ▸ while closed and ▾ under `details[open]`, with no JavaScript, so Chrome and Safari give the same cue.
 - Links are underlined, except list rows and chips, whose chevron or border marks them as tappable. Links that leave the page use `--visited` once visited; in-page links (chips, rows, "All races") keep their color, since a reader returns to them. The focus ring is a 2px `--accent` outline with a 2px offset. `::selection` uses `--accent` at 25% opacity.
 - The accent teal belongs to no US party. Red and blue are never used, even for status.
 
-One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid. Each race's container (the element carrying its contest-id anchor) sets `content-visibility: auto` with `contain-intrinsic-size: auto 1200px`; topic sections inside a race do not, so a long ballot does not lay out every race at once on a slow phone; the placeholder size keeps the scrollbar and anchor jumps roughly stable as races render.
+One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid. Each race's container (the element carrying its contest-id anchor) sets `content-visibility: auto` with `contain-intrinsic-size: auto 75rem` (1200px); topic sections inside a race do not, so a long ballot does not lay out every race at once on a slow phone; the placeholder size keeps the scrollbar and anchor jumps roughly stable as races render.
 
-Page budget: the whole file, fonts included, should stay under 1MB. `publish` prints its size and warns above that (SKILL.md step 6.5).
+Page budget: the whole file should stay under 1MB. `publish` prints its size and warns above that (SKILL.md step 6.5).
 
 ## Accessibility
 
@@ -148,7 +145,7 @@ Then step 6.2 scans each ready contest's claims, excerpts and cited `source:` na
 
 Then the contest gate prints one line per contest of `ballot.yaml`, in ballot order: `articles/<contest>.md ready`, or `articles/<contest>.md not-ready` keyed by its reasons, joined by commas: the step 6.2 drop's codes, `private-match` and `private-source`, or those `ready` returns ([review-list.md](review-list.md#command-line)): `not-reviewed` (no baseline yet), `unaccepted`, `review-missing`, or the failure that stopped the check, such as `file-missing` or `check-failed`. A drop is not a refusal: the page shows the contest as not ready, and `publish` goes on.
 
-Last, it renders the page and scans it (SKILL.md step 6.3) before writing it. Any match refuses the whole page and writes none, each reported by its line in the page as rendered and its code: a privacy class code (`private-ballot-id`, `private-address`, `private-zip`, `private-label`, `private-string`, `private-title` or `private-key`, which also covers a key parameter), `page-script` (`<script`), `page-link` (a `src` or `href` that is neither an anchor on the page nor a receipt link), or `page-font` (an embedded font that differs from the one bundled in this skill's fonts directory, or, located `site/index.html` with no line, one missing). The digit-run and ZIP checks skip the page's generated dates and only the fonts that matched. Since step 6.2 already dropped every contest whose research matched, a match left on the page is outside a claim, excerpt or source name, such as a receipt link's path. A clean page is written, and `publish` prints `site/index.html written`.
+Last, it renders the page and scans it (SKILL.md step 6.3) before writing it. Any match refuses the whole page and writes none, each reported by its line in the page as rendered and its code: a privacy class code (`private-ballot-id`, `private-address`, `private-zip`, `private-label`, `private-string`, `private-title` or `private-key`, which also covers a key parameter), `page-script` (`<script`) or `page-link` (a `src` or `href` that is neither an anchor on the page nor a receipt link). The digit-run and ZIP checks skip only the page's generated dates. Since step 6.2 already dropped every contest whose research matched, a match left on the page is outside a claim, excerpt or source name, such as a receipt link's path. A clean page is written, and `publish` prints `site/index.html written`.
 
 Only the researcher, in their own terminal, reads the matched text with `publish --show` (Rule 5), which takes the same argument and prints under each page refusal the text it matched, in brackets with up to 40 characters on each side, one indented line each, with control characters replaced. It refuses with `not-a-terminal` when stdout or stdin is not a terminal or `CLAUDECODE` is set, before it reads anything.
 

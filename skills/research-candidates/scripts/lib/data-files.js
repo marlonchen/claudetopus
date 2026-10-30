@@ -253,10 +253,26 @@ const loadPrivateValues = (root, ballot) => ({
   key: KEY_ENV.map((name) => process.env[name]).filter(Boolean),
 });
 
+// loadPrivateValues plus every other ballot's id and private_strings: what
+// publish keeps off a page (SKILL.md step 6.3). The page is public, and
+// privacy is the family's against the public, not one ballot's against
+// another's. ballot-check has already read each private.yaml (Tiers rule).
+const familyPrivateValues = (root, ballot) => {
+  const values = loadPrivateValues(root, ballot);
+  for (const other of ballotDirs(root)) {
+    if (other === ballot) continue;
+    values["ballot-id"].push(other.split("/")[1]);
+    if (!fs.existsSync(path.join(root, other, "private.yaml"))) continue;
+    values["private-string"].push(...loadPrivate(root, other, "-").private_strings);
+  }
+  return values;
+};
+
 module.exports = {
   addressValues,
   ballotDirs,
   ballotEntries,
+  familyPrivateValues,
   hiddenTitles,
   isDir,
   loadAddresses,
