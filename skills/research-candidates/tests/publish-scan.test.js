@@ -189,3 +189,30 @@ describe("publish scan: any other match refuses the whole page", () => {
     assert.doesNotMatch(result.stdout, /exampleton-2|Lakeside/i);
   });
 });
+
+describe("publish scan: generated dates", () => {
+  it("skips a receipt's fetch date as the page renders it, and nothing else", async () => {
+    const body = "Jane Example spoke at the library board meeting in March.";
+    const data = await meetingSetup({ body });
+    // "Oct 19" is a digit-run search of this entry; the receipt reads "saved on Oct 19, 2026".
+    const priv = `${BALLOT}/private.yaml`;
+    data.write(
+      priv,
+      data.read(priv).replace("private_strings:\n", "private_strings:\n  - Oct 19 Ward\n"),
+    );
+    const result = await publish(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.match(data.read(SITE), /saved on Oct 19, 2026/);
+  });
+
+  it("refuses a fetch date outside 2000 to 2099, which the scan would skip", async () => {
+    const data = await meetingSetup({
+      body: "Jane Example spoke at the library board meeting in March.",
+      fetched: "4821-03-04",
+    });
+    const result = await publish(data);
+    assert.ok(lines(result).includes(`${MEETING} snapshot-invalid`), result.stdout);
+    assert.strictEqual(result.status, 1);
+    assert.ok(!data.exists(SITE));
+  });
+});

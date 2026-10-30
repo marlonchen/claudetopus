@@ -311,7 +311,7 @@ const RECEIPTS = {
       subject: "jane-example",
       source: "Example <i>News</i>",
       url: "https://news.example.com/hostile",
-      // No src or href: the privacy scan drops a contest quoting one (publish.test.js).
+      // No src or href: the privacy scan drops a contest quoting one (page-scan.test.js).
       body: 'Jane Example wrote <img alt=x onerror="alert(1)"> on her site.',
     }),
     excerpt: 'Jane Example wrote <img alt=x onerror="alert(1)"> on her site.',

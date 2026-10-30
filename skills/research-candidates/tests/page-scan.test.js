@@ -205,6 +205,40 @@ describe("publish scan: the rendered page (step 6.3)", () => {
     ]);
   });
 
+  it("reads a link's IDN host as Unicode, and a key with an invisible character in it", () => {
+    const values = { ...VALUES, "private-string": ["Peñasco"] };
+    const idn = "https://xn--peasco-news-2db.example/jane";
+    assert.deepStrictEqual(codes(pageOf(`<a href="${idn}">x</a>`), { links: [idn], values }), [
+      "5 private-string",
+    ]);
+    for (const key of [
+      "k3yV4lue\u00ad0123456789",
+      "k3yV4lue&shy;0123456789",
+      "k3yV4lue\u200b0123456789",
+    ]) {
+      assert.deepStrictEqual(codes(pageOf(`<p>${key}</p>`)), ["5 private-key"], key);
+    }
+  });
+
+  it("passes a receipt link the page escaped, or whose path decodes to a quote", () => {
+    const links = [
+      "https://news.example.com/a&b",
+      "https://news.example.com/o'brien",
+      "https://news.example.com/say-%22hi%22",
+    ];
+    const body = [
+      '<a href="https://news.example.com/a&amp;b">x</a>',
+      '<a href="https://news.example.com/o&#39;brien">x</a>',
+      '<a href="https://news.example.com/say-%22hi%22">x</a>',
+    ].join("\n");
+    assert.deepStrictEqual(codes(pageOf(body), { links }), []);
+    assert.deepStrictEqual(codes(pageOf(body), { links: [] }), [
+      "5 page-link",
+      "6 page-link",
+      "7 page-link",
+    ]);
+  });
+
   it("gives each match's span for --show", () => {
     const html = pageOf("<p>near Pct 12 and pct-12</p>");
     const [match] = scanPage(html, VALUES, { links: [] });

@@ -11,14 +11,14 @@
 // ignored, so the variable can never send a page anywhere but this machine.
 
 const { domainToUnicode } = require("node:url");
-const { KEY_HOSTS } = require("./constants");
+const { KEY_HOSTS, KEY_PARAM_NAMES } = require("./constants");
 const { combineHops, matchUrl } = require("./tiers");
 
 const MAX_HOPS = 10;
 const MAX_BYTES = 10 * 1024 * 1024;
 const TIMEOUT_MS = 30000;
 // API-key query parameters (snapshot-format.md, Cleaning the URL).
-const KEY_PARAM = /^(api[_-]?key|key|token|access[_-]?token|secret|sig(nature)?)$/i;
+const KEY_PARAM = new RegExp(`^(?:${KEY_PARAM_NAMES})$`, "i");
 const TEST_TARGET = /^(127\.0\.0\.1|localhost):[0-9]{1,5}$/;
 
 const isHttp = (url) => url.protocol === "https:" || url.protocol === "http:";
@@ -227,13 +227,4 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
   return refuse(url, "too-many-redirects", "too many redirects");
 };
 
-module.exports = {
-  KEY_PARAM,
-  cleanUrl,
-  decode,
-  fetchPage,
-  isHttp,
-  isPdf,
-  recordedHref,
-  spellings,
-};
+module.exports = { cleanUrl, decode, fetchPage, isHttp, isPdf, recordedHref, spellings };

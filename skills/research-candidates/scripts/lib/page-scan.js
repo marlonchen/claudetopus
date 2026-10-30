@@ -7,9 +7,10 @@
 // the whole page. Matching is the privacy matcher's (privacy.js); reports
 // hold locations, keys and codes only (Rule 5).
 
-const { KEY_PARAM } = require("./fetch-page");
+const { domainToUnicode } = require("node:url");
+const { KEY_PARAM_NAMES } = require("./constants");
 const { esc, generatedDates } = require("./page");
-const { CLASSES, forms, lineFinder, normalizeValue, scan, spanOf } = require("./privacy");
+const { CLASSES, forms, lineFinder, scan, spanOf } = require("./privacy");
 
 // The value classes the scan matches (SKILL.md step 6.3).
 const VALUE_CLASSES = Object.keys(CLASSES);
@@ -23,15 +24,22 @@ const ORDER = [...Object.values(CLASSES), MARKUP.script, MARKUP.link];
 const SCRIPT = /<script/gi;
 const ATTRIBUTE = /(?<![\w-])(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>=`]+))/dgi;
 // snapshot-format.md, Cleaning the URL: a query parameter with a key's name.
-const KEY_QUERY = new RegExp(`[?&]\\s*${KEY_PARAM.source.slice(1, -1)}\\s*=`, "gi");
+const KEY_QUERY = new RegExp(`[?&]\\s*(?:${KEY_PARAM_NAMES})\\s*=`, "gi");
+const attributeValue = (m) => (m[1] ?? m[2] ?? m[3]).trim();
 
 // Every { class, start, end } where `text` holds markup the page may not:
 // `<script` in any form; in the raw text and form 2, a key parameter, or a
 // src or href that is neither an anchor on the page (`#...`) nor one of
 // `links`. Form 3 reads `=` as a space, so it has no attributes to read.
+// A link is judged in the raw text, where the page escaped it exactly; what a
+// folded form reads inside one (`%22` decoded to a quote) is no attribute.
 const markupMatches = (text, links) => {
   const found = [];
   const { raw, folded } = forms(text);
+  const allowed = new Set(links.map(esc));
+  const receipts = [...text.matchAll(ATTRIBUTE)]
+    .filter((m) => allowed.has(attributeValue(m)))
+    .map((m) => [m.index, m.index + m[0].length]);
   for (const { variant, s } of [{ variant: null, s: raw }, ...folded]) {
     const add = (cls, i, length) => {
       const [start, end] = spanOf(s, i, length, text.length);
@@ -40,13 +48,13 @@ const markupMatches = (text, links) => {
     for (const m of s.text.matchAll(SCRIPT)) add("script", m.index, m[0].length);
     if (variant?.form === 3) continue;
     for (const m of s.text.matchAll(KEY_QUERY)) add("key-param", m.index, m[0].length);
-    // The raw page holds each link as the page escaped it.
-    const allowed = new Set(
-      variant ? links.map((link) => normalizeValue(link, variant)) : links.map(esc),
-    );
     for (const m of s.text.matchAll(ATTRIBUTE)) {
-      const value = (m[1] ?? m[2] ?? m[3]).trim();
-      if (!value.startsWith("#") && !allowed.has(value)) add("link", m.index, m[0].length);
+      if (attributeValue(m).startsWith("#")) continue;
+      const [start, end] = spanOf(s, m.index, m[0].length, text.length);
+      const receipt = variant
+        ? receipts.some(([from, to]) => start >= from && end <= to)
+        : allowed.has(attributeValue(m));
+      if (!receipt) found.push({ class: "link", start, end });
     }
   }
   return found;
@@ -109,6 +117,24 @@ const scanPage = (html, values, { links }) => {
   }
   for (const m of markupMatches(html, links)) {
     hit(lineAt(m.start), MARKUP[m.class], [m.start, m.end]);
+  }
+  // A link's host as a browser shows it: the page holds an IDN host as
+  // punycode (`xn--`), so it is read back as Unicode too (fetch-page.js,
+  // spellings).
+  for (const m of html.matchAll(ATTRIBUTE)) {
+    const value = attributeValue(m);
+    if (!/xn--/i.test(value)) continue;
+    let url;
+    try {
+      url = new URL(value);
+    } catch {
+      continue;
+    }
+    const host = domainToUnicode(url.hostname) + (url.port ? `:${url.port}` : "");
+    const shown = value.replace(url.host, () => host);
+    for (const found of scan(shown, values, VALUE_CLASSES)) {
+      hit(lineAt(m.index), CLASSES[found.class], [m.index, m.index + m[0].length]);
+    }
   }
   return [...hits.values()].sort(
     (a, b) => a.line - b.line || ORDER.indexOf(a.code) - ORDER.indexOf(b.code),

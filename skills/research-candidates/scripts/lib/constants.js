@@ -19,6 +19,9 @@ const KEY_HOSTS = {
   "v3.openstates.org": "OPENSTATES_API_KEY",
 };
 const KEY_ENV = Object.values(KEY_HOSTS);
+// snapshot-format.md, Cleaning the URL: the names of the query parameters that
+// hold a key, as a regular expression alternation.
+const KEY_PARAM_NAMES = "api[_-]?key|key|token|access[_-]?token|secret|sig(?:nature)?";
 // snapshot-format.md, Unfetchable pages: the path segments of a login or
 // subscribe page, and the readable text, in characters, below which an html
 // page is logged as a teaser.
@@ -266,6 +269,7 @@ module.exports = {
   EXEMPTION,
   ID_PATTERN,
   KEY_ENV,
+  KEY_PARAM_NAMES,
   KEY_HOSTS,
   LEDGER,
   LEFTOVER,

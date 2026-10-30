@@ -305,6 +305,21 @@ const scan = (text, values, classes, { skip = [], spans = false, hyphens = false
   };
 
   const { raw, decoded, folded } = forms(text);
+  // Key values are searched in these: raw and decoded, each also with its
+  // default-ignorable code points removed, since a browser draws a soft hyphen
+  // or a zero-width space inside a key as nothing. Built once, when needed.
+  let keyForms;
+  const keyTexts = () => {
+    keyForms ??= [
+      ...new Set(
+        [raw, decoded.text, decoded.attribute].flatMap((s) => [
+          s,
+          rewrite(s, /\p{Default_Ignorable_Code_Point}/gu, () => ""),
+        ]),
+      ),
+    ];
+    return keyForms;
+  };
   for (const cls of classes) {
     for (const value of values[cls] ?? []) {
       if (typeof value !== "string") continue;
@@ -312,7 +327,7 @@ const scan = (text, values, classes, { skip = [], spans = false, hyphens = false
         // A key value is random text: any occurrence counts, case and boundaries kept.
         const key = value.trim();
         if (!key) continue;
-        for (const s of [raw, decoded.text, decoded.attribute]) {
+        for (const s of keyTexts()) {
           for (let i = s.text.indexOf(key); i !== -1; i = s.text.indexOf(key, i + 1)) {
             hit(cls, s, i, key.length, false);
           }

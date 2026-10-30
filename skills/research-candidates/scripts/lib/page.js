@@ -67,7 +67,9 @@ const rebuilt = (url) => `${url.protocol}//${url.host}${url.pathname}`;
 // page.md, Receipts: the receipt's fixed line and its links, by the link
 // cases SKILL.md step 6.2 sets.
 const receiptOf = (rel, fields, archives) => {
-  const date = showDate(fields.fetched);
+  // The scan skips a fetch date as generated text (SKILL.md step 6.3), so it
+  // must be one: a year from 2000 to 2099, whose digits never match alone.
+  const date = /^20[0-9]{2}-/.test(fields.fetched) ? showDate(fields.fetched) : null;
   if (!date || typeof fields.source !== "string" || fields.source === "")
     throw new Failure(rel, "snapshot-invalid");
   const noLink = {
