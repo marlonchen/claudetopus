@@ -1,33 +1,39 @@
 "use strict";
 
-// publish <election>/<ballot-id>
+// publish [--show] <election>/<ballot-id>
 //
-// Step 6 (SKILL.md), through its render: the ballot gate refuses the whole
-// publish, the contest gate decides each contest with review-list's `ready`,
-// and the page is rendered to site/index.html (page.md). Output is `location
-// code [key]` lines only (Rule 5).
+// Step 6 (SKILL.md), through its privacy scan: the ballot gate refuses the
+// whole publish, the contest gate decides each contest with review-list's
+// `ready`, a claim, excerpt or source name that holds private text drops its
+// contest, and the page is rendered, scanned and only then written to
+// site/index.html (page.md). Output is `location code [key]` lines only (Rule
+// 5); `--show`, researcher only, adds the text each page refusal matched.
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { ballotGate } = require("./ballot-gate");
 const { ID_PATTERN, LEDGER } = require("./constants");
 const { contestsOf } = require("./coverage");
-const { readYamlDocument } = require("./data-files");
+const { hiddenTitles, loadPrivateValues, readYamlDocument } = require("./data-files");
 const { SKILL_DIR, load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { Failure, Failures, runCommand } = require("./output");
-const { FONT_FACES, renderPage } = require("./page");
+const { FONT_FACES, receiptLinks, renderPage } = require("./page");
+const { dropContests, scanPage } = require("./page-scan");
 const { ready } = require("./review-list");
 const { isSnapshotPath } = require("./snapshot-hash");
 const { today } = require("./snapshot-file");
 const { withLock, writeSynced } = require("./snapshot-store");
+const { printable, requireTerminal } = require("./terminal");
 
 const SITE = "site/index.html";
 
 const parseArgs = (argv) => {
-  if (argv.length !== 1 || argv[0].startsWith("--")) throw new Failure("-", "usage");
-  parseBallot(argv[0]);
-  return { ballot: argv[0] };
+  const show = argv[0] === "--show";
+  const rest = show ? argv.slice(1) : argv;
+  if (rest.length !== 1 || rest[0].startsWith("--")) throw new Failure("-", "usage");
+  parseBallot(rest[0]);
+  return { show, ballot: rest[0] };
 };
 
 // publish.yaml's display_name, the name the trust header shows.
@@ -101,9 +107,27 @@ const writeSite = (ballotDir, html) => {
   fs.renameSync(tmp, file);
 };
 
-// The gates, then the page: refuses with Failures, or returns the contest
-// lines and `site/index.html written`. `refresh` keeps the ballot lock fresh.
-const publish = (root, ballot, ballotDir, refresh) => {
+// How much page text `--show` prints on each side of a match.
+const CONTEXT = 40;
+
+// A page refusal's report line and, with `show`, each matched text in its
+// context, one indented line each, with control characters replaced.
+const refusalLines = (html, { line, code, spans }, show) => {
+  const at = line === null ? SITE : `${SITE}:${line}`;
+  const shown = show
+    ? spans.map(([start, end]) => {
+        const before = html.slice(Math.max(0, start - CONTEXT), start);
+        const after = html.slice(end, end + CONTEXT);
+        return `    ${printable(`${before}[${html.slice(start, end)}]${after}`)}`;
+      })
+    : [];
+  return [`${at} ${code}`, ...new Set(shown)];
+};
+
+// The gates, the scan, then the page: refuses with Failures, or returns the
+// drop and contest lines and `site/index.html written`. `refresh` keeps the
+// ballot lock fresh; `show` adds each page refusal's matched text.
+const publish = (root, ballot, ballotDir, refresh, show) => {
   // A page from an earlier run never outlives a refused one.
   fs.rmSync(path.join(siteDir(ballotDir), "index.html"), { force: true });
   // Loaded first, so a missing install is one deps-missing.
@@ -117,40 +141,55 @@ const publish = (root, ballot, ballotDir, refresh) => {
   // Once, for every contest, under the ballot lock (review-list.md).
   const answers = ready(ballotDir, ids, { contests, manifestVerified: true });
   refresh();
-  const lines = ids.map((id) => {
-    const { ready: isReady, reasons } = answers.get(id);
-    return isReady ? `articles/${id}.md ready` : `articles/${id}.md not-ready ${reasons.join(",")}`;
-  });
   // A review file missing next to its baseline refuses: review-list rebuilds it.
   const missing = ids.filter((id) => answers.get(id).reasons.includes("review-missing"));
   if (missing.length)
     throw new Failures(missing.map((id) => new Failure(`review/${id}.md`, "review-missing").line));
+  // Step 6.2: a contest whose claims, excerpts or source names hold private
+  // text is not ready (SKILL.md step 6.3).
+  const values = { ...loadPrivateValues(root, ballot), title: hiddenTitles(data) };
+  const drops = dropContests(ids, answers, values);
+  const shown = new Map(answers);
+  for (const [id, reasons] of drops.dropped) shown.set(id, { ready: false, reasons });
+  const contestLines = ids.map((id) => {
+    const { ready: isReady, reasons } = shown.get(id);
+    return isReady ? `articles/${id}.md ready` : `articles/${id}.md not-ready ${reasons.join(",")}`;
+  });
+  const archives = readArchives(ballotDir);
+  const fonts = FONT_FACES.map((f) => ({
+    ...f,
+    data: fs.readFileSync(path.join(SKILL_DIR, "fonts", f.file)),
+  }));
   const html = renderPage({
     ballot: data,
     contests,
-    answers,
+    answers: shown,
     displayName,
     updated: today(),
-    archives: readArchives(ballotDir),
+    archives,
     writeInList: hasWriteInList(ballotDir),
-    fonts: FONT_FACES.map((f) => ({
-      ...f,
-      data: fs.readFileSync(path.join(SKILL_DIR, "fonts", f.file)),
-    })),
+    fonts,
   });
+  // Step 6.3: any match left on the page refuses all of it, and no page is written.
+  const refusals = scanPage(html, values, { fonts, links: receiptLinks(shown, archives) });
+  const report = [...drops.lines, ...contestLines];
+  if (refusals.length)
+    throw new Failures([...report, ...refusals.flatMap((r) => refusalLines(html, r, show))]);
   // Only while the lock is still this run's.
   refresh();
   writeSite(ballotDir, html);
-  return [...lines, `${SITE} written`];
+  return [...report, `${SITE} written`];
 };
 
 const main = (argv) =>
   runCommand(async () => {
-    const { ballot } = parseArgs(argv);
+    // Before anything is read, so no private text reaches a session.
+    if (argv[0] === "--show") requireTerminal();
+    const { show, ballot } = parseArgs(argv);
     const root = process.cwd();
     const ballotDir = openBallot(root, ballot);
     // Under the ballot lock, so a save or log line written now is never half seen.
-    return withLock(ballotDir, (refresh) => publish(root, ballot, ballotDir, refresh));
+    return withLock(ballotDir, (refresh) => publish(root, ballot, ballotDir, refresh, show));
   });
 
 module.exports = { main };

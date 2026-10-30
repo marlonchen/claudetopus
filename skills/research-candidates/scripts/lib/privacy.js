@@ -188,19 +188,20 @@ const privateForm = (text) =>
 
 // The searches one private_strings entry makes in one form: the whole entry,
 // then each digit run alone (4+ digits, not a year) or beside each of the
-// entry's other words.
+// entry's other words. `digits` marks a digit-run search, which publish skips
+// inside its generated dates and fonts; a whole entry with no letter is one.
 const privateStringSearches = (entry) => {
-  const searches = [{ needle: entry, edge: WORD }];
+  const searches = [{ needle: entry, edge: WORD, digits: !/\p{L}/u.test(entry) }];
   const words = entry.split(" ").filter((w) => /[\p{L}\p{Nd}]/u.test(w));
   for (const [run] of entry.matchAll(/\p{Nd}+/gu)) {
     if (run.length >= 4 && !YEAR.test(run)) {
-      searches.push({ needle: run, edge: DIGIT });
+      searches.push({ needle: run, edge: DIGIT, digits: true });
       continue;
     }
     for (const word of words.filter((w) => w !== run)) {
       searches.push(
-        { needle: `${word} ${run}`, edge: WORD },
-        { needle: `${run} ${word}`, edge: WORD },
+        { needle: `${word} ${run}`, edge: WORD, digits: true },
+        { needle: `${run} ${word}`, edge: WORD, digits: true },
       );
     }
   }
@@ -209,7 +210,7 @@ const privateStringSearches = (entry) => {
 
 // The searches one value of `cls` makes, normalized for `variant` (null: raw).
 const searchesFor = (cls, value, variant) => {
-  if (cls === "zip") return [{ needle: value.trim(), edge: DIGIT }];
+  if (cls === "zip") return [{ needle: value.trim(), edge: DIGIT, digits: true }];
   const needle = normalizeValue(value, variant);
   if (cls === "private-string") return needle ? privateStringSearches(needle) : [];
   return [{ needle, edge: WORD }];
@@ -226,18 +227,17 @@ const lineOf = (lineStarts, offset) => {
   return lo + 1;
 };
 
-// Every { line, class } where `text` holds a value of one of `classes`, sorted
-// and without repeats. `values` maps each class to its values (strings);
-// ZIPs are 5-digit strings, keys are API key values.
-const scan = (text, values, classes) => {
-  for (const cls of classes) {
-    if (!Object.hasOwn(CLASSES, cls)) throw new Error(`unknown privacy class ${cls}`);
-  }
-  const lineStarts = [0];
-  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) lineStarts.push(i + 1);
-  const hits = new Set();
-  const hit = (cls, offset) => hits.add(`${lineOf(lineStarts, offset)}\0${cls}`);
+// The [start, end) span of the original text that units [i, i + length) of
+// `s` came from, widened to the whole of a replaced run (an entity) at its end.
+const spanOf = (s, i, length, textLength) => {
+  const next = i + length < s.text.length ? origin(s, i + length) : textLength;
+  return [origin(s, i), Math.max(next, origin(s, i + length - 1) + 1)];
+};
 
+// `text` in each form it is scanned in: { variant: null, s } for the raw
+// text, then { variant, s } for each folded variant of forms 2 and 3. `s`
+// maps each unit back to the original (origin, spanOf).
+const forms = (text) => {
   const raw = mapped(text);
   const decoded = { text: decode(raw, "text"), attribute: decode(raw, "attribute") };
   // Most text decodes the same both ways; its attribute variants would repeat the text ones.
@@ -246,6 +246,37 @@ const scan = (text, values, classes) => {
     variant,
     s: fold(decoded[variant.entities], variant.form, variant),
   }));
+  return { raw, decoded, folded };
+};
+
+// The line of each offset in `text`, from 1.
+const lineFinder = (text) => {
+  const lineStarts = [0];
+  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) lineStarts.push(i + 1);
+  return (offset) => lineOf(lineStarts, offset);
+};
+
+// Every { line, class } where `text` holds a value of one of `classes`, sorted
+// and without repeats. `values` maps each class to its values (strings);
+// ZIPs are 5-digit strings, keys are API key values. Options: `skip`, a list
+// of [start, end) offsets in `text` where a digit-run or ZIP search does not
+// count a match lying wholly inside one (publish's generated dates and
+// fonts); `spans`, to add each match's [start, end) offsets as `spans`.
+const scan = (text, values, classes, { skip = [], spans = false } = {}) => {
+  for (const cls of classes) {
+    if (!Object.hasOwn(CLASSES, cls)) throw new Error(`unknown privacy class ${cls}`);
+  }
+  const lineAt = lineFinder(text);
+  const hits = new Map();
+  const hit = (cls, s, i, length, digits) => {
+    const [start, end] = spanOf(s, i, length, text.length);
+    if (digits && skip.some(([from, to]) => start >= from && end <= to)) return;
+    const key = `${lineAt(start)}\0${cls}`;
+    if (!hits.has(key)) hits.set(key, new Map());
+    hits.get(key).set(`${start} ${end}`, [start, end]);
+  };
+
+  const { raw, decoded, folded } = forms(text);
   for (const cls of classes) {
     for (const value of values[cls] ?? []) {
       if (typeof value !== "string") continue;
@@ -255,7 +286,7 @@ const scan = (text, values, classes) => {
         if (!key) continue;
         for (const s of [raw, decoded.text, decoded.attribute]) {
           for (let i = s.text.indexOf(key); i !== -1; i = s.text.indexOf(key, i + 1)) {
-            hit(cls, origin(s, i));
+            hit(cls, s, i, key.length, false);
           }
         }
         continue;
@@ -263,16 +294,18 @@ const scan = (text, values, classes) => {
       // A value with no letter or digit would match every separator, so it is no value.
       if (!/[\p{L}\p{N}]/u.test(value)) continue;
       for (const { variant, s } of [{ variant: null, s: raw }, ...folded]) {
-        for (const { needle, edge } of searchesFor(cls, value, variant)) {
-          for (const i of occurrences(s.text, needle, edge)) hit(cls, origin(s, i));
+        for (const { needle, edge, digits } of searchesFor(cls, value, variant)) {
+          for (const i of occurrences(s.text, needle, edge)) hit(cls, s, i, needle.length, digits);
         }
       }
     }
   }
   return [...hits]
-    .map((key) => {
+    .map(([key, found]) => {
       const [line, cls] = key.split("\0");
-      return { line: Number(line), class: cls };
+      const match = { line: Number(line), class: cls };
+      if (spans) match.spans = [...found.values()].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      return match;
     })
     .sort((a, b) => a.line - b.line || ORDER.indexOf(a.class) - ORDER.indexOf(b.class));
 };
@@ -314,8 +347,12 @@ module.exports = {
   YEAR,
   digitRuns,
   findRefusal,
+  forms,
   isEmptyValue,
+  lineFinder,
+  normalizeValue,
   privateForm,
   refusalCode,
   scan,
+  spanOf,
 };

@@ -320,9 +320,10 @@ const RECEIPTS = {
       subject: "jane-example",
       source: "Example <i>News</i>",
       url: "https://news.example.com/hostile",
-      body: 'Jane Example wrote <img src=x onerror="alert(1)"> on her site.',
+      // No src or href: the privacy scan drops a contest quoting one (publish.test.js).
+      body: 'Jane Example wrote <img alt=x onerror="alert(1)"> on her site.',
     }),
-    excerpt: 'Jane Example wrote <img src=x onerror="alert(1)"> on her site.',
+    excerpt: 'Jane Example wrote <img alt=x onerror="alert(1)"> on her site.',
   },
   // Links no receipt may carry: another scheme, a userinfo, a public_url query.
   script: {
@@ -464,7 +465,7 @@ describe("publish: receipts", () => {
     const hostile = receiptOf(doc, "Jane Example wrote");
     assert.match(
       text(hostile.claim.querySelector("blockquote")),
-      /<img src=x onerror="alert\(1\)">/,
+      /<img alt=x onerror="alert\(1\)">/,
     );
     assert.strictEqual(text(hostile.claim.querySelector("cite")), "Example <i>News</i>");
   });

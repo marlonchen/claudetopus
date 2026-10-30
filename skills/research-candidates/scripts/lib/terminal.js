@@ -1,7 +1,7 @@
 "use strict";
 
 // The terminal guard (Rule 5): modes that print or prompt with private text
-// (`--ballot`, later `--show`) run only in the researcher's own terminal. They
+// (`--ballot`, `--show`) run only in the researcher's own terminal. They
 // refuse when stdout or stdin is not a TTY or CLAUDECODE is set at all, which
 // stops a plain Bash call from the session and its `!` prefix. Both are
 // things a child process controls, so a command that unsets CLAUDECODE and
@@ -32,4 +32,8 @@ const confirm = async (question) => {
   }
 };
 
-module.exports = { confirm, requireTerminal };
+// Control and format characters would act on the researcher's terminal, or
+// reorder what it shows (U+202E); show them as U+FFFD.
+const printable = (text) => text.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "\ufffd");
+
+module.exports = { confirm, printable, requireTerminal };

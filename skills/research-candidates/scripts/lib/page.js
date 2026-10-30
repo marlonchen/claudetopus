@@ -436,6 +436,40 @@ blockquote cite{display:block;font:14px var(--body);color:var(--muted);font-styl
 .note{background:var(--quote-bg);border-radius:8px;padding:12px;margin-top:12px}
 .who{margin:8px 0}`;
 
+// Each embedded face as { family, weight, data, start, end }, where [start,
+// end) holds its base64 text in `html`. Anchored on the rule's quotes, which
+// an interpolated value never holds unescaped, so no page text can pose as one.
+const FONT_RULE =
+  /@font-face\{font-family:"([^"<>]*)";font-style:normal;font-weight:([0-9]+);src:url\(data:font\/woff2;base64,([A-Za-z0-9+/]*={0,2})\) format\("woff2"\)\}/dg;
+const embeddedFonts = (html) =>
+  [...html.matchAll(FONT_RULE)].map((m) => ({
+    family: m[1],
+    weight: Number(m[2]),
+    data: Buffer.from(m[3], "base64"),
+    start: m.indices[3][0],
+    end: m.indices[3][1],
+  }));
+
+// The [start, end) offsets of the page's generated dates in `html`: each
+// "Updated" date and each receipt's fetch date, anchored on the markup before
+// them, which an escaped value can never hold.
+const GENERATED_DATE =
+  /(?:<div class="meta">Updated |<br>The quote above was saved (?:on|from this page on) )((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{1,2}, [0-9]{4})/dg;
+const generatedDates = (html) => [...html.matchAll(GENERATED_DATE)].map((m) => m.indices[1]);
+
+// Every receipt link the claims of ready contests in `answers` (ready()'s
+// Map) can draw, as the href each link is built from.
+const receiptLinks = (answers, archives) =>
+  [...answers.values()]
+    .filter((answer) => answer.ready)
+    .flatMap((answer) =>
+      answer.article.claims.flatMap((claim) => {
+        const rel = resolveTarget(claim.target);
+        const fields = answer.readSnapshot(rel)?.fields ?? {};
+        return receiptOf(rel, fields, archives).links.map((link) => link.href);
+      }),
+    );
+
 const fontCss = (fonts) =>
   fonts
     .map(
@@ -535,4 +569,12 @@ const renderPage = ({
   ].join("\n");
 };
 
-module.exports = { CSP, FONT_FACES, renderPage };
+module.exports = {
+  CSP,
+  FONT_FACES,
+  embeddedFonts,
+  esc,
+  generatedDates,
+  receiptLinks,
+  renderPage,
+};

@@ -11,6 +11,7 @@ const os = require("node:os");
 const { ballotIdPrefix } = require("../scripts/lib/ballot-check");
 const { voteForCount } = require("../scripts/lib/ballot-match");
 const { withLock } = require("../scripts/lib/snapshot-store");
+const { CLASSES } = require("../scripts/lib/privacy");
 const { combineHops, conflicts, matchUrl, parseMatch } = require("../scripts/lib/tiers");
 
 // Seam 2 (spec, Testing Decisions): the shared library's edge cases that would
@@ -375,7 +376,7 @@ describe("each command's output codes are the ones its reference lists", () => {
   // review-list's own module (review-list.md, Command line).
   const REVIEW_LIST = ["review-list.js"];
   // publish's own modules (page.md, Command line).
-  const PUBLISH = ["publish.js", "ballot-gate.js", "page.js"];
+  const PUBLISH = ["publish.js", "ballot-gate.js", "page.js", "page-scan.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");
@@ -425,8 +426,17 @@ describe("each command's output codes are the ones its reference lists", () => {
       "deps-missing",
       "not-reviewed",
       "unaccepted",
+      "not-a-terminal",
     ])
       assert.ok(listed.has(code), `\`${code}\` is not listed`);
+    // The privacy scan's codes: each class's, its drops' and its markup's.
+    const scan = fs.readFileSync(path.join(SKILL_DIR, "scripts", "lib", "page-scan.js"), "utf8");
+    const scanCodes = [
+      ...Object.values(CLASSES),
+      ...[...scan.matchAll(/"((?:page|private)-[a-z]+)"/g)].map((m) => m[1]),
+    ];
+    assert.ok(scanCodes.length >= 12, `only ${scanCodes.length} scan codes found`);
+    for (const code of scanCodes) assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
 
   it("ballot-check: every code is in ballot-format.md's Command line section", () => {

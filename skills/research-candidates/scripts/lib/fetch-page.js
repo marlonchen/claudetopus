@@ -227,4 +227,13 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
   return refuse(url, "too-many-redirects", "too many redirects");
 };
 
-module.exports = { cleanUrl, decode, fetchPage, isHttp, isPdf, recordedHref, spellings };
+module.exports = {
+  KEY_PARAM,
+  cleanUrl,
+  decode,
+  fetchPage,
+  isHttp,
+  isPdf,
+  recordedHref,
+  spellings,
+};

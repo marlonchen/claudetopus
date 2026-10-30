@@ -606,8 +606,9 @@ const refusedHosts = (ballotDir, id) => {
 // review-invalid, unfetchable-invalid, yaml-invalid, ballot-invalid,
 // deps-missing); a failure of the whole run is every contest's. A contest
 // whose article was read also gets `article`, the parsed article it judged,
-// and `readSnapshot`, the reader its snapshots were hashed through, so publish
-// renders exactly what was judged. `given` is runContext's: publish passes
+// `claims`, its claims with their keys, and `readSnapshot`, the reader its
+// snapshots were hashed through, so publish scans and renders exactly what
+// was judged. `given` is runContext's: publish passes
 // the contests it renders and the manifest its gate verified. It never
 // throws a Failure.
 const ready = (ballotDir, contests, given = {}) => {
@@ -635,6 +636,7 @@ const ready = (ballotDir, contests, given = {}) => {
         ready: reasons.length === 0,
         reasons,
         article: loaded.article,
+        claims: loaded.claims,
         readSnapshot: ctx.check.readSnapshot,
       });
     } catch (error) {
