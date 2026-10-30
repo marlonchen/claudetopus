@@ -1,13 +1,15 @@
 "use strict";
 
-// publish [--show] <election>/<ballot-id>
+// publish [--show | --push | --device-check] <election>/<ballot-id>
 //
-// Step 6 (SKILL.md), through its privacy scan: the ballot gate refuses the
-// whole publish, the contest gate decides each contest with review-list's
-// `ready`, a claim, excerpt or source name that holds private text drops its
-// contest, and the page is rendered, scanned and only then written to
-// site/index.html (page.md). Output is `location code [key]` lines only (Rule
-// 5); `--show`, researcher only, adds the text each page refusal matched.
+// Step 6 (SKILL.md): the ballot gate refuses the whole publish, the contest
+// gate decides each contest with review-list's `ready`, a claim, excerpt or
+// source name that holds private text drops its contest, and the page is
+// rendered, scanned and only then written to site/index.html (page.md).
+// Output is `location code [key]` lines only (Rule 5); `--show`, researcher
+// only, adds the text each page refusal matched. `--push` and
+// `--device-check`, researcher only too, go on to copy the page into the
+// Pages repo and push it after their yes (steps 6.4-6.6, pages.js).
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -17,8 +19,9 @@ const { contestsOf } = require("./coverage");
 const { familyPrivateValues, hiddenTitles, readYamlDocument } = require("./data-files");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
-const { Failure, Failures, runCommand } = require("./output");
+const { Failure, Failures, report, runCommand } = require("./output");
 const { receiptLinks, renderPage } = require("./page");
+const { pushPage } = require("./pages");
 const { dropContests, scanPage } = require("./page-scan");
 const { ready } = require("./review-list");
 const { isSnapshotPath } = require("./snapshot-hash");
@@ -28,21 +31,24 @@ const { printable, requireTerminal } = require("./terminal");
 
 const SITE = "site/index.html";
 
+// The researcher-only modes, each run only at their own terminal.
+const MODES = new Set(["--show", "--push", "--device-check"]);
+
 const parseArgs = (argv) => {
-  const show = argv[0] === "--show";
-  const rest = show ? argv.slice(1) : argv;
+  const mode = MODES.has(argv[0]) ? argv[0] : null;
+  const rest = mode ? argv.slice(1) : argv;
   if (rest.length !== 1 || rest[0].startsWith("--")) throw new Failure("-", "usage");
   parseBallot(rest[0]);
-  return { show, ballot: rest[0] };
+  return { mode, ballot: rest[0] };
 };
 
-// publish.yaml's display_name, the name the trust header shows.
-const readDisplayName = (root) => {
+// publish.yaml, with the display_name the trust header shows checked.
+const readPublishYaml = (root) => {
   const data = readYamlDocument(path.join(root, "publish.yaml"), "publish.yaml").doc.toJS();
   const name = data?.display_name;
   if (typeof name !== "string" || name.trim() === "")
     throw new Failure("publish.yaml", "publish-invalid", "display_name");
-  return name;
+  return data;
 };
 
 // archives.tsv as a Map from snapshot path to its 14-digit Wayback capture
@@ -125,14 +131,16 @@ const refusalLines = (html, { line, code, spans }, show) => {
 };
 
 // The gates, the scan, then the page: refuses with Failures, or returns the
-// drop and contest lines and `site/index.html written`. `refresh` keeps the
+// drop and contest lines ending `site/index.html written`, with the page, the
+// slug and each contest's title and readiness for a push. `refresh` keeps the
 // ballot lock fresh; `show` adds each page refusal's matched text.
 const publish = (root, ballot, ballotDir, refresh, show) => {
   // A page from an earlier run never outlives a refused one.
   fs.rmSync(path.join(siteDir(ballotDir), "index.html"), { force: true });
   // Loaded first, so a missing install is one deps-missing.
   load("yaml");
-  const displayName = readDisplayName(root);
+  const config = readPublishYaml(root);
+  const displayName = config.display_name;
   ballotGate(root, ballot, ballotDir, refresh);
   // Read once: the page shows the contests ready judged.
   const data = readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS();
@@ -174,18 +182,43 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
   // Only while the lock is still this run's.
   refresh();
   writeSite(ballotDir, html);
-  return [...report, `${SITE} written`];
+  return {
+    lines: [...report, `${SITE} written`],
+    page: html,
+    slug: data.slug,
+    config,
+    contests: data.contests.map((c) => ({
+      title: c.display_title ?? c.title,
+      ready: shown.get(c.id)?.ready === true,
+    })),
+  };
 };
 
 const main = (argv) =>
   runCommand(async () => {
-    // Before anything is read, so no private text reaches a session.
-    if (argv[0] === "--show") requireTerminal();
-    const { show, ballot } = parseArgs(argv);
+    // Before anything is read, so no private text reaches a session, and
+    // no yes to a push comes from one.
+    if (MODES.has(argv[0])) requireTerminal();
+    const { mode, ballot } = parseArgs(argv);
     const root = process.cwd();
     const ballotDir = openBallot(root, ballot);
     // Under the ballot lock, so a save or log line written now is never half seen.
-    return withLock(ballotDir, (refresh) => publish(root, ballot, ballotDir, refresh, show));
+    const done = withLock(ballotDir, (refresh) =>
+      publish(root, ballot, ballotDir, refresh, mode === "--show"),
+    );
+    if (mode !== "--push" && mode !== "--device-check") return done.lines;
+    // Shown before the push asks anything.
+    report(done.lines);
+    return pushPage({
+      root,
+      ballotDir,
+      config: done.config,
+      slug: done.slug,
+      page: done.page,
+      contests: done.contests,
+      displayName: done.config.display_name,
+      deviceCheck: mode === "--device-check",
+    });
   });
 
 module.exports = { main };

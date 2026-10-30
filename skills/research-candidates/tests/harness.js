@@ -211,12 +211,14 @@ const startServer = async (routes) => {
 };
 
 // Run a command in scripts/ with `cwd` as the project root. Resolves with its
-// exit code, signal, stdout and stderr.
+// exit code, signal, stdout and stderr. Its stdin is empty, so a prompt it
+// should never reach reads no answer and fails the test rather than hanging it.
 const runCli = (script, args, { cwd, env = {} }) =>
   new Promise((resolve) => {
     const child = spawn(process.execPath, [path.join(SCRIPTS_DIR, script), ...args], {
       cwd,
       env: { ...process.env, CLAUDECODE: "", ...env },
+      stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
@@ -231,12 +233,12 @@ const runCli = (script, args, { cwd, env = {} }) =>
 
 // Runs argv on a new pseudo-terminal, so stdin and stdout are both TTYs, as in
 // the researcher's own terminal, unless `pipe` is "stdin" or "stdout": that
-// one is a pipe instead. Once the output shows "[y/N] " it types `answer` and
-// Enter, once. Prints everything the terminal (and a piped stdout) showed;
-// exits with the child's code.
+// one is a pipe instead. Each time the output shows another "[y/N] " it types
+// the next of `answers` (a JSON list) and Enter. Prints everything the
+// terminal (and a piped stdout) showed; exits with the child's code.
 const PTY_RUNNER = `
-import os, select, subprocess, sys, time
-answer, pipe = sys.argv[1], sys.argv[2]
+import json, os, select, subprocess, sys, time
+answers, pipe = json.loads(sys.argv[1]), sys.argv[2]
 master, slave = os.openpty()
 child = subprocess.Popen(
     sys.argv[3:],
@@ -247,7 +249,7 @@ child = subprocess.Popen(
 )
 os.close(slave)
 out = b""
-asked = False
+asked = 0
 deadline = time.time() + 30
 while time.time() < deadline:
     ready, _, _ = select.select([master], [], [], 0.1)
@@ -262,9 +264,9 @@ while time.time() < deadline:
     if not chunk:
         break
     out += chunk
-    if not asked and b"[y/N] " in out:
-        os.write(master, answer.encode() + b"\\r")
-        asked = True
+    if asked < len(answers) and out.count(b"[y/N] ") > asked:
+        os.write(master, answers[asked].encode() + b"\\r")
+        asked += 1
 # A child still waiting (on a prompt never shown) fails rather than hangs.
 if child.poll() is None:
     child.kill()
@@ -276,15 +278,24 @@ sys.exit(child.returncode)
 `;
 
 // Run a command in scripts/ on a pseudo-terminal (PTY_RUNNER), with CLAUDECODE
-// unset unless `env` sets it. Resolves with its exit code and what the
-// terminal showed, without escape sequences and with line ends as "\n".
+// unset unless `env` sets it. `answer` is the reply to each prompt in turn: a
+// list, or one string for a single prompt. Resolves with its exit code and
+// what the terminal showed, without escape sequences and with line ends as "\n".
 const runInTty = (script, args, { cwd, env = {}, answer = "y", pipe = "none" }) =>
   new Promise((resolve) => {
     const base = { ...process.env, ...env };
     if (!Object.hasOwn(env, "CLAUDECODE")) delete base.CLAUDECODE;
     const child = spawn(
       "python3",
-      ["-c", PTY_RUNNER, answer, pipe, process.execPath, path.join(SCRIPTS_DIR, script), ...args],
+      [
+        "-c",
+        PTY_RUNNER,
+        JSON.stringify([answer].flat()),
+        pipe,
+        process.execPath,
+        path.join(SCRIPTS_DIR, script),
+        ...args,
+      ],
       { cwd, env: base },
     );
     let stdout = "";

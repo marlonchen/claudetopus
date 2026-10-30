@@ -5,13 +5,14 @@
 // JSON; it exits 2 to refuse one, printing only `<tool> <code>` (Rule 5). It
 // backs the terminal guard (terminal.js), which a child process can get past
 // on its own: it refuses
-//   - researcher-only-mode: --ballot, --show or --keep-short, in a command
-//     or in a file the model writes (a script it could run later);
+//   - researcher-only-mode: --ballot, --show, --keep-short, --push or
+//     --device-check, in a command or in a file the model writes (a script it
+//     could run later);
 //   - terminal-guard-bypass: a command or file naming CLAUDECODE, a command
 //     that empties the environment, or one that runs under a pseudo-terminal;
-//   - script-only-file: a command naming ballot.ledger, snapshots.sha256 or
-//     downloads/, which only scripts and the researcher write (the Edit denies
-//     cover the file tools).
+//   - script-only-file: a command naming ballot.ledger, snapshots.sha256,
+//     published.log or downloads/, which only scripts and the researcher
+//     write (the Edit denies cover the file tools).
 // Quotes and backslashes are dropped before matching, so `--bal''lot` reads
 // as --ballot. A command that builds the flag at run time, from a variable or
 // an encoding, still gets past it: this narrows what a hostile session can do
@@ -20,7 +21,7 @@
 
 const path = require("node:path");
 
-const RESEARCHER_MODE = /(^|[^\w-])--(ballot|show|keep-short)(?![\w-])/;
+const RESEARCHER_MODE = /(^|[^\w-])--(ballot|show|keep-short|push|device-check)(?![\w-])/;
 const GUARD_VARIABLE = /CLAUDECODE/i;
 // env -i, env --ignore-environment, env - (an empty environment drops CLAUDECODE).
 const ENV_WIPE = /(^|[^\w-])env\s+(-\w*i\b|--ignore-environment\b|-(\s|$))/;
@@ -30,7 +31,7 @@ const PTY_LIBRARY = /\b(pty|openpty|forkpty|node-pty)\b/;
 const PTY_COMMANDS = new Set(["script", "expect", "unbuffer", "socat"]);
 // Words that run the next word as the command.
 const WRAPPERS = new Set(["env", "exec", "nohup", "sudo", "time", "command", "nice", "xargs"]);
-const SCRIPT_ONLY = /ballot\.ledger|snapshots\.sha256|(^|[^\w.-])downloads\//;
+const SCRIPT_ONLY = /ballot\.ledger|snapshots\.sha256|published\.log|(^|[^\w.-])downloads\//;
 const FILE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 // The text as the shell would mostly read it: $'...' and "..." quoting,
