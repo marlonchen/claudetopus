@@ -94,24 +94,15 @@ describe("publish: one self-contained file", () => {
     ]);
   });
 
-  it("embeds the four bundled font faces, byte for byte, within the 200KB budget", async () => {
+  it("embeds no font, and its fixed CSS holds no run of 4 or more digits", async () => {
     const data = await setup();
     await published(data);
-    const embedded = [
-      ...data.read(SITE).matchAll(/src:url\(data:font\/woff2;base64,([A-Za-z0-9+/=]+)\)/g),
-    ].map((m) => Buffer.from(m[1], "base64"));
-    const dir = path.join(SKILL_DIR, "fonts");
-    const bundled = fs
-      .readdirSync(dir)
-      .filter((f) => f.endsWith(".woff2"))
-      .map((f) => fs.readFileSync(path.join(dir, f)));
-    assert.strictEqual(bundled.length, 4);
-    assert.deepStrictEqual(
-      embedded.map((b) => b.toString("hex")).sort(),
-      bundled.map((b) => b.toString("hex")).sort(),
-    );
-    const total = bundled.reduce((sum, b) => sum + b.length, 0);
-    assert.ok(total <= 200 * 1024, `fonts are ${total} bytes`);
+    const html = data.read(SITE);
+    assert.doesNotMatch(html, /@font-face|font-src|data:font/);
+    // A ZIP or a private digit run must never match the page's own CSS (SKILL.md step 6.3).
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    assert.ok(css.length > 1000, "no <style> block");
+    assert.deepStrictEqual(css.match(/(?<![0-9])[0-9]{4,}(?![0-9])/g), null);
   });
 });
 
@@ -320,9 +311,10 @@ const RECEIPTS = {
       subject: "jane-example",
       source: "Example <i>News</i>",
       url: "https://news.example.com/hostile",
-      body: 'Jane Example wrote <img src=x onerror="alert(1)"> on her site.',
+      // No src or href: the privacy scan drops a contest quoting one (page-scan.test.js).
+      body: 'Jane Example wrote <img alt=x onerror="alert(1)"> on her site.',
     }),
-    excerpt: 'Jane Example wrote <img src=x onerror="alert(1)"> on her site.',
+    excerpt: 'Jane Example wrote <img alt=x onerror="alert(1)"> on her site.',
   },
   // Links no receipt may carry: another scheme, a userinfo, a public_url query.
   script: {
@@ -464,7 +456,7 @@ describe("publish: receipts", () => {
     const hostile = receiptOf(doc, "Jane Example wrote");
     assert.match(
       text(hostile.claim.querySelector("blockquote")),
-      /<img src=x onerror="alert\(1\)">/,
+      /<img alt=x onerror="alert\(1\)">/,
     );
     assert.strictEqual(text(hostile.claim.querySelector("cite")), "Example <i>News</i>");
   });

@@ -37,7 +37,7 @@ const { normalizeLine } = require("./normalize");
 const { Failure, Failures, runCommand } = require("./output");
 const { FRONT_MATTER } = require("./snapshot-file");
 const { readManifest, sha256, withLock } = require("./snapshot-store");
-const { requireTerminal } = require("./terminal");
+const { printable, requireTerminal } = require("./terminal");
 
 const BALLOT_DIR = "sources/_ballot";
 // The names fetch-snapshot --ballot gives _ballot snapshots; any other name is
@@ -415,10 +415,6 @@ const findSampleBallot = (ballotDir) => {
     failures.push(new Failure(sample.path, "snapshot-hash"));
   return { failures, sample };
 };
-
-// Control and format characters would act on the researcher's terminal, or
-// reorder what it shows (U+202E); show them as U+FFFD.
-const printable = (text) => text.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "\ufffd");
 
 const parseArgs = (argv) => {
   const show = argv[0] === "--show";

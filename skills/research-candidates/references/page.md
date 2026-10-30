@@ -68,14 +68,11 @@ A measure or retention race with a section not researched yet adds the same endi
 
 ## Type
 
-Two open-license fonts, Latin subset, embedded as base64 `woff2` in the inline CSS, so the page makes no external requests (the woff2 files live in this skill's [fonts directory](../fonts/README.md)). Budget: the four faces total at most 200KB of `woff2` before base64, which adds a third, so at most about 270KB in the page; subset further rather than exceed it.
-
-- Atkinson Hyperlegible Next (400, 700) for body and UI. It was designed for low-vision readers, with distinct 1/l/I and 0/O, which matters for dollar figures and vote counts.
-- Source Serif 4 (400, 600) for headings and excerpts, so the source's own words read differently from the summary. Its license reserves the name "Source" for unmodified copies, so the subset faces are named Ballot Serif.
+No embedded fonts: the page uses the reader's system fonts, so it makes no external requests and holds no font data to scan. The body and UI use the system sans-serif (`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`); headings and excerpts use a serif (`Georgia, "Times New Roman", serif`), so the source's own words read differently from the summary.
 
 ## Tokens
 
-Colors are CSS variables on `:root`, with dark values under `prefers-color-scheme: dark`. Contrast was measured with the WCAG formula.
+Colors are CSS variables on `:root`, with dark values under `prefers-color-scheme: dark`. A color whose hex form holds a run of 4 or more digits is written as `rgb()` in the CSS (`#55595c` as `rgb(85,89,92)`), and sizes avoid such runs too (`75rem`, not `1200px`), so the page's fixed CSS can never match a private ZIP or digit run (SKILL.md step 6.3). Contrast was measured with the WCAG formula.
 
 | Token | Light | Dark | Contrast (light / dark) |
 | --- | --- | --- | --- |
@@ -87,16 +84,16 @@ Colors are CSS variables on `:root`, with dark values under `prefers-color-schem
 | `--accent` | `#0f5f5c` (teal) | `#5fbfb7` | 7.5 / 8.3; links, focus ring |
 | `--visited` | `#5a4a7a` | `#b3a3d6` | 7.8 / 7.9 |
 
-- Type scale: body 17px/1.5; h1 24px Source Serif 600; h2 19px; excerpt 17px/1.45 Source Serif; banners, notes and next/back links at body size; labels and source lines 14px minimum. No text smaller than 14px.
+- Type scale: body 17px/1.5; h1 24px serif 600; h2 19px; excerpt 17px/1.45 serif; banners, notes and next/back links at body size; labels and source lines 14px minimum. No text smaller than 14px.
 - Spacing: 4, 8, 12, 16, 24, 32. 16px side gutter; content max width 640px. Headings get more space above than below (24 above, 8 below).
 - Tap targets: list rows, chips, every link and every `<summary>` (the source line, "… full quote", "How to read this") and next/back links are at least 44px tall.
 - Every `<summary>` hides the browser's own disclosure marker (`list-style: none` and `::-webkit-details-marker { display: none }`) and carries both glyphs, each in an `aria-hidden="true"` span: CSS shows ▸ while closed and ▾ under `details[open]`, with no JavaScript, so Chrome and Safari give the same cue.
 - Links are underlined, except list rows and chips, whose chevron or border marks them as tappable. Links that leave the page use `--visited` once visited; in-page links (chips, rows, "All races") keep their color, since a reader returns to them. The focus ring is a 2px `--accent` outline with a 2px offset. `::selection` uses `--accent` at 25% opacity.
 - The accent teal belongs to no US party. Red and blue are never used, even for status.
 
-One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid. Each race's container (the element carrying its contest-id anchor) sets `content-visibility: auto` with `contain-intrinsic-size: auto 1200px`; topic sections inside a race do not, so a long ballot does not lay out every race at once on a slow phone; the placeholder size keeps the scrollbar and anchor jumps roughly stable as races render.
+One reading column at every width, capped at 640px and centered. Tablets and laptops get the same stack, not a grid. Each race's container (the element carrying its contest-id anchor) sets `content-visibility: auto` with `contain-intrinsic-size: auto 75rem` (1200px); topic sections inside a race do not, so a long ballot does not lay out every race at once on a slow phone; the placeholder size keeps the scrollbar and anchor jumps roughly stable as races render.
 
-Page budget: the whole file, fonts included, should stay under 1MB. `publish` prints its size and warns above that (SKILL.md step 6.5).
+Page budget: the whole file should stay under 1MB. `publish` prints its size and warns above that (SKILL.md step 6.5).
 
 ## Accessibility
 
@@ -127,7 +124,7 @@ Page budget: the whole file, fonts included, should stay under 1MB. `publish` pr
 publish <election>/<ballot-id>
 ```
 
-Once its argument parses, `publish` checks Rule 8 and finishes any interrupted save, then holds the ballot lock while it runs SKILL.md step 6.1 and renders the page. Like every script, it prints only `location code [key]` lines (Rule 5), reports every refusal of a gate it finds and exits non-zero on any. This phase stops after the render: the privacy scan and the copy to the Pages repo (steps 6.2-6.6) come later, and so does the installed-skill check.
+Once its argument parses, `publish` checks Rule 8 and finishes any interrupted save, then holds the ballot lock while it runs SKILL.md steps 6.1-6.3: the gates, the scan of each ready contest's research, the render and the scan of the page. Like every script, it prints only `location code [key]` lines (Rule 5), reports every refusal of a gate it finds and exits non-zero on any. This phase stops after the scan: the copy to the Pages repo (steps 6.4-6.6) comes later, and so does the installed-skill check.
 
 The ballot gate refuses the whole publish, writing no page; a refused publish also removes the page an earlier one wrote, so it never outlives a failing gate:
 
@@ -139,6 +136,17 @@ The ballot gate refuses the whole publish, writing no page; a refused publish al
 - `history-lost-line`, keyed by the commit: in any commit reachable from `HEAD`, `snapshots.sha256`, a search log or `review/<contest>.accepted` lost a line of a parent's. Against the commit before it (a merge's first parent), the file must begin with all of its text, or for `.accepted` all of its lines, a last line with no newline aside (`review-list` drops it as a torn append); against a merge's other parents, it must still hold each of their lines, so lines both sides appended may interleave. A `reset review <contest>` commit that removes that contest's `.accepted` is exempt, so a reset is made on the branch that is published from. It is located by the file when the file is `snapshots.sha256` or is named for a contest of `ballot.yaml`, and by its area (`review` or `search-log`) otherwise. A change of file mode alone changes no line.
 - `baseline-changed`, located as `history-lost-line` is and keyed by the commit: a commit changed or removed `review/<contest>.baseline`, other than a `reset review <contest>` commit that removes it; a merge changes it only when it matches no parent's.
 
-Then the contest gate prints one line per contest of `ballot.yaml`, in ballot order: `articles/<contest>.md ready`, or `articles/<contest>.md not-ready` keyed by the reasons `ready` returns, joined by commas ([review-list.md](review-list.md#command-line)): `not-reviewed` (no baseline yet), `unaccepted`, `review-missing`, or the failure that stopped the check, such as `file-missing` or `check-failed`. A `review-missing` contest refuses the whole publish as `review/<contest>.md review-missing`: run `review-list` to rebuild the file. Last, it writes the page and prints `site/index.html written`.
+A `review-missing` contest refuses the whole publish as `review/<contest>.md review-missing`: run `review-list` to rebuild the file.
 
-Its other codes: `usage`, `bad-ballot`, `unknown-ballot`, `file-missing` and `yaml-invalid` (`publish.yaml` or `ballot.yaml`), `ballot-invalid`, `publish-invalid` (`publish.yaml` has no `display_name`, keyed `display_name`), `archives-invalid` (an `archives.tsv` line that is not a snapshot path, a tab and 14 digits, or a last line with no newline, located by line), `snapshot-invalid` (a snapshot a ready contest cites has no `source:` or no real `fetched:` date, located by its path), `site-invalid` (`site` is not a directory), `git-failed` (git fails, or prints output the gate cannot read), the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked` (also when a run that judged the lock stale broke it while publish held it; publish keeps it fresh between its steps), `deps-missing` and `internal-error`.
+Then step 6.2 scans each ready contest's claims, excerpts and cited `source:` names, each whole. A contest whose research matches is dropped to "Not ready yet", and each match prints a line located by the article line, keyed by the claim's key ([review-list.md](review-list.md)):
+
+- `private-match`: the claim or the excerpt on that line holds a private value or markup the page may not (SKILL.md step 6.3). The compile agent rewords or drops the claim (Rule 7).
+- `private-source`: the claim on that line cites a snapshot whose `source:` name does. The researcher re-saves the source under a plain name, then the compile agent relinks the claim.
+
+Then the contest gate prints one line per contest of `ballot.yaml`, in ballot order: `articles/<contest>.md ready`, or `articles/<contest>.md not-ready` keyed by its reasons, joined by commas: the step 6.2 drop's codes, `private-match` and `private-source`, or those `ready` returns ([review-list.md](review-list.md#command-line)): `not-reviewed` (no baseline yet), `unaccepted`, `review-missing`, or the failure that stopped the check, such as `file-missing` or `check-failed`. A drop is not a refusal: the page shows the contest as not ready, and `publish` goes on.
+
+Last, it renders the page and scans it (SKILL.md step 6.3) before writing it. Any match refuses the whole page and writes none, each reported by its line in the page as rendered and its code: a privacy class code (`private-ballot-id`, `private-address`, `private-zip`, `private-label`, `private-string`, `private-title` or `private-key`, which also covers a key parameter), `page-script` (`<script`) or `page-link` (a `src` or `href` that is neither an anchor on the page nor a receipt link). A link's host is also read as a browser shows it, an IDN host's punycode (`xn--`) as Unicode, and a key value also with the default-ignorable characters a browser draws as nothing removed. A receipt link is judged where the page escaped it, so a path whose `%22` decodes to a quote is still that link. The digit-run and ZIP checks skip only the page's generated dates. Since step 6.2 already dropped every contest whose research matched, a match left on the page is outside a claim, excerpt or source name, such as a receipt link's path. A clean page is written, and `publish` prints `site/index.html written`.
+
+Only the researcher, in their own terminal, reads the matched text with `publish --show` (Rule 5), which takes the same argument and prints under each page refusal the text it matched, in brackets with up to 40 characters on each side, one indented line each, with control characters replaced. It refuses with `not-a-terminal` when stdout or stdin is not a terminal or `CLAUDECODE` is set, before it reads anything.
+
+Its other codes: `usage`, `bad-ballot`, `unknown-ballot`, `file-missing` and `yaml-invalid` (`publish.yaml` or `ballot.yaml`), `ballot-invalid`, `publish-invalid` (`publish.yaml` has no `display_name`, keyed `display_name`), `archives-invalid` (an `archives.tsv` line that is not a snapshot path, a tab and 14 digits, or a last line with no newline, located by line), `snapshot-invalid` (a snapshot a ready contest cites has no `source:` or no real `fetched:` date from 2000 to 2099, located by its path), `site-invalid` (`site` is not a directory), `git-failed` (git fails, or prints output the gate cannot read), the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked` (also when a run that judged the lock stale broke it while publish held it; publish keeps it fresh between its steps), `deps-missing` and `internal-error`.

@@ -239,6 +239,38 @@ describe("privacy matcher: what callers pass and get back", () => {
     assert.deepEqual(classes("anything", { key: ["  "] }), []);
   });
 
+  it("skips only digit-run and ZIP searches wholly inside a skip range", () => {
+    // "12 Pct" is only a digit-run search; the whole entry "Pct 12" is not one.
+    const text = "font 99999 and 0412 near 12 Pct | Springfield Township | 99999";
+    const skip = [[0, text.indexOf("|")]];
+    const values = { ...VALUES, "private-string": [...VALUES["private-string"], "4821"] };
+    // Before the bar: the ZIP, the 4-digit run and 12 Pct are all digit-run checks.
+    assert.deepEqual(classes(text.slice(0, skip[0][1]), values), ["zip", "private-string"]);
+    const found = scan(text, values, ALL, { skip, spans: true });
+    const at = found.flatMap((m) => m.spans.map(([start]) => [m.class, start]));
+    assert.deepEqual(at, [
+      ["zip", text.lastIndexOf("99999")],
+      ["private-string", text.indexOf("Springfield")],
+    ]);
+    const only = (t, s) => scan(t, values, ["private-string", "zip"], { skip: s });
+    // A whole entry with letters is never skipped; one of digits alone is a digit run.
+    assert.equal(only("Springfield Township", [[0, 20]]).length, 1);
+    assert.equal(only("x 4821 y", [[0, 8]]).length, 0);
+    assert.equal(only("x 4821 y", [[0, 4]]).length, 1, "a match crossing the range's end");
+    assert.equal(only("zip 99999", [[0, 6]]).length, 1);
+    assert.equal(only("Pct 12", [[0, 6]]).length, 1);
+  });
+
+  it("returns each match's span in the original text when asked", () => {
+    const text = "one\nsee addr&#45;mom and ADDR-MOM\nz";
+    const [match] = scan(text, VALUES, ["label"], { spans: true });
+    assert.equal(match.line, 2);
+    assert.deepEqual(
+      match.spans.map(([start, end]) => text.slice(start, end)),
+      ["addr&#45;mom", "ADDR-MOM"],
+    );
+  });
+
   it("refuses with the first class in report order", () => {
     assert.equal(
       refusalCode([
