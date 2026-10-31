@@ -285,6 +285,20 @@ describe("constants match the reference text they come from", () => {
       constants.ABBREVIATIONS,
     );
   });
+  it("the device check and the page budget are the ones page.md gives", () => {
+    const page = read("references/page.md");
+    const list = page.match(/\*\*Publish device check\*\*[^\n]*\n\n((?:\d+\. [^\n]+\n)+)/);
+    assert.ok(list, "page.md has no numbered Publish device check list");
+    assert.deepEqual(
+      list[1]
+        .trim()
+        .split("\n")
+        .map((line) => line.replace(/^\d+\. /, "")),
+      constants.DEVICE_CHECK,
+    );
+    assert.match(page, /Page budget: the whole file should stay under 1MB\./);
+    assert.equal(constants.PAGE_BUDGET, 1024 * 1024);
+  });
   it("the API key variables are the ones snapshot-format.md names", () => {
     const named = read("references/snapshot-format.md").match(
       /environment variables the scripts read \(([^)]*)\)/,
@@ -376,7 +390,7 @@ describe("each command's output codes are the ones its reference lists", () => {
   // review-list's own module (review-list.md, Command line).
   const REVIEW_LIST = ["review-list.js"];
   // publish's own modules (page.md, Command line).
-  const PUBLISH = ["publish.js", "ballot-gate.js", "page.js", "page-scan.js"];
+  const PUBLISH = ["publish.js", "ballot-gate.js", "page.js", "page-scan.js", "pages.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");

@@ -8,7 +8,11 @@
 
 const assert = require("node:assert");
 const crypto = require("node:crypto");
-const { BALLOT, git, makeDataRepo, runCli } = require("./harness");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+const { BALLOT, git, makeDataRepo, runCli, runInTty } = require("./harness");
 const { load } = require("../scripts/lib/deps");
 
 const repos = [];
@@ -321,6 +325,110 @@ const setup = async ({
 
 const publish = (data, args = [BALLOT]) => run(data, "publish", args);
 
+// A stub ssh that serves git's request from SSH_STUB_ROOT, where each GitHub
+// repo is a bare repo at <owner>/<repo>.git, so a Pages clone keeps a real
+// GitHub origin URL while its fetches and pushes stay on this machine. It
+// logs each request to ssh.log there.
+const SSH_STUB = `#!/bin/sh
+for last; do :; done
+printf '%s\\n' "$last" >>"$SSH_STUB_ROOT/ssh.log"
+cd "$SSH_STUB_ROOT" && exec sh -c "$last"
+`;
+
+// A Pages repo for publish --push (SKILL.md step 6.4-6.6): a bare repo
+// standing in for GitHub's me/ballots, served through the stub ssh, and its
+// clone at pages_dir, named by publish.yaml. `seed` commits files to the
+// remote's main first; without it the Pages repo is new and empty. `gh`
+// overrides me/ballots' stub answer.
+const PAGES_REPO = "me/ballots";
+const PAGES_URL = `git@github.com:${PAGES_REPO}.git`;
+const pagesSetup = (data, { seed, gh = { visibility: "PUBLIC", id: 77 } } = {}) => {
+  const stub = fs.mkdtempSync(path.join(os.tmpdir(), "rc-pages-"));
+  const bare = path.join(stub, `${PAGES_REPO}.git`);
+  fs.mkdirSync(bare, { recursive: true });
+  git(bare, "init", "-q", "--bare", "-b", "main");
+  fs.writeFileSync(path.join(stub, "ssh"), SSH_STUB);
+  fs.chmodSync(path.join(stub, "ssh"), 0o755);
+  Object.assign(data.env, {
+    GIT_SSH_COMMAND: path.join(stub, "ssh"),
+    GIT_SSH_VARIANT: "simple",
+    SSH_STUB_ROOT: stub,
+    // The researcher's identity in pages_dir. Set here, since git's own
+    // variables (a git hook running the tests exports them) override config.
+    GIT_AUTHOR_NAME: "Sam",
+    GIT_AUTHOR_EMAIL: "sam@users.noreply.github.com",
+    GIT_COMMITTER_NAME: "Sam",
+    GIT_COMMITTER_EMAIL: "sam@users.noreply.github.com",
+  });
+  const ghFile = data.env.GH_STUB_FILE;
+  const answers = JSON.parse(fs.readFileSync(ghFile, "utf8"));
+  fs.writeFileSync(ghFile, JSON.stringify({ ...answers, [PAGES_REPO]: gh }));
+  const pagesGit = (cwd, ...args) => {
+    const result = spawnSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, ...data.env },
+    });
+    if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+    return result.stdout;
+  };
+  const dir = path.join(stub, "clone");
+  data.write(
+    "publish.yaml",
+    `pages_repo: ${PAGES_REPO}\npages_dir: ${dir}\nbranch: main\ndisplay_name: Sam\n`,
+  );
+  const pages = {
+    dir,
+    bare,
+    git: (...args) => pagesGit(dir, ...args),
+    // A file in the remote's main, or null when it has none.
+    remoteFile: (rel) => {
+      const result = spawnSync("git", ["show", `main:${rel}`], { cwd: bare, encoding: "utf8" });
+      return result.status === 0 ? result.stdout : null;
+    },
+    // Push files to the remote's `branch` from a clone of its own, as
+    // another machine would. `head` also makes `branch` its default branch.
+    pushRemote: (files, { branch = "main", head = false } = {}) => {
+      const work = fs.mkdtempSync(path.join(stub, "other-"));
+      pagesGit(stub, "clone", "-q", PAGES_URL, work);
+      const has = pagesGit(work, "ls-remote", "origin", `refs/heads/${branch}`).trim() !== "";
+      pagesGit(work, "checkout", "-q", ...(has ? [branch] : ["--orphan", branch]));
+      for (const [rel, text] of Object.entries(files)) {
+        fs.mkdirSync(path.dirname(path.join(work, rel)), { recursive: true });
+        fs.writeFileSync(path.join(work, rel), text);
+      }
+      pagesGit(work, "add", "-A");
+      pagesGit(
+        work,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.com",
+        "commit",
+        "-qm",
+        "other",
+      );
+      pagesGit(work, "push", "-q", "origin", `HEAD:refs/heads/${branch}`);
+      if (head) git(bare, "symbolic-ref", "HEAD", `refs/heads/${branch}`);
+    },
+    // The requests the stub ssh served, in order.
+    sshCalls: () => {
+      const log = path.join(stub, "ssh.log");
+      return fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean) : [];
+    },
+    cleanup: () => fs.rmSync(stub, { recursive: true, force: true }),
+  };
+  repos.push(pages);
+  if (seed) pages.pushRemote(seed);
+  pagesGit(stub, "clone", "-q", PAGES_URL, dir);
+  return pages;
+};
+
+// publish --push on a pseudo-terminal, as the researcher runs it, giving
+// `answers` to its prompts in turn.
+const publishPush = (data, { args = ["--push", BALLOT], answers = ["y", "y"] } = {}) =>
+  runInTty("publish", args, { cwd: data.root, env: data.env, answer: answers });
+
 const lines = (result) => result.stdout.split("\n").filter(Boolean);
 
 // The page publish wrote, as a DOM document.
@@ -335,6 +443,7 @@ module.exports = {
   JANE_BIO,
   JANE_SITE,
   NOT_RESEARCHED,
+  PAGES_REPO,
   SAMPLE_BALLOT,
   SAMPLE_TEXT,
   addContest,
@@ -346,7 +455,9 @@ module.exports = {
   lines,
   logLines,
   page,
+  pagesSetup,
   publish,
+  publishPush,
   repos,
   review,
   section,

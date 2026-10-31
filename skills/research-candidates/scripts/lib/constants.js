@@ -5,6 +5,17 @@
 // The recorded GitHub id of this skill's public source repo, marlonchen/claudetopus (Rule 8).
 const SOURCE_REPO_ID = "1373776339";
 
+// page.md: the page budget in bytes, over which publish warns (SKILL.md step
+// 6.5), and the publish device check, in order.
+const PAGE_BUDGET = 1024 * 1024;
+const DEVICE_CHECK = [
+  "iPhone Safari at the largest text size.",
+  "One Android phone in Chrome.",
+  "VoiceOver through one full race.",
+  'A chip and a "Next on your ballot" link each land on their target.',
+  "Dark mode on both phones.",
+];
+
 // SKILL.md Layout: the <election> directory.
 const ELECTION_PATTERN = /^[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*$/;
 // ballot-format.md, Ballot ids.
@@ -259,6 +270,8 @@ const CHECKLIST_ITEMS = { candidate: ["1", "2", "3", "4", "5"], measure: ["6"], 
 const STATUSES = ["on_ballot", "withdrawn_still_printed", "certified_write_in"];
 
 module.exports = {
+  DEVICE_CHECK,
+  PAGE_BUDGET,
   ABBREVIATIONS,
   ALLEGATION_WORDS,
   ALWAYS_REVIEWED,

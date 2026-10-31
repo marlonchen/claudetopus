@@ -19,8 +19,9 @@ const {
 } = require("./publish-fixture");
 
 // publish (SKILL.md step 6.1-6.2, page.md), run as a subprocess against a temp
-// data repo with real git (seam 1). The privacy scan and the push are later
-// steps; this covers the gates and the render to site/index.html.
+// data repo with real git (seam 1): the gates and the render to
+// site/index.html. The privacy scan is in publish-scan.test.js and the push in
+// publish-push.test.js.
 
 afterEach(() => {
   while (repos.length) repos.pop().cleanup();

@@ -122,9 +122,11 @@ Page budget: the whole file should stay under 1MB. `publish` prints its size and
 
 ```text
 publish <election>/<ballot-id>
+publish --push <election>/<ballot-id>
+publish --device-check <election>/<ballot-id>
 ```
 
-Once its argument parses, `publish` checks Rule 8 and finishes any interrupted save, then holds the ballot lock while it runs SKILL.md steps 6.1-6.3: the gates, the scan of each ready contest's research, the render and the scan of the page. Like every script, it prints only `location code [key]` lines (Rule 5), reports every refusal of a gate it finds and exits non-zero on any. This phase stops after the scan: the copy to the Pages repo (steps 6.4-6.6) comes later, and so does the installed-skill check.
+Once its argument parses, `publish` checks Rule 8 and finishes any interrupted save, then holds the ballot lock while it runs SKILL.md steps 6.1-6.3: the gates, the scan of each ready contest's research, the render and the scan of the page. Like every script, it prints only `location code [key]` lines (Rule 5), reports every refusal of a gate it finds and exits non-zero on any. Without a flag it stops there, so the session can run it; the installed-skill check is not built yet. `--push` and `--device-check` go on to the Pages repo (below).
 
 The ballot gate refuses the whole publish, writing no page; a refused publish also removes the page an earlier one wrote, so it never outlives a failing gate:
 
@@ -150,3 +152,23 @@ Last, it renders the page and scans it (SKILL.md step 6.3) before writing it. An
 Only the researcher, in their own terminal, reads the matched text with `publish --show` (Rule 5), which takes the same argument and prints under each page refusal the text it matched, in brackets with up to 40 characters on each side, one indented line each, with control characters replaced. It refuses with `not-a-terminal` when stdout or stdin is not a terminal or `CLAUDECODE` is set, before it reads anything.
 
 Its other codes: `usage`, `bad-ballot`, `unknown-ballot`, `file-missing` and `yaml-invalid` (`publish.yaml` or `ballot.yaml`), `ballot-invalid`, `publish-invalid` (`publish.yaml` has no `display_name`, keyed `display_name`), `archives-invalid` (an `archives.tsv` line that is not a snapshot path, a tab and 14 digits, or a last line with no newline, located by line), `snapshot-invalid` (a snapshot a ready contest cites has no `source:` or no real `fetched:` date from 2000 to 2099, located by its path), `site-invalid` (`site` is not a directory), `git-failed` (git fails, or prints output the gate cannot read), the Rule 8 codes `guard-no-publish-yaml`, `guard-skill-source-clone`, `guard-skill-source-remote`, `guard-remote-not-private`, `guard-not-git-repo` and `guard-not-repo-root`, `ballot-locked` (also when a run that judged the lock stale broke it while publish held it; publish keeps it fresh between its steps), `deps-missing` and `internal-error`.
+
+### Push
+
+Only the researcher, in their own terminal, runs `publish --push`, which takes the same argument, runs steps 6.1-6.3 as above, prints their lines, and then copies the page to the Pages repo and pushes it after their yes (SKILL.md steps 6.4-6.6, Rule 6). `publish --device-check` does the same and always prints the device check. Both refuse with `not-a-terminal` when stdout or stdin is not a terminal or `CLAUDECODE` is set, before they read anything, so the yes never comes from the session. Each step stops at its first refusal:
+
+- `publish-invalid`, located `publish.yaml` and keyed by the field: `pages_repo` is not `<owner>/<repo>`, with no .git suffix, `pages_dir` is empty, or `branch` is not a valid branch name.
+- `pages-not-repo`, located `pages_dir`: `pages_dir`, with `~` expanded and resolved to a real path, is missing or is not the top level of a git repo.
+- `pages-is-data-repo` and `pages-shares-history`, located `pages_dir`: it is the data repo (or a worktree of it), or the two repos share a root commit, compared with `git rev-list --max-parents=0 --all` in each, never by fetching one into the other.
+- `pages-wrong-origin`, located `pages_dir:remote:origin`: there is no `origin`, or one of its fetch or push URLs is not `pages_repo`, compared without letter case.
+- `pages-skill-source` and `pages-root-unread`, located `publish.yaml` keyed `pages_repo`, or `pages_dir:remote:<name>`: the fork-network root of `pages_repo` or of a remote's URL is this skill's source repo, or cannot be read (a URL not on GitHub, a `gh` error, empty output).
+- `pages-holds-skill`, located `pages_dir`: its working tree holds a `skills/*/SKILL.md`, or, keyed `origin/<branch>` or `origin/HEAD`, the fetched branch or the remote's live default branch does.
+- `pages-wrong-branch` and `pages-dirty`, located `pages_dir`: it is not on `branch`, or `git status --porcelain` shows a change or an untracked file.
+- `pages-fetch-failed`, located `pages_dir`: the one `git fetch origin` fails. `pages-ref-unread`, keyed `origin/<branch>` or `origin/HEAD`: a ref that exists cannot be read, or `git ls-remote --symref origin HEAD` fails.
+- `pages-not-at-origin`, located `pages_dir`: `HEAD` is not `origin/<branch>`, or, with no `origin/<branch>`, `branch` is not unborn. A rejected push leaves this until the researcher pushes its commit or resets `pages_dir`.
+- `pages-locked`, located `pages_dir`: another run holds the Pages lock, a file in the Pages repo's git directory held from step 6.4 to the push. A lock whose process is gone is taken over.
+- `pages-slug-invalid`, located `<slug>/index.html`: the slug's folder or page in `pages_dir` is a link or not a plain folder and file, so nothing is written through it.
+- `slug-unrecorded`, located `<slug>/index.html`: `pages_dir` already holds the page, but the ballot's `published.log` does not list the slug, so it is another ballot's page, or one from before this ballot took the slug.
+- `copy-mismatch`, located `<slug>/index.html`: the copy, or the blob git staged for it (a clean filter or line-ending rule can change it), does not hash the same as the page that was scanned. The copy is undone.
+
+It then shows the staged diff, the contests on the page in ballot order with their state, the page's size in bytes with a warning over the page budget, and what becomes public: the contest list and candidate order, `display_name`, and the commit's author and committer from `git var`. Before a slug's first publish, or on `--device-check`, it prints the device check and asks whether the page passed it. Last it asks whether to commit and push. A no to either is `not-confirmed`, located `device-check` or `<slug>/index.html`, and undoes the copy. After the yes it appends the slug to `published.log` if it is not there yet, commits with `git commit -m "publish <slug>" -- <slug>/index.html`, and pushes with `git push origin HEAD:refs/heads/<branch>`; git may ask for a credential or a signing passphrase there. A failed commit is `git-failed` and undoes the copy. A failed push is `push-rejected`, located `<slug>/index.html`, and leaves the commit. Only once the push succeeds does it print `<slug>/index.html pushed` and the page URL, `https://<owner>.github.io/<repo>/<slug>/` (`https://<owner>.github.io/<slug>/` when the repo is the owner's own user site).
