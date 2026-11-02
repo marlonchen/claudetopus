@@ -270,13 +270,12 @@ const CHECKLIST_ITEMS = { candidate: ["1", "2", "3", "4", "5"], measure: ["6"], 
 const STATUSES = ["on_ballot", "withdrawn_still_printed", "certified_write_in"];
 
 module.exports = {
-  DEVICE_CHECK,
-  PAGE_BUDGET,
   ABBREVIATIONS,
   ALLEGATION_WORDS,
   ALWAYS_REVIEWED,
   BALLOT_ID_PATTERN,
   CHECKLIST_ITEMS,
+  DEVICE_CHECK,
   ELECTION_PATTERN,
   EXCERPT_LENGTH,
   EXEMPTION,
@@ -287,6 +286,7 @@ module.exports = {
   LEDGER,
   LEFTOVER,
   OFFICE_TYPES,
+  PAGE_BUDGET,
   POSITIONS_ISSUES,
   ROLES,
   SAYS_ONLY,

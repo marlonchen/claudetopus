@@ -14,7 +14,7 @@ const { spawnSync } = require("node:child_process");
 const { DEVICE_CHECK, PAGE_BUDGET, SOURCE_REPO_ID } = require("./constants");
 const { Failure } = require("./output");
 const { githubRepo, remoteUrls, repoFacts } = require("./repo-guard");
-const { writeSynced } = require("./snapshot-store");
+const { withLock, writeSynced } = require("./snapshot-store");
 const { confirm, printable } = require("./terminal");
 
 const WHERE = "pages_dir";
@@ -89,6 +89,24 @@ const refuseSkillAt = (dir, commit, ref) => {
   if (holds) throw new Failure(WHERE, "pages-holds-skill", ref);
 };
 
+// Does the working tree hold a skills/*/SKILL.md, in any letter case, as the
+// tree check reads it?
+const worktreeHoldsSkill = (dir) => {
+  const entries = (at) => {
+    try {
+      return fs.readdirSync(at, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  };
+  return entries(dir)
+    .filter((top) => top.isDirectory() && /^skills$/i.test(top.name))
+    .flatMap((top) => entries(path.join(dir, top.name)).filter((e) => e.isDirectory()))
+    .some((skill) =>
+      entries(path.join(skill.parentPath, skill.name)).some((f) => /^SKILL\.md$/i.test(f.name)),
+    );
+};
+
 // Step 6.4: refuse a Pages repo that could take the page anywhere but a
 // clean, current clone of pages_repo. Returns its real path.
 const checkPages = (root, { repo, dir: given, branch }) => {
@@ -117,12 +135,7 @@ const checkPages = (root, { repo, dir: given, branch }) => {
     if (!rootId) throw new Failure(location, "pages-root-unread", key);
     if (rootId === SOURCE_REPO_ID) throw new Failure(location, "pages-skill-source", key);
   }
-  const skills = path.join(dir, "skills");
-  if (fs.statSync(skills, { throwIfNoEntry: false })?.isDirectory()) {
-    for (const name of fs.readdirSync(skills))
-      if (fs.existsSync(path.join(skills, name, "SKILL.md")))
-        throw new Failure(WHERE, "pages-holds-skill");
-  }
+  if (worktreeHoldsSkill(dir)) throw new Failure(WHERE, "pages-holds-skill");
   if (run(dir, ["symbolic-ref", "-q", "HEAD"])?.trim() !== `refs/heads/${branch}`)
     throw new Failure(WHERE, "pages-wrong-branch");
   if (must(dir, ["status", "--porcelain"]) !== "") throw new Failure(WHERE, "pages-dirty");
@@ -147,21 +160,35 @@ const checkPages = (root, { repo, dir: given, branch }) => {
 };
 
 // The Pages repo's lock, in its git directory so the worktree stays clean.
-// One run holds it from the checks to the push; a lock whose process is gone
-// is taken over.
+// One run holds it from the checks to the push. A lock whose process is gone
+// is taken over, by one run at a time: the taker holds a second lock while it
+// reads the dead one and replaces it, so two runs never both take it.
 const withPagesLock = async (dir, body) => {
   const lock = path.join(commonDir(dir), LOCK);
-  const mine = `${process.pid}\n`;
-  for (let tries = 0; ; tries++) {
+  const mine = `${process.pid} ${crypto.randomBytes(8).toString("hex")}\n`;
+  const create = (file) => {
     try {
-      fs.writeFileSync(lock, mine, { flag: "wx" });
-      break;
+      fs.writeFileSync(file, mine, { flag: "wx" });
+      return true;
     } catch (error) {
-      if (error.code !== "EEXIST" || tries > 0) throw new Failure(WHERE, "pages-locked");
+      if (error.code === "EEXIST") return false;
+      throw error;
     }
-    const pid = Number.parseInt(fs.readFileSync(lock, "utf8"), 10);
-    if (alive(pid)) throw new Failure(WHERE, "pages-locked");
-    fs.rmSync(lock, { force: true });
+  };
+  if (!create(lock)) {
+    const breaker = `${lock}.break`;
+    if (!create(breaker)) throw new Failure(WHERE, "pages-locked");
+    try {
+      let seen = "";
+      try {
+        seen = fs.readFileSync(lock, "utf8");
+      } catch {}
+      if (alive(Number.parseInt(seen, 10))) throw new Failure(WHERE, "pages-locked");
+      fs.rmSync(lock, { force: true });
+      if (!create(lock)) throw new Failure(WHERE, "pages-locked");
+    } finally {
+      fs.rmSync(breaker, { force: true });
+    }
   }
   try {
     return await body();
@@ -195,7 +222,8 @@ const recordedSlugs = (ballotDir) => {
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 
 // Copy the scanned bytes to <slug>/index.html, re-hash the copy and the blob
-// git staged, and stage only that path. `restore` undoes both.
+// git staged, and stage only that path. Returns the blob's id and `restore`,
+// which undoes both.
 const stagePage = (dir, target, bytes) => {
   const file = path.join(dir, target);
   const existed = run(dir, ["cat-file", "-e", `HEAD:${target}`]) !== null;
@@ -222,11 +250,11 @@ const stagePage = (dir, target, bytes) => {
     const blob = must(dir, ["hash-object", "--no-filters", "--", target]).trim();
     if (must(dir, ["rev-parse", `:${target}`]).trim() !== blob)
       throw new Failure(target, "copy-mismatch");
+    return { blob, restore };
   } catch (error) {
     restore();
     throw error;
   }
-  return restore;
 };
 
 // https://<owner>.github.io/<repo>/<slug>/, or a user site's own root.
@@ -244,16 +272,7 @@ const ident = (dir, variable) =>
 
 // Steps 6.5-6.6 once the Pages repo has passed 6.4: copy, show, ask, commit,
 // push. `page` is the scanned html; `contests` its { title, ready } list.
-const pushPage = async ({
-  root,
-  ballotDir,
-  config,
-  slug,
-  page,
-  contests,
-  displayName,
-  deviceCheck,
-}) => {
+const pushPage = async ({ root, ballotDir, config, slug, page, contests, deviceCheck }) => {
   const pages = pagesConfig(config);
   const target = `${slug}/index.html`;
   const dir = resolvePagesDir(root, pages.dir);
@@ -268,10 +287,18 @@ const pushPage = async ({
     if (file && !recordedSlugs(ballotDir).includes(slug))
       throw new Failure(target, "slug-unrecorded");
     const bytes = Buffer.from(page, "utf8");
-    const restore = stagePage(dir, target, bytes);
+    const { blob, restore } = stagePage(dir, target, bytes);
     try {
       say(`Changes to ${target}:`);
-      for (const line of must(dir, ["diff", "--cached", "--no-color", "--", target]).split("\n"))
+      for (const line of must(dir, [
+        "diff",
+        "--cached",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--",
+        target,
+      ]).split("\n"))
         say(line);
       say("Contests on the page, in ballot order:");
       for (const { title, ready } of contests)
@@ -281,7 +308,7 @@ const pushPage = async ({
       say(
         "Once pushed, these are public for good, even after a later change: the contest list and " +
           "the candidate order, which can narrow down where a voter lives (some states rotate " +
-          `candidate order by precinct); the display name ${displayName}; and the commit's author ` +
+          `candidate order by precinct); the display name ${config.display_name}; and the commit's author ` +
           `${ident(dir, "GIT_AUTHOR_IDENT")} and committer ${ident(dir, "GIT_COMMITTER_IDENT")}.`,
       );
       if (!folder || deviceCheck) {
@@ -297,12 +324,27 @@ const pushPage = async ({
       throw error;
     }
     // Recorded before the commit, so a crash after it never strands the slug.
-    if (!recordedSlugs(ballotDir).includes(slug))
-      writeSynced(path.join(ballotDir, RECORD), `${slug}\n`, "a");
+    withLock(ballotDir, () => {
+      if (!recordedSlugs(ballotDir).includes(slug))
+        writeSynced(path.join(ballotDir, RECORD), `${slug}\n`, "a");
+    });
     if (!interactive(dir, ["commit", "-q", "-m", `publish ${slug}`, "--", target])) {
       restore();
       throw new Failure(WHERE, "git-failed");
     }
+    // The commit re-reads the file and runs the Pages repo's hooks: push it
+    // only if it changed nothing but the page, to the bytes that were scanned.
+    const changed = must(dir, [
+      "diff-tree",
+      "--root",
+      "--no-commit-id",
+      "-r",
+      "-z",
+      "--name-only",
+      "HEAD",
+    ]);
+    if (changed !== `${target}\0` || must(dir, ["rev-parse", `HEAD:${target}`]).trim() !== blob)
+      throw new Failure(target, "copy-mismatch");
     if (!interactive(dir, ["push", "origin", `HEAD:refs/heads/${pages.branch}`]))
       throw new Failure(target, "push-rejected");
     return [`${target} pushed`, pageUrl(pages.repo, slug)];

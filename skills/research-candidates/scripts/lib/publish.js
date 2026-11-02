@@ -176,14 +176,14 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
   });
   // Step 6.3: any match left on the page refuses all of it, and no page is written.
   const refusals = scanPage(html, values, { links: receiptLinks(shown, archives) });
-  const report = [...drops.lines, ...contestLines];
+  const lines = [...drops.lines, ...contestLines];
   if (refusals.length)
-    throw new Failures([...report, ...refusals.flatMap((r) => refusalLines(html, r, show))]);
+    throw new Failures([...lines, ...refusals.flatMap((r) => refusalLines(html, r, show))]);
   // Only while the lock is still this run's.
   refresh();
   writeSite(ballotDir, html);
   return {
-    lines: [...report, `${SITE} written`],
+    lines: [...lines, `${SITE} written`],
     page: html,
     slug: data.slug,
     config,
@@ -216,7 +216,6 @@ const main = (argv) =>
       slug: done.slug,
       page: done.page,
       contests: done.contests,
-      displayName: done.config.display_name,
       deviceCheck: mode === "--device-check",
     });
   });

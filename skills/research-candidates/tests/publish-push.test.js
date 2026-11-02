@@ -145,6 +145,41 @@ describe("publish --push: the push", () => {
     clean(pages);
   });
 
+  it("treats Ctrl-C at a question as a no, and undoes the copy", async () => {
+    const { data, pages } = await published();
+    rename(data, "Alex");
+    const result = await publishPush(data, { answers: ["\u0003"] });
+    assert.strictEqual(last(result), `${PAGE} not-confirmed`);
+    assert.strictEqual(result.status, 1);
+    clean(pages);
+  });
+
+  it("refuses to push a commit whose page is not the scanned page", async () => {
+    const data = await setup();
+    const pages = pagesSetup(data);
+    // A Pages repo hook that changes the page as it is committed.
+    const hook = path.join(pages.dir, ".git", "hooks", "pre-commit");
+    fs.writeFileSync(hook, `#!/bin/sh\necho changed >> ${PAGE}\ngit add ${PAGE}\n`);
+    fs.chmodSync(hook, 0o755);
+    const result = await publishPush(data);
+    assert.strictEqual(last(result), `${PAGE} copy-mismatch`);
+    assert.strictEqual(result.status, 1);
+    assert.doesNotMatch(result.stdout, URL_LINE);
+    assert.strictEqual(pages.remoteFile(PAGE), null);
+  });
+
+  it("refuses to push a commit that carries another file along", async () => {
+    const data = await setup();
+    const pages = pagesSetup(data);
+    const hook = path.join(pages.dir, ".git", "hooks", "pre-commit");
+    fs.writeFileSync(hook, "#!/bin/sh\necho notes > notes.txt\ngit add notes.txt\n");
+    fs.chmodSync(hook, 0o755);
+    const result = await publishPush(data);
+    assert.strictEqual(last(result), `${PAGE} copy-mismatch`);
+    assert.strictEqual(pages.remoteFile(PAGE), null);
+    assert.strictEqual(pages.remoteFile("notes.txt"), null);
+  });
+
   it("pushes HEAD to origin's branch even when git is set to push elsewhere", async () => {
     const data = await setup();
     const pages = pagesSetup(data);
@@ -310,9 +345,10 @@ describe("publish --push: the Pages repo (step 6.4)", () => {
 
   it("refuses a worktree holding a skills/*/SKILL.md, the wrong branch, or a dirty tree", async () => {
     const data = await setup();
-    const pages = pagesSetup(data, { seed: { "skills/x/SKILL.md": "---\nname: x\n---\n" } });
+    // Matched in any case, as on the remote's refs.
+    const pages = pagesSetup(data, { seed: { "Skills/x/skill.md": "---\nname: x\n---\n" } });
     await refusedBeforeFetch(data, pages, "pages_dir pages-holds-skill");
-    pages.git("rm", "-q", "-r", "skills");
+    pages.git("rm", "-q", "-r", "Skills");
     pages.git("commit", "-qm", "drop skill");
     pages.git("push", "-q", "origin", "HEAD:refs/heads/main");
     pages.git("checkout", "-q", "-b", "other");
@@ -357,6 +393,10 @@ describe("publish --push: the Pages repo (step 6.4)", () => {
     await refusedBeforeFetch(data, pages, "pages_dir pages-locked");
     assert.ok(fs.existsSync(lock));
     fs.writeFileSync(lock, "999999999\n");
+    // Another run is taking the dead lock over right now.
+    fs.writeFileSync(`${lock}.break`, `${process.pid}\n`);
+    await refusedBeforeFetch(data, pages, "pages_dir pages-locked");
+    fs.rmSync(`${lock}.break`);
     const result = await publishPush(data);
     assert.strictEqual(result.status, 0, result.stdout);
     assert.ok(!fs.existsSync(lock));
