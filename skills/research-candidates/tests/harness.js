@@ -14,6 +14,10 @@ const { spawn, spawnSync } = require("node:child_process");
 
 const SKILL_DIR = path.join(__dirname, "..");
 const SCRIPTS_DIR = path.join(SKILL_DIR, "scripts");
+// Every child the tests spawn is killed after this long, under the test
+// runner's two-minute timeout, so a hung one fails its test and never keeps
+// the file's process alive (.config/mise/tasks/test/js).
+const CHILD_TIMEOUT = { timeout: 100_000, killSignal: "SIGKILL" };
 
 const git = (cwd, ...args) => {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -211,12 +215,15 @@ const startServer = async (routes) => {
 };
 
 // Run a command in scripts/ with `cwd` as the project root. Resolves with its
-// exit code, signal, stdout and stderr.
+// exit code, signal, stdout and stderr. Its stdin is empty, so a prompt it
+// should never reach reads no answer and fails the test rather than hanging it.
 const runCli = (script, args, { cwd, env = {} }) =>
   new Promise((resolve) => {
     const child = spawn(process.execPath, [path.join(SCRIPTS_DIR, script), ...args], {
       cwd,
       env: { ...process.env, CLAUDECODE: "", ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+      ...CHILD_TIMEOUT,
     });
     let stdout = "";
     let stderr = "";
@@ -231,12 +238,14 @@ const runCli = (script, args, { cwd, env = {} }) =>
 
 // Runs argv on a new pseudo-terminal, so stdin and stdout are both TTYs, as in
 // the researcher's own terminal, unless `pipe` is "stdin" or "stdout": that
-// one is a pipe instead. Once the output shows "[y/N] " it types `answer` and
-// Enter, once. Prints everything the terminal (and a piped stdout) showed;
-// exits with the child's code.
+// one is a pipe instead. Each time the output shows another "[y/N] " it types
+// the next of `answers` (a JSON list) and Enter; an answer that is
+// { run, answer } first runs the shell command `run` and waits for it. Prints
+// everything the terminal (and a piped stdout) showed; exits with the child's
+// code.
 const PTY_RUNNER = `
-import os, select, subprocess, sys, time
-answer, pipe = sys.argv[1], sys.argv[2]
+import json, os, select, subprocess, sys, time
+answers, pipe = json.loads(sys.argv[1]), sys.argv[2]
 master, slave = os.openpty()
 child = subprocess.Popen(
     sys.argv[3:],
@@ -247,8 +256,9 @@ child = subprocess.Popen(
 )
 os.close(slave)
 out = b""
-asked = False
-deadline = time.time() + 30
+asked = 0
+# Room for a whole publish on a loaded machine, under CHILD_TIMEOUT.
+deadline = time.time() + 90
 while time.time() < deadline:
     ready, _, _ = select.select([master], [], [], 0.1)
     if not ready:
@@ -262,9 +272,13 @@ while time.time() < deadline:
     if not chunk:
         break
     out += chunk
-    if not asked and b"[y/N] " in out:
+    if asked < len(answers) and out.count(b"[y/N] ") > asked:
+        answer = answers[asked]
+        if isinstance(answer, dict):
+            subprocess.run(answer["run"], shell=True, check=True, stdout=subprocess.DEVNULL)
+            answer = answer["answer"]
         os.write(master, answer.encode() + b"\\r")
-        asked = True
+        asked += 1
 # A child still waiting (on a prompt never shown) fails rather than hangs.
 if child.poll() is None:
     child.kill()
@@ -276,16 +290,26 @@ sys.exit(child.returncode)
 `;
 
 // Run a command in scripts/ on a pseudo-terminal (PTY_RUNNER), with CLAUDECODE
-// unset unless `env` sets it. Resolves with its exit code and what the
-// terminal showed, without escape sequences and with line ends as "\n".
+// unset unless `env` sets it. `answer` is the reply to each prompt in turn: a
+// list, or one string for a single prompt; a reply can be { run, answer }, to
+// run a shell command in `cwd` just before typing it. Resolves with its exit code and
+// what the terminal showed, without escape sequences and with line ends as "\n".
 const runInTty = (script, args, { cwd, env = {}, answer = "y", pipe = "none" }) =>
   new Promise((resolve) => {
     const base = { ...process.env, ...env };
     if (!Object.hasOwn(env, "CLAUDECODE")) delete base.CLAUDECODE;
     const child = spawn(
       "python3",
-      ["-c", PTY_RUNNER, answer, pipe, process.execPath, path.join(SCRIPTS_DIR, script), ...args],
-      { cwd, env: base },
+      [
+        "-c",
+        PTY_RUNNER,
+        JSON.stringify([answer].flat()),
+        pipe,
+        process.execPath,
+        path.join(SCRIPTS_DIR, script),
+        ...args,
+      ],
+      { cwd, env: base, ...CHILD_TIMEOUT },
     );
     let stdout = "";
     child.stdout.on("data", (chunk) => {

@@ -1207,13 +1207,13 @@ describe("LayoutComplete", () => {
     for (const text of SPEC_TEXTS) {
       for (const [, token] of text.matchAll(pattern)) named.add(token.replace("<ballot-id>/", ""));
     }
-    // Snapshot and source names are examples or placeholders, <slug>/ is in the Pages repo,
-    // and scripts/ is in this skill.
+    // Snapshot and source names are examples or placeholders, <slug>/ and the Pages lock under
+    // .git/ are in the Pages repo, and scripts/ is in this skill.
     const data = [...named].filter(
       // Hosts in tiers.yaml examples, the `official.name` field path, paths in the skill's
       // source repo (skills/...) and the OS leftover the ballot gate skips are not data files.
       (t) =>
-        !/<name>|<subject>|<slug>|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$/.test(
+        !/<name>|<subject>|<slug>|^\.git\/|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$/.test(
           t,
         ),
     );
@@ -3114,11 +3114,11 @@ describe("SnapshotManifest", () => {
     );
     assert.match(
       ballotGate(),
-      /`review\/`, `tiers\.yaml`, `snapshots\.sha256` and `search-log\/` must have no uncommitted changes/,
+      /`review\/`, `tiers\.yaml`, `snapshots\.sha256`, `search-log\/` and `published\.log` must have no uncommitted changes/,
     );
     assert.match(
       ballotGate(),
-      /`snapshots\.sha256` and each search log must begin with all of their lines from the commit before/,
+      /`snapshots\.sha256`, `published\.log` and each search log must begin with all of their lines from the commit before/,
     );
     assert.match(
       SKILL,

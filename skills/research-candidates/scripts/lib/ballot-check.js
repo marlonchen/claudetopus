@@ -19,6 +19,7 @@ const {
   OFFICE_TYPES,
   ROLES,
   SECTIONS,
+  SLUG_PATTERN,
   STATUSES,
   VIEW,
 } = require("./constants");
@@ -155,7 +156,7 @@ const checkBallotYaml = (root, ballot) => {
   if (stated && isText(data.county) && !idMatches(ballotId, data.state, data.county)) {
     fail(["county"], "ballot-id-mismatch");
   }
-  if (typeof data.slug !== "string" || !/^[a-z0-9]{6}$/.test(data.slug))
+  if (typeof data.slug !== "string" || !SLUG_PATTERN.test(data.slug))
     fail(["slug"], "slug-invalid");
   for (const key of ["confirmed_supersedes", "retired_companions"]) {
     const list = data[key];

@@ -23,8 +23,13 @@ const confirm = async (question) => {
   try {
     const answer = await new Promise((resolve) => {
       rl.question(question, resolve);
-      // Ctrl-D: no answer is a no.
+      // Ctrl-D or Ctrl-C: no answer is a no, so the caller can undo its work.
       rl.on("close", () => resolve(""));
+      rl.on("SIGINT", () => {
+        // Ctrl-C echoes nothing, so end the question's line.
+        process.stdout.write("\n");
+        rl.close();
+      });
     });
     return /^(y|yes)$/i.test(answer.trim());
   } finally {

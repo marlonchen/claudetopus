@@ -5,10 +5,23 @@
 // The recorded GitHub id of this skill's public source repo, marlonchen/claudetopus (Rule 8).
 const SOURCE_REPO_ID = "1373776339";
 
+// page.md: the page budget in bytes, over which publish warns (SKILL.md step
+// 6.5), and the publish device check, in order.
+const PAGE_BUDGET = 1024 * 1024;
+const DEVICE_CHECK = [
+  "iPhone Safari at the largest text size.",
+  "One Android phone in Chrome.",
+  "VoiceOver through one full race.",
+  'A chip and a "Next on your ballot" link each land on their target.',
+  "Dark mode on both phones.",
+];
+
 // SKILL.md Layout: the <election> directory.
 const ELECTION_PATTERN = /^[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*$/;
 // ballot-format.md, Ballot ids.
 const BALLOT_ID_PATTERN = /^[a-z]{2}-[a-z]+(-[a-z]+)*-[1-9][0-9]?$/;
+// ballot-format.md: a ballot's public slug, also its Pages folder name.
+const SLUG_PATTERN = /^[a-z0-9]{6}$/;
 // ballot-format.md, Ids: contest, candidate and official ids. Snapshot names use it too.
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -264,6 +277,7 @@ module.exports = {
   ALWAYS_REVIEWED,
   BALLOT_ID_PATTERN,
   CHECKLIST_ITEMS,
+  DEVICE_CHECK,
   ELECTION_PATTERN,
   EXCERPT_LENGTH,
   EXEMPTION,
@@ -274,6 +288,7 @@ module.exports = {
   LEDGER,
   LEFTOVER,
   OFFICE_TYPES,
+  PAGE_BUDGET,
   POSITIONS_ISSUES,
   ROLES,
   SAYS_ONLY,
@@ -281,6 +296,7 @@ module.exports = {
   SECTION_STATES,
   SECTIONS,
   SHORT_PAGE,
+  SLUG_PATTERN,
   SOURCE_REPO_ID,
   STATUSES,
   VIEW,

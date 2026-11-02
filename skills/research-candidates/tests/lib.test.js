@@ -11,6 +11,7 @@ const os = require("node:os");
 const { ballotIdPrefix } = require("../scripts/lib/ballot-check");
 const { voteForCount } = require("../scripts/lib/ballot-match");
 const { withLock } = require("../scripts/lib/snapshot-store");
+const { pushPage } = require("../scripts/lib/pages");
 const { CLASSES } = require("../scripts/lib/privacy");
 const { combineHops, conflicts, matchUrl, parseMatch } = require("../scripts/lib/tiers");
 
@@ -285,6 +286,20 @@ describe("constants match the reference text they come from", () => {
       constants.ABBREVIATIONS,
     );
   });
+  it("the device check and the page budget are the ones page.md gives", () => {
+    const page = read("references/page.md");
+    const list = page.match(/\*\*Publish device check\*\*[^\n]*\n\n((?:\d+\. [^\n]+\n)+)/);
+    assert.ok(list, "page.md has no numbered Publish device check list");
+    assert.deepEqual(
+      list[1]
+        .trim()
+        .split("\n")
+        .map((line) => line.replace(/^\d+\. /, "")),
+      constants.DEVICE_CHECK,
+    );
+    assert.match(page, /Page budget: the whole file should stay under 1MB\./);
+    assert.equal(constants.PAGE_BUDGET, 1024 * 1024);
+  });
   it("the API key variables are the ones snapshot-format.md names", () => {
     const named = read("references/snapshot-format.md").match(
       /environment variables the scripts read \(([^)]*)\)/,
@@ -376,7 +391,7 @@ describe("each command's output codes are the ones its reference lists", () => {
   // review-list's own module (review-list.md, Command line).
   const REVIEW_LIST = ["review-list.js"];
   // publish's own modules (page.md, Command line).
-  const PUBLISH = ["publish.js", "ballot-gate.js", "page.js", "page-scan.js"];
+  const PUBLISH = ["publish.js", "ballot-gate.js", "page.js", "page-scan.js", "pages.js"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");
@@ -613,6 +628,18 @@ describe("snapshot-format.md, Body: an API response as key: value records", () =
   it("gives no text for invalid JSON, a scalar, or an empty object or array", () => {
     for (const given of ["{not json", '"text"', "42", "null", "{}", "[]"]) {
       assert.equal(jsonToText(given), "", given);
+    }
+  });
+});
+
+describe("pages: pushPage", () => {
+  it("refuses a slug that is not one before it builds a path from it", async () => {
+    for (const slug of ["../ab12", "k3x9q/", "K3X9QA", "", undefined]) {
+      await assert.rejects(
+        pushPage({ slug, config: {} }),
+        (error) => error.line === "ballot.yaml slug-invalid slug",
+        String(slug),
+      );
     }
   });
 });

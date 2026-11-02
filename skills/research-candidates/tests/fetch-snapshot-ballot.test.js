@@ -753,6 +753,7 @@ describe("the data repo's Claude Code settings", () => {
       "Edit(/**/snapshots.sha256)",
       "Edit(/**/search-log/**)",
       "Edit(/**/ballot.ledger)",
+      "Edit(/**/published.log)",
       "Edit(/downloads/**)",
     ]) {
       assert.ok(deny.includes(rule), `${rule} is not denied`);
@@ -763,6 +764,8 @@ describe("the data repo's Claude Code settings", () => {
       `cd x && ${script} --ballot`,
       "node scripts/ballot-check --show",
       "node scripts/publish --show",
+      `node scripts/publish --push ${BALLOT}`,
+      `node scripts/publish --device-check ${BALLOT}`,
       `${script} --keep-short ${BALLOT} us-house-07 _race page https://county.example.gov/`,
     ]) {
       assert.ok(bashDenies(command), `not denied: ${command}`);
@@ -774,6 +777,8 @@ describe("the data repo's Claude Code settings", () => {
       "rg --files",
       "git commit --file=msg.txt",
       "git status --short",
+      `node scripts/publish ${BALLOT}`,
+      "git push --push-option=x origin main",
     ]) {
       assert.ok(!bashDenies(command), `denied: ${command}`);
     }
@@ -820,6 +825,9 @@ describe("the data repo's Claude Code settings", () => {
           "researcher-only-mode",
         ],
         [bash(`F=x; node scripts/ballot-check "--show"`), "researcher-only-mode"],
+        [bash(`node scripts/publish --pu''sh ${BALLOT}`), "researcher-only-mode"],
+        [bash(`yes | node scripts/publish --device-check ${BALLOT}`), "researcher-only-mode"],
+        [bash(`echo k3x9qa >> ${BALLOT}/published.log`), "script-only-file"],
         [
           bash(
             `${script} --keep-short ${BALLOT} us-house-07 _race page https://county.example.gov/`,
@@ -867,6 +875,8 @@ describe("the data repo's Claude Code settings", () => {
         bash("git branch --show-current && git rev-parse --show-toplevel"),
         bash("rg --files sources/ | head"),
         bash("git commit --file=msg.txt"),
+        bash(`node scripts/publish ${BALLOT}`),
+        bash("git push --push-option=x origin main"),
         bash("git status --short && git log --shortstat -1"),
         bash("grep -rn 'empty' sources/us-house-07"),
         {

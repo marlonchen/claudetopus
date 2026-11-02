@@ -5,11 +5,14 @@
       "Edit(/**/snapshots.sha256)",
       "Edit(/**/search-log/**)",
       "Edit(/**/ballot.ledger)",
+      "Edit(/**/published.log)",
       "Edit(/downloads/**)",
       "Bash(*fetch-snapshot*--ballot*)",
       "Bash(*fetch-snapshot*--keep-short*)",
       "Bash(*ballot-check*--show*)",
-      "Bash(*publish*--show*)"
+      "Bash(*publish*--show*)",
+      "Bash(*publish*--push*)",
+      "Bash(*publish*--device-check*)"
     ]
   },
   "hooks": {

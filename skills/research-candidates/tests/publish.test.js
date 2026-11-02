@@ -19,8 +19,9 @@ const {
 } = require("./publish-fixture");
 
 // publish (SKILL.md step 6.1-6.2, page.md), run as a subprocess against a temp
-// data repo with real git (seam 1). The privacy scan and the push are later
-// steps; this covers the gates and the render to site/index.html.
+// data repo with real git (seam 1): the gates and the render to
+// site/index.html. The privacy scan is in publish-scan.test.js and the push in
+// publish-push.test.js.
 
 afterEach(() => {
   while (repos.length) repos.pop().cleanup();
@@ -193,6 +194,23 @@ describe("publish: ballot gate, history", () => {
       `search-log/us-house-07.tsv history-lost-line ${lost}`,
       `snapshots.sha256 history-lost-line ${lost}`,
     ]);
+  });
+
+  it("refuses a publish record that is not committed, or whose commit lost a line", async () => {
+    const data = await setup();
+    const record = `${BALLOT}/published.log`;
+    data.write(record, "k3x9qa\n");
+    const uncommitted = await publish(data);
+    assert.deepStrictEqual(lines(uncommitted), ["published.log uncommitted"]);
+    assert.ok(!data.exists(SITE));
+    commit(data);
+    data.write(record, "");
+    commit(data);
+    const lost = head(data);
+    data.write(record, "k3x9qa\n");
+    commit(data);
+    const result = await publish(data);
+    assert.deepStrictEqual(lines(result), [`published.log history-lost-line ${lost}`]);
   });
 
   it("checks every commit, those on a merged branch included", async () => {

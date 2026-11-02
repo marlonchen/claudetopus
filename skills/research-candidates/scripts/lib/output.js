@@ -55,4 +55,4 @@ const runCommand = async (body) => {
   }
 };
 
-module.exports = { Failure, Failures, runCommand };
+module.exports = { Failure, Failures, report, runCommand };
