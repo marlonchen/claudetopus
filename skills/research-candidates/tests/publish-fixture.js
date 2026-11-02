@@ -420,7 +420,9 @@ const pagesSetup = (data, { seed, gh = { visibility: "PUBLIC", id: 77 } } = {}) 
   };
   repos.push(pages);
   if (seed) pages.pushRemote(seed);
-  pagesGit(stub, "clone", "-q", PAGES_URL, dir);
+  // A clone of an empty repo names its branch by init.defaultBranch, which is
+  // `master` where no config sets it (CI), not by the remote's `main`.
+  pagesGit(stub, "-c", "init.defaultBranch=main", "clone", "-q", PAGES_URL, dir);
   return pages;
 };
 
