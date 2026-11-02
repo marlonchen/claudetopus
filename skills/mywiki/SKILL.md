@@ -257,7 +257,7 @@ Run these mechanically with `node <skill-dir>/scripts/check_evidence.js <project
 
 **Source fidelity** — reported suspects are candidates, not verdicts: derived values and product names may appear. Judge each against the raw context and report only real mismatches.
 
-**Evidence errors** — articles the script cannot verify (missing Raw field, unresolvable Raw links, or Raw links escaping `<configured-source>/`). These always need a decision, not a fix from the script.
+**Evidence errors** — articles the script cannot verify (missing Raw field, unresolvable Raw links, Raw links escaping `<configured-source>/`, or Raw links resolving into `.wiki/`). These always need a decision, not a fix from the script.
 
 **Unreferenced raw files** — files logged with a No material disposition are excluded; everything else is a genuine backlog reminder.
 
@@ -306,7 +306,13 @@ exclude drafts/*
 include drafts/pinned.md
 ```
 
-`scripts/check_evidence.js` reads the same file, so lint's Unreferenced-source inventory respects these filters. Filtering does not affect fidelity or evidence checks: an article's Raw links must resolve inside the source directory whether or not a filter would have excluded them.
+`scripts/check_evidence.js` reads the same file, so lint's Unreferenced-source inventory respects these filters. Filtering does not affect fidelity or evidence checks: an article's Raw links must lie inside the source directory whether or not a filter would have excluded them.
+
+**Linked sources** — symlinks in the source directory are followed, so a folder synced from elsewhere (an Obsidian vault, say) can be linked in rather than copied:
+
+- A Raw link is inside the source directory if its written path is, wherever the symlink points. Links resolve from the article's directory as written: `..` collapses before any symlink is followed, so `raw/vault/../x.md` means `raw/x.md`.
+- A file reached by more than one path is listed once, under the path that needs no symlink if there is one. A filter or a No material entry that names any of its paths applies to it.
+- `.wiki/` is never a source. A Raw link that resolves into it is an evidence error, and a linked folder that contains the project skips it. Symlinks inside `.wiki/` are not followed.
 
 ---
 
