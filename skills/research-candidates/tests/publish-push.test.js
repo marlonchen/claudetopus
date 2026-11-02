@@ -180,6 +180,53 @@ describe("publish --push: the push", () => {
     assert.strictEqual(pages.remoteFile("notes.txt"), null);
   });
 
+  it("refuses when pages_dir gained a commit while it asked, and pushes neither", async () => {
+    const data = await setup();
+    const pages = pagesSetup(data);
+    // Another terminal, or a session, commits in pages_dir during the question.
+    const stray =
+      `cd ${pages.dir} && echo secret > private.txt && git add private.txt && ` +
+      "git commit -q -m notes -- private.txt";
+    const result = await publishPush(data, { answers: ["y", { run: stray, answer: "y" }] });
+    assert.strictEqual(last(result), "pages_dir pages-not-at-origin");
+    assert.strictEqual(result.status, 1);
+    assert.doesNotMatch(result.stdout, URL_LINE);
+    assert.strictEqual(pages.remoteFile("private.txt"), null);
+    assert.strictEqual(pages.remoteFile(PAGE), null);
+    assert.ok(!data.exists(RECORD));
+    clean(pages);
+  });
+
+  it("refuses to push a page commit that sits on any commit but origin's", async () => {
+    const data = await setup();
+    const pages = pagesSetup(data);
+    // A Pages repo hook that slips a commit in under the page's, which then
+    // changes only the page, to the scanned bytes.
+    const hook = path.join(pages.dir, ".git", "hooks", "post-commit");
+    fs.writeFileSync(
+      hook,
+      [
+        "#!/bin/sh",
+        '[ -n "$STRAY" ] && exit 0',
+        "export STRAY=1",
+        "git reset -q --soft HEAD^ 2>/dev/null || git update-ref -d HEAD",
+        "echo secret > private.txt && git add private.txt",
+        "git commit -q -m notes -- private.txt",
+        `git commit -q -m "publish k3x9qa"`,
+        "",
+      ].join("\n"),
+    );
+    fs.chmodSync(hook, 0o755);
+    const result = await publishPush(data);
+    assert.strictEqual(
+      pages.git("diff-tree", "--no-commit-id", "-r", "--name-only", "HEAD"),
+      `${PAGE}\n`,
+    );
+    assert.strictEqual(last(result), `${PAGE} copy-mismatch`);
+    assert.strictEqual(pages.remoteFile("private.txt"), null);
+    assert.strictEqual(pages.remoteFile(PAGE), null);
+  });
+
   it("pushes HEAD to origin's branch even when git is set to push elsewhere", async () => {
     const data = await setup();
     const pages = pagesSetup(data);

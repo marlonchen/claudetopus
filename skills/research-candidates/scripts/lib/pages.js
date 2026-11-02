@@ -107,8 +107,13 @@ const worktreeHoldsSkill = (dir) => {
     );
 };
 
+// HEAD's commit, or null on an unborn branch.
+const headCommit = (dir) =>
+  run(dir, ["rev-parse", "--verify", "-q", "HEAD^{commit}"])?.trim() || null;
+
 // Step 6.4: refuse a Pages repo that could take the page anywhere but a
-// clean, current clone of pages_repo. Returns its real path.
+// clean, current clone of pages_repo. Returns origin/<branch>'s commit, which
+// HEAD is at, or null for a new, empty Pages repo.
 const checkPages = (root, { repo, dir: given, branch }) => {
   const dir = resolvePagesDir(root, given);
   if (dir === fs.realpathSync(root) || commonDir(dir) === commonDir(root))
@@ -154,9 +159,8 @@ const checkPages = (root, { repo, dir: given, branch }) => {
   const live = /^([0-9a-f]{40,64})\tHEAD$/m.exec(symref);
   if (live) refuseSkillAt(dir, live[1], "origin/HEAD");
   // A new, empty Pages repo has neither: no origin/<branch> and an unborn branch.
-  const head = run(dir, ["rev-parse", "--verify", "-q", "HEAD^{commit}"])?.trim() || null;
-  if (head !== tip) throw new Failure(WHERE, "pages-not-at-origin");
-  return dir;
+  if (headCommit(dir) !== tip) throw new Failure(WHERE, "pages-not-at-origin");
+  return tip;
 };
 
 // The Pages repo's lock, in its git directory so the worktree stays clean.
@@ -277,7 +281,7 @@ const pushPage = async ({ root, ballotDir, config, slug, page, contests, deviceC
   const target = `${slug}/index.html`;
   const dir = resolvePagesDir(root, pages.dir);
   return withPagesLock(dir, async () => {
-    checkPages(root, pages);
+    const tip = checkPages(root, pages);
     const folder = fs.lstatSync(path.join(dir, slug), { throwIfNoEntry: false });
     const file = fs.lstatSync(path.join(dir, target), { throwIfNoEntry: false });
     // Never write through a link, or over something that is not a page.
@@ -319,6 +323,9 @@ const pushPage = async ({ root, ballotDir, config, slug, page, contests, deviceC
       }
       if (!(await confirm(`Commit ${target} and push it to ${pages.repo} ${pages.branch}? [y/N] `)))
         throw new Failure(target, "not-confirmed");
+      // The push sends every commit HEAD has over origin/<branch>, so one
+      // made in pages_dir while the questions were open would go public too.
+      if (headCommit(dir) !== tip) throw new Failure(WHERE, "pages-not-at-origin");
     } catch (error) {
       restore();
       throw error;
@@ -333,7 +340,8 @@ const pushPage = async ({ root, ballotDir, config, slug, page, contests, deviceC
       throw new Failure(WHERE, "git-failed");
     }
     // The commit re-reads the file and runs the Pages repo's hooks: push it
-    // only if it changed nothing but the page, to the bytes that were scanned.
+    // only if it changed nothing but the page, to the bytes that were scanned,
+    // and sits right on origin/<branch>, so it is all the push sends.
     const changed = must(dir, [
       "diff-tree",
       "--root",
@@ -343,7 +351,12 @@ const pushPage = async ({ root, ballotDir, config, slug, page, contests, deviceC
       "--name-only",
       "HEAD",
     ]);
-    if (changed !== `${target}\0` || must(dir, ["rev-parse", `HEAD:${target}`]).trim() !== blob)
+    const parent = run(dir, ["rev-parse", "--verify", "-q", "HEAD^"])?.trim() || null;
+    if (
+      changed !== `${target}\0` ||
+      must(dir, ["rev-parse", `HEAD:${target}`]).trim() !== blob ||
+      parent !== tip
+    )
       throw new Failure(target, "copy-mismatch");
     if (!interactive(dir, ["push", "origin", `HEAD:refs/heads/${pages.branch}`]))
       throw new Failure(target, "push-rejected");

@@ -239,8 +239,10 @@ const runCli = (script, args, { cwd, env = {} }) =>
 // Runs argv on a new pseudo-terminal, so stdin and stdout are both TTYs, as in
 // the researcher's own terminal, unless `pipe` is "stdin" or "stdout": that
 // one is a pipe instead. Each time the output shows another "[y/N] " it types
-// the next of `answers` (a JSON list) and Enter. Prints everything the
-// terminal (and a piped stdout) showed; exits with the child's code.
+// the next of `answers` (a JSON list) and Enter; an answer that is
+// { run, answer } first runs the shell command `run` and waits for it. Prints
+// everything the terminal (and a piped stdout) showed; exits with the child's
+// code.
 const PTY_RUNNER = `
 import json, os, select, subprocess, sys, time
 answers, pipe = json.loads(sys.argv[1]), sys.argv[2]
@@ -270,7 +272,11 @@ while time.time() < deadline:
         break
     out += chunk
     if asked < len(answers) and out.count(b"[y/N] ") > asked:
-        os.write(master, answers[asked].encode() + b"\\r")
+        answer = answers[asked]
+        if isinstance(answer, dict):
+            subprocess.run(answer["run"], shell=True, check=True, stdout=subprocess.DEVNULL)
+            answer = answer["answer"]
+        os.write(master, answer.encode() + b"\\r")
         asked += 1
 # A child still waiting (on a prompt never shown) fails rather than hangs.
 if child.poll() is None:
@@ -284,7 +290,8 @@ sys.exit(child.returncode)
 
 // Run a command in scripts/ on a pseudo-terminal (PTY_RUNNER), with CLAUDECODE
 // unset unless `env` sets it. `answer` is the reply to each prompt in turn: a
-// list, or one string for a single prompt. Resolves with its exit code and
+// list, or one string for a single prompt; a reply can be { run, answer }, to
+// run a shell command in `cwd` just before typing it. Resolves with its exit code and
 // what the terminal showed, without escape sequences and with line ends as "\n".
 const runInTty = (script, args, { cwd, env = {}, answer = "y", pipe = "none" }) =>
   new Promise((resolve) => {
