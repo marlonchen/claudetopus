@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
 const { BALLOT, git, runCli } = require("./harness");
-const { pagesSetup, publishPush, repos, setup } = require("./publish-fixture");
+const { commit, pagesSetup, publishPush, repos, setup } = require("./publish-fixture");
 
 // publish --push and --device-check (SKILL.md steps 6.4-6.6), run on a
 // pseudo-terminal as the researcher runs them, against a temp data repo and a
@@ -20,6 +20,7 @@ afterEach(() => {
 const SITE = `${BALLOT}/site/index.html`;
 const RECORD = `${BALLOT}/published.log`;
 const PAGE = "k3x9qa/index.html";
+const LOCK_KEY = ".git/research-candidates-publish.lock";
 const URL_LINE = /^https:\/\/me\.github\.io\/ballots\/k3x9qa\/$/m;
 
 // The last line the run printed.
@@ -35,6 +36,8 @@ const published = async (options) => {
   const pages = pagesSetup(data, options);
   const first = await publishPush(data);
   assert.strictEqual(first.status, 0, first.stdout);
+  // The researcher commits the record before the next publish (A1 gate).
+  commit(data, "published");
   return { data, pages };
 };
 
@@ -227,6 +230,46 @@ describe("publish --push: the push", () => {
     assert.strictEqual(pages.remoteFile(PAGE), null);
   });
 
+  it("pushes no tag along with the page, even with push.followTags", async () => {
+    const { data, pages } = await published();
+    pages.git("config", "push.followTags", "true");
+    pages.git("tag", "-a", "notes", "-m", "a private note");
+    rename(data, "Alex");
+    const result = await publishPush(data, { answers: ["y"] });
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.strictEqual(git(pages.bare, "tag", "-l"), "");
+  });
+
+  it("undoes the copy when the slug cannot be recorded", async () => {
+    const data = await setup();
+    const pages = pagesSetup(data);
+    // A record that cannot be appended to.
+    fs.mkdirSync(path.join(data.root, RECORD));
+    const result = await publishPush(data);
+    assert.strictEqual(result.status, 1);
+    assert.doesNotMatch(result.stdout, URL_LINE);
+    assert.strictEqual(pages.remoteFile(PAGE), null);
+    clean(pages);
+  });
+
+  it("refuses an author or committer email that is not a GitHub noreply address", async () => {
+    const data = await setup();
+    const pages = pagesSetup(data);
+    data.env.GIT_COMMITTER_EMAIL = "sam@example.com";
+    const committer = await publishPush(data);
+    assert.strictEqual(last(committer), "pages_dir pages-identity-public committer");
+    assert.strictEqual(committer.status, 1);
+    assert.doesNotMatch(committer.stdout, /\[y\/N\]/);
+    clean(pages);
+    data.env.GIT_COMMITTER_EMAIL = "sam@users.noreply.github.com";
+    data.env.GIT_AUTHOR_EMAIL = "sam@example.com";
+    const author = await publishPush(data);
+    assert.strictEqual(last(author), "pages_dir pages-identity-public author");
+    data.env.GIT_AUTHOR_EMAIL = "12345+sam@users.noreply.github.com";
+    const ok = await publishPush(data);
+    assert.strictEqual(ok.status, 0, ok.stdout);
+  });
+
   it("pushes HEAD to origin's branch even when git is set to push elsewhere", async () => {
     const data = await setup();
     const pages = pagesSetup(data);
@@ -254,6 +297,7 @@ describe("publish --push: the push", () => {
     assert.strictEqual(pages.git("log", "-1", "--format=%s").trim(), "publish k3x9qa");
     assert.strictEqual(data.read(RECORD), "k3x9qa\n");
     fs.rmSync(hook);
+    commit(data, "published");
     const next = await publishPush(data);
     assert.strictEqual(last(next), "pages_dir pages-not-at-origin");
   });
@@ -343,6 +387,7 @@ describe("publish --push: the Pages repo (step 6.4)", () => {
     setPublishYaml(data, "pages_dir", "~/clone");
     const ok = await publishPush({ ...data, env });
     assert.strictEqual(ok.status, 0, ok.stdout);
+    commit(data, "published");
     fs.mkdirSync(path.join(pages.dir, "sub"));
     setPublishYaml(data, "pages_dir", path.join(pages.dir, "sub"));
     await refusedBeforeFetch(data, pages, "pages_dir pages-not-repo");
@@ -437,16 +482,37 @@ describe("publish --push: the Pages repo (step 6.4)", () => {
     const pages = pagesSetup(data);
     const lock = path.join(pages.dir, ".git", "research-candidates-publish.lock");
     fs.writeFileSync(lock, `${process.pid}\n`);
-    await refusedBeforeFetch(data, pages, "pages_dir pages-locked");
+    await refusedBeforeFetch(data, pages, `pages_dir pages-locked ${LOCK_KEY}`);
     assert.ok(fs.existsSync(lock));
     fs.writeFileSync(lock, "999999999\n");
     // Another run is taking the dead lock over right now.
     fs.writeFileSync(`${lock}.break`, `${process.pid}\n`);
-    await refusedBeforeFetch(data, pages, "pages_dir pages-locked");
-    fs.rmSync(`${lock}.break`);
+    await refusedBeforeFetch(data, pages, `pages_dir pages-locked ${LOCK_KEY}.break`);
+    // Until a minute has passed, when its taker must have died holding it.
+    const old = new Date(Date.now() - 120_000);
+    fs.utimesSync(`${lock}.break`, old, old);
     const result = await publishPush(data);
     assert.strictEqual(result.status, 0, result.stdout);
     assert.ok(!fs.existsSync(lock));
+    assert.ok(!fs.existsSync(`${lock}.break`));
+  });
+
+  it("fetches every branch, so a single-branch clone still reads the default branch", async () => {
+    const data = await setup();
+    const pages = pagesSetup(data);
+    pages.git("config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main");
+    pages.pushRemote({ "index.html": "home\n" }, { branch: "gh-pages", head: true });
+    const result = await publishPush(data);
+    assert.strictEqual(result.status, 0, result.stdout);
+  });
+
+  it("refuses a clone whose origin/<branch> the remote has deleted", async () => {
+    const { data, pages } = await published();
+    git(pages.bare, "update-ref", "-d", "refs/heads/main");
+    rename(data, "Alex");
+    const result = await publishPush(data);
+    assert.strictEqual(last(result), "pages_dir pages-not-at-origin");
+    assert.strictEqual(pages.remoteFile(PAGE), null);
   });
 
   it("refuses a copy git would stage as other bytes, and unstages it", async () => {

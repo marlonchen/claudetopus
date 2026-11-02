@@ -20,6 +20,8 @@ const DEVICE_CHECK = [
 const ELECTION_PATTERN = /^[0-9]{4}-[a-z0-9]+(-[a-z0-9]+)*$/;
 // ballot-format.md, Ballot ids.
 const BALLOT_ID_PATTERN = /^[a-z]{2}-[a-z]+(-[a-z]+)*-[1-9][0-9]?$/;
+// ballot-format.md: a ballot's public slug, also its Pages folder name.
+const SLUG_PATTERN = /^[a-z0-9]{6}$/;
 // ballot-format.md, Ids: contest, candidate and official ids. Snapshot names use it too.
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -294,6 +296,7 @@ module.exports = {
   SECTION_STATES,
   SECTIONS,
   SHORT_PAGE,
+  SLUG_PATTERN,
   SOURCE_REPO_ID,
   STATUSES,
   VIEW,

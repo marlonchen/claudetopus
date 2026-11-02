@@ -11,6 +11,7 @@ const os = require("node:os");
 const { ballotIdPrefix } = require("../scripts/lib/ballot-check");
 const { voteForCount } = require("../scripts/lib/ballot-match");
 const { withLock } = require("../scripts/lib/snapshot-store");
+const { pushPage } = require("../scripts/lib/pages");
 const { CLASSES } = require("../scripts/lib/privacy");
 const { combineHops, conflicts, matchUrl, parseMatch } = require("../scripts/lib/tiers");
 
@@ -627,6 +628,18 @@ describe("snapshot-format.md, Body: an API response as key: value records", () =
   it("gives no text for invalid JSON, a scalar, or an empty object or array", () => {
     for (const given of ["{not json", '"text"', "42", "null", "{}", "[]"]) {
       assert.equal(jsonToText(given), "", given);
+    }
+  });
+});
+
+describe("pages: pushPage", () => {
+  it("refuses a slug that is not one before it builds a path from it", async () => {
+    for (const slug of ["../ab12", "k3x9q/", "K3X9QA", "", undefined]) {
+      await assert.rejects(
+        pushPage({ slug, config: {} }),
+        (error) => error.line === "ballot.yaml slug-invalid slug",
+        String(slug),
+      );
     }
   });
 });

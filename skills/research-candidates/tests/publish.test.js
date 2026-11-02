@@ -196,6 +196,23 @@ describe("publish: ballot gate, history", () => {
     ]);
   });
 
+  it("refuses a publish record that is not committed, or whose commit lost a line", async () => {
+    const data = await setup();
+    const record = `${BALLOT}/published.log`;
+    data.write(record, "k3x9qa\n");
+    const uncommitted = await publish(data);
+    assert.deepStrictEqual(lines(uncommitted), ["published.log uncommitted"]);
+    assert.ok(!data.exists(SITE));
+    commit(data);
+    data.write(record, "");
+    commit(data);
+    const lost = head(data);
+    data.write(record, "k3x9qa\n");
+    commit(data);
+    const result = await publish(data);
+    assert.deepStrictEqual(lines(result), [`published.log history-lost-line ${lost}`]);
+  });
+
   it("checks every commit, those on a merged branch included", async () => {
     const data = await setup();
     const log = `${BALLOT}/search-log/us-house-07.tsv`;

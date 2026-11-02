@@ -2,9 +2,9 @@
 
 // publish's ballot gate (SKILL.md step 6.1), which refuses the whole publish:
 // ballot-check passes, every snapshot matches snapshots.sha256, and review/,
-// tiers.yaml, snapshots.sha256 and search-log/ are exactly as committed, so
-// every acceptance, tier, hash and search is in one of the researcher's
-// commits. The caller holds the ballot lock. Failures are `location code
+// tiers.yaml, snapshots.sha256, search-log/ and published.log are exactly as
+// committed, so every acceptance, tier, hash, search and published slug is in
+// one of the researcher's commits. The caller holds the ballot lock. Failures are `location code
 // [key]` lines (Rule 5): a path is named only by its area, or by a contest id
 // of ballot.yaml, never by any other file name, which a planted file can take
 // from private text.
@@ -42,6 +42,7 @@ const areasOf = (ballot) => [
   { at: "tiers.yaml", path: "tiers.yaml" },
   { at: "snapshots.sha256", path: `${ballot}/snapshots.sha256` },
   { at: "search-log", path: `${ballot}/search-log` },
+  { at: "published.log", path: `${ballot}/published.log` },
 ];
 // Is a repo path the area itself or under it? `fold` compares in any case.
 const within = (file, area, fold = false) => {
@@ -142,7 +143,7 @@ const parseRaw = (out, commit) => {
 // directory in lower case: its kind, the contest it is named for, and where
 // a failure is located (the file for a contest of ballot.yaml, else its area).
 const ruleOf = (rel, ids) => {
-  if (rel === "snapshots.sha256") return { kind: "log", at: rel };
+  if (rel === "snapshots.sha256" || rel === "published.log") return { kind: "log", at: rel };
   const named = (kind, contest, area) => ({ kind, contest, at: ids.has(contest) ? rel : area });
   let m = /^search-log\/([^/]+)\.tsv$/.exec(rel);
   if (m) return named("log", m[1], "search-log");
@@ -184,7 +185,9 @@ const history = (root, ballot, ids, refresh) => {
     .filter(Boolean)
     .map((line) => line.split(" "));
   if (!commits.every((c) => c.every((h) => HASH.test(h)))) throw gitFailed();
-  const specs = ["snapshots.sha256", "search-log", "review"].map((p) => `:(icase)${ballot}/${p}`);
+  const specs = ["snapshots.sha256", "published.log", "search-log", "review"].map(
+    (p) => `:(icase)${ballot}/${p}`,
+  );
   const diff = ["diff-tree", "-r", "--raw", "-z", "--no-renames", "--no-abbrev"];
   // Commits with one parent through one diff-tree; a merge once per parent.
   const changes = [];

@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { DEVICE_CHECK, PAGE_BUDGET, SOURCE_REPO_ID } = require("./constants");
+const { DEVICE_CHECK, PAGE_BUDGET, SLUG_PATTERN, SOURCE_REPO_ID } = require("./constants");
 const { Failure } = require("./output");
 const { githubRepo, remoteUrls, repoFacts } = require("./repo-guard");
 const { withLock, writeSynced } = require("./snapshot-store");
@@ -21,6 +21,8 @@ const WHERE = "pages_dir";
 // The ballot's record of the slugs it has published (SKILL.md Layout).
 const RECORD = "published.log";
 const LOCK = "research-candidates-publish.lock";
+const BREAK_STALE_MS = 60_000;
+const NOREPLY = /<[^<>\s@]+@users\.noreply\.github\.com>$/i;
 const SKILL_FILE = /^skills\/[^/]+\/SKILL\.md$/i;
 const PAGES_REPO = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/;
 
@@ -145,7 +147,13 @@ const checkPages = (root, { repo, dir: given, branch }) => {
     throw new Failure(WHERE, "pages-wrong-branch");
   if (must(dir, ["status", "--porcelain"]) !== "") throw new Failure(WHERE, "pages-dirty");
 
-  if (!interactive(dir, ["fetch", "-q", "origin"])) throw new Failure(WHERE, "pages-fetch-failed");
+  // Every branch, whatever refspec the clone has (a --single-branch clone
+  // would miss the default branch's commit), and no tracking ref the remote
+  // has deleted.
+  if (
+    !interactive(dir, ["fetch", "-q", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*"])
+  )
+    throw new Failure(WHERE, "pages-fetch-failed");
   const tracking = `refs/remotes/origin/${branch}`;
   let tip = null;
   if (run(dir, ["show-ref", "--verify", "-q", tracking]) !== null) {
@@ -166,9 +174,13 @@ const checkPages = (root, { repo, dir: given, branch }) => {
 // The Pages repo's lock, in its git directory so the worktree stays clean.
 // One run holds it from the checks to the push. A lock whose process is gone
 // is taken over, by one run at a time: the taker holds a second lock while it
-// reads the dead one and replaces it, so two runs never both take it.
+// reads the dead one and replaces it, so two runs never both take it. That
+// second lock is held for moments, so one older than BREAK_STALE_MS was left
+// by a run that died holding it, and is removed. A refusal is keyed by the
+// file, from pages_dir, for the researcher to remove if its run is gone.
 const withPagesLock = async (dir, body) => {
   const lock = path.join(commonDir(dir), LOCK);
+  const locked = (file) => new Failure(WHERE, "pages-locked", path.relative(dir, file));
   const mine = `${process.pid} ${crypto.randomBytes(8).toString("hex")}\n`;
   const create = (file) => {
     try {
@@ -181,15 +193,20 @@ const withPagesLock = async (dir, body) => {
   };
   if (!create(lock)) {
     const breaker = `${lock}.break`;
-    if (!create(breaker)) throw new Failure(WHERE, "pages-locked");
+    if (!create(breaker)) {
+      const age = Date.now() - (fs.statSync(breaker, { throwIfNoEntry: false })?.mtimeMs ?? 0);
+      if (age <= BREAK_STALE_MS) throw locked(breaker);
+      fs.rmSync(breaker, { force: true });
+      if (!create(breaker)) throw locked(breaker);
+    }
     try {
       let seen = "";
       try {
         seen = fs.readFileSync(lock, "utf8");
       } catch {}
-      if (alive(Number.parseInt(seen, 10))) throw new Failure(WHERE, "pages-locked");
+      if (alive(Number.parseInt(seen, 10))) throw locked(lock);
       fs.rmSync(lock, { force: true });
-      if (!create(lock)) throw new Failure(WHERE, "pages-locked");
+      if (!create(lock)) throw locked(lock);
     } finally {
       fs.rmSync(breaker, { force: true });
     }
@@ -271,17 +288,34 @@ const pageUrl = (repo, slug) => {
 };
 
 const say = (text = "") => process.stdout.write(`${printable(text)}\n`);
+// `Name <email>` as git will write it into the commit, or null when git has
+// no identity to give.
 const ident = (dir, variable) =>
-  must(dir, ["var", variable]).replace(/ [0-9]+ [+-][0-9]{4}\n?$/, "");
+  run(dir, ["var", variable])?.replace(/ [0-9]+ [+-][0-9]{4}\n?$/, "") ?? null;
+
+// The commit's author and committer are public for good (SKILL.md step 6.5),
+// so each must be a GitHub noreply address.
+const checkIdentity = (dir) => {
+  for (const [variable, key] of [
+    ["GIT_AUTHOR_IDENT", "author"],
+    ["GIT_COMMITTER_IDENT", "committer"],
+  ])
+    if (!NOREPLY.test(ident(dir, variable) ?? ""))
+      throw new Failure(WHERE, "pages-identity-public", key);
+};
 
 // Steps 6.5-6.6 once the Pages repo has passed 6.4: copy, show, ask, commit,
 // push. `page` is the scanned html; `contests` its { title, ready } list.
 const pushPage = async ({ root, ballotDir, config, slug, page, contests, deviceCheck }) => {
+  // ballot-check refused a bad slug, but the paths below are built from it.
+  if (typeof slug !== "string" || !SLUG_PATTERN.test(slug))
+    throw new Failure("ballot.yaml", "slug-invalid", "slug");
   const pages = pagesConfig(config);
   const target = `${slug}/index.html`;
   const dir = resolvePagesDir(root, pages.dir);
   return withPagesLock(dir, async () => {
     const tip = checkPages(root, pages);
+    checkIdentity(dir);
     const folder = fs.lstatSync(path.join(dir, slug), { throwIfNoEntry: false });
     const file = fs.lstatSync(path.join(dir, target), { throwIfNoEntry: false });
     // Never write through a link, or over something that is not a page.
@@ -331,10 +365,15 @@ const pushPage = async ({ root, ballotDir, config, slug, page, contests, deviceC
       throw error;
     }
     // Recorded before the commit, so a crash after it never strands the slug.
-    withLock(ballotDir, () => {
-      if (!recordedSlugs(ballotDir).includes(slug))
-        writeSynced(path.join(ballotDir, RECORD), `${slug}\n`, "a");
-    });
+    try {
+      withLock(ballotDir, () => {
+        if (!recordedSlugs(ballotDir).includes(slug))
+          writeSynced(path.join(ballotDir, RECORD), `${slug}\n`, "a");
+      });
+    } catch (error) {
+      restore();
+      throw error;
+    }
     if (!interactive(dir, ["commit", "-q", "-m", `publish ${slug}`, "--", target])) {
       restore();
       throw new Failure(WHERE, "git-failed");
@@ -358,7 +397,17 @@ const pushPage = async ({ root, ballotDir, config, slug, page, contests, deviceC
       parent !== tip
     )
       throw new Failure(target, "copy-mismatch");
-    if (!interactive(dir, ["push", "origin", `HEAD:refs/heads/${pages.branch}`]))
+    // No tag (push.followTags) or submodule commit (push.recurseSubmodules)
+    // goes along with it.
+    if (
+      !interactive(dir, [
+        "push",
+        "--no-follow-tags",
+        "--recurse-submodules=no",
+        "origin",
+        `HEAD:refs/heads/${pages.branch}`,
+      ])
+    )
       throw new Failure(target, "push-rejected");
     return [`${target} pushed`, pageUrl(pages.repo, slug)];
   });

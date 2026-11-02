@@ -257,7 +257,8 @@ child = subprocess.Popen(
 os.close(slave)
 out = b""
 asked = 0
-deadline = time.time() + 30
+# Room for a whole publish on a loaded machine, under CHILD_TIMEOUT.
+deadline = time.time() + 90
 while time.time() < deadline:
     ready, _, _ = select.select([master], [], [], 0.1)
     if not ready:
