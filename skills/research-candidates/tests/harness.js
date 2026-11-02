@@ -14,6 +14,10 @@ const { spawn, spawnSync } = require("node:child_process");
 
 const SKILL_DIR = path.join(__dirname, "..");
 const SCRIPTS_DIR = path.join(SKILL_DIR, "scripts");
+// Every child the tests spawn is killed after this long, under the test
+// runner's two-minute timeout, so a hung one fails its test and never keeps
+// the file's process alive (.config/mise/tasks/test/js).
+const CHILD_TIMEOUT = { timeout: 100_000, killSignal: "SIGKILL" };
 
 const git = (cwd, ...args) => {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -219,6 +223,7 @@ const runCli = (script, args, { cwd, env = {} }) =>
       cwd,
       env: { ...process.env, CLAUDECODE: "", ...env },
       stdio: ["ignore", "pipe", "pipe"],
+      ...CHILD_TIMEOUT,
     });
     let stdout = "";
     let stderr = "";
@@ -296,7 +301,7 @@ const runInTty = (script, args, { cwd, env = {}, answer = "y", pipe = "none" }) 
         path.join(SCRIPTS_DIR, script),
         ...args,
       ],
-      { cwd, env: base },
+      { cwd, env: base, ...CHILD_TIMEOUT },
     );
     let stdout = "";
     child.stdout.on("data", (chunk) => {
