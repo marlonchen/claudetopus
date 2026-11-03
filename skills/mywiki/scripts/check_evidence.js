@@ -14,11 +14,15 @@
  *    judging them is the reader's job, not this script's.
  * 2. Evidence errors — articles that cannot be verified at all: a missing
  *    Raw field on a non-archive article, Raw links that do not resolve,
- *    or Raw links that escape the source directory (evidence must live in
- *    immutable source files).
+ *    Raw links that escape the source directory, or Raw links that resolve
+ *    into .wiki/ (evidence must live in immutable source files). A link
+ *    whose written path is in the source directory is inside it, even
+ *    through a symlink that points elsewhere.
  * 3. Inventory — source files that no article's Raw field references,
  *    excluding files whose ingest was logged as "no material" and files
- *    that raw.config filters out.
+ *    that raw.config filters out. Symlinks in the source directory are
+ *    followed (those in .wiki/ are not), and a file reached by several
+ *    paths is listed once.
  *
  * Coverage boundary (closed candidate set, frozen): candidates are
  * - quotes of 15+ characters (double-quoted spans and body blockquotes)
@@ -204,6 +208,62 @@ function walkMarkdown(dir) {
   return found;
 }
 
+/**
+ * Every markdown source under dir, as {real, files}: the file's real path
+ * and each path that reaches it, canonical first (the one that needs no
+ * symlink, else the first in sort order), sorted by that canonical path.
+ *
+ * Unlike walkMarkdown, symlinks are followed, so a source directory linked
+ * in from elsewhere (e.g. a synced vault) is walked. A link back to a
+ * directory already on the current path is not, which stops cycles;
+ * dangling links are skipped. Nothing whose real path is under `skip` (the
+ * wiki) is a source, even when a linked vault contains the project.
+ */
+function walkSources(dir, skip) {
+  const realDir = resolvePath(dir);
+  const byReal = new Map();
+  const stack = [[dir, []]];
+  while (stack.length) {
+    const [current, above] = stack.pop();
+    let currentReal;
+    let ancestors;
+    let entries;
+    try {
+      currentReal = fs.realpathSync(current);
+      if (above.includes(currentReal) || isRelativeTo(currentReal, skip)) continue;
+      ancestors = [...above, currentReal];
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      let real = path.join(currentReal, entry.name);
+      let kind = entry;
+      if (entry.isSymbolicLink()) {
+        try {
+          real = fs.realpathSync(full);
+          kind = fs.statSync(real);
+        } catch {
+          continue; // dangling link
+        }
+      }
+      if (kind.isDirectory()) {
+        stack.push([full, ancestors]);
+      } else if (kind.isFile() && entry.name.endsWith(".md") && !isRelativeTo(real, skip)) {
+        if (!byReal.has(real)) byReal.set(real, []);
+        byReal.get(real).push(full);
+      }
+    }
+  }
+  const direct = (file, real) => path.relative(dir, file) === path.relative(realDir, real);
+  const sources = [...byReal].map(([real, files]) => ({
+    real,
+    files: files.sort((a, b) => direct(b, real) - direct(a, real) || comparePathParts(a, b)),
+  }));
+  return sources.sort((a, b) => comparePathParts(a.files[0], b.files[0]));
+}
+
 function isFile(p) {
   try {
     return fs.statSync(p).isFile();
@@ -239,20 +299,20 @@ class SourceConfig {
   }
 
   /**
-   * Does a source-relative path belong to the ingestable set?
+   * Does a source file belong to the ingestable set? `relpaths` are its
+   * source-relative paths: usually one, more when symlinks reach the same
+   * file twice. A pattern matches the file if it matches any of them.
    *
-   * No include patterns means everything is included. When a path matches
+   * No include patterns means everything is included. When a file matches
    * both an include and an exclude, the include wins (raw.config documents
    * includes as taking precedence). Patterns are fnmatch globs, so `*`
    * crosses directory separators.
    */
-  selects(relpath) {
-    const included = this.include.length === 0 || this.include.some((p) => fnmatch(relpath, p));
-    if (!included) return false;
-    if (this.exclude.some((p) => fnmatch(relpath, p))) {
-      return this.include.some((p) => fnmatch(relpath, p));
-    }
-    return true;
+  selects(relpaths) {
+    const matches = (patterns) => patterns.some((p) => relpaths.some((rel) => fnmatch(rel, p)));
+    const included = matches(this.include);
+    if (this.include.length > 0 && !included) return false;
+    return included || !matches(this.exclude);
   }
 }
 
@@ -536,13 +596,24 @@ function checkArticle(article, root, config) {
     if (header.some((line) => ARCHIVED_RE.test(line.trim()))) return { misses: [], errors: [] };
     return { misses: [], errors: ["article has no Raw field"] };
   }
-  const rawRoot = resolvePath(config.dir(root));
+  // A link is contained if it lands in raw/ either as written or once symlinks
+  // resolve: the first lets a source linked into raw/ (e.g. a synced vault) be
+  // cited, the second keeps /var vs /private/var aliases working. Links
+  // resolve from the article's directory as written, so `..` collapses before
+  // any symlink is followed and a `..` escape fails both. Wherever a link
+  // lands, the wiki itself is never evidence.
+  const rawDir = path.resolve(config.dir(root));
+  const rawRoot = resolvePath(rawDir);
+  const wikiRoot = resolvePath(path.join(root, WIKI_DIRNAME));
   const raws = [];
   const errors = [];
   for (const link of links) {
-    const target = resolvePath(path.join(path.dirname(article), link));
-    if (!isRelativeTo(target, rawRoot)) {
+    const written = path.resolve(path.join(path.dirname(article), link));
+    const target = resolvePath(written);
+    if (!isRelativeTo(written, rawDir) && !isRelativeTo(target, rawRoot)) {
       errors.push(`Raw link escapes ${config.source}/: ${link}`);
+    } else if (isRelativeTo(target, wikiRoot)) {
+      errors.push(`Raw link resolves into ${WIKI_DIRNAME}/: ${link}`);
     } else if (!isFile(target)) {
       errors.push(`unresolvable Raw link: ${link}`);
     } else {
@@ -589,10 +660,12 @@ function unreferencedRaws(root, config) {
   const referenced = referencedRaws(root);
   const disposed = noMaterialPaths(path.join(root, WIKI_DIRNAME, "log.md"));
   const missing = [];
-  for (const file of walkMarkdown(rawDir)) {
-    if (!config.selects(relativeToPosix(file, rawDir))) continue;
-    const label = relativeToPosix(file, root);
-    if (!referenced.has(resolvePath(file)) && !disposed.has(label)) missing.push(label);
+  for (const { real, files } of walkSources(rawDir, resolvePath(path.join(root, WIKI_DIRNAME)))) {
+    if (!config.selects(files.map((file) => relativeToPosix(file, rawDir)))) continue;
+    const labels = files.map((file) => relativeToPosix(file, root));
+    if (!referenced.has(real) && !labels.some((label) => disposed.has(label))) {
+      missing.push(labels[0]);
+    }
   }
   return missing;
 }
@@ -626,7 +699,12 @@ function main(argv) {
 
   const results = articles.map((article) => [article, checkArticle(article, root, config)]);
 
-  const label = (article) => relativeToPosix(resolvePath(article), root) ?? article;
+  // Walked articles are under root as written; an argument may reach root
+  // only once symlinks resolve.
+  const label = (article) =>
+    relativeToPosix(path.resolve(article), root) ??
+    relativeToPosix(resolvePath(article), root) ??
+    article;
 
   console.log("# Evidence check\n");
   console.log("## Fidelity suspects");

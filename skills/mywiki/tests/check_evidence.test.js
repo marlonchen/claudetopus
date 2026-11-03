@@ -271,6 +271,16 @@ function withRoot(fn) {
   }
 }
 
+/** A fresh directory outside the root, for sources linked in from elsewhere. */
+function withVault(fn) {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), "mywiki-vault-"));
+  try {
+    return fn(vault);
+  } finally {
+    fs.rmSync(vault, { recursive: true, force: true });
+  }
+}
+
 // --- tests ----------------------------------------------------------------
 
 describe("FidelityCheck", () => {
@@ -854,6 +864,230 @@ describe("RawInventory", () => {
       const out = runChecker(root).stdout;
       hasNot(out, "raw/misc/notes.md");
       has(out, "raw/other/notes.md");
+    });
+  });
+
+  it("follows a symlinked source directory", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      withVault((vault) => {
+        write(vault, "2026-09/30.md", SECOND_RAW);
+        fs.symlinkSync(vault, path.join(root, "raw", "linked"));
+        has(runChecker(root).stdout, "raw/linked/2026-09/30.md");
+      });
+    });
+  });
+
+  it("survives a symlink cycle and a dangling link", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      fs.symlinkSync(path.join(root, "raw"), path.join(root, "raw", "misc", "loop"));
+      fs.symlinkSync(path.join(root, "nowhere"), path.join(root, "raw", "dangling"));
+      const out = runChecker(root).stdout;
+      has(out, "raw/misc/notes.md");
+      hasNot(out, "raw/misc/loop");
+    });
+  });
+
+  it("follows a symlinked markdown file", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      withVault((vault) => {
+        write(vault, "note.md", SECOND_RAW);
+        fs.symlinkSync(path.join(vault, "note.md"), path.join(root, "raw", "misc", "linked.md"));
+        has(runChecker(root).stdout, "raw/misc/linked.md");
+      });
+    });
+  });
+
+  it("cited raw file under a symlinked source is not reported", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      withVault((vault) => {
+        write(vault, "t/cited.md", RAW_CONTENT);
+        write(vault, "t/uncited.md", SECOND_RAW);
+        fs.symlinkSync(vault, path.join(root, "raw", "linked"));
+        write(
+          root,
+          ".wiki/t/cites.md",
+          "# Cites\n\n> Sources: Example, 2026-04-16\n" +
+            "> Raw: [cited](../../raw/linked/t/cited.md)\n\nGhostty reached 42K stars.\n",
+        );
+        const out = runChecker(root).stdout;
+        // Anchor on the inventory line: the cited path is a Raw link elsewhere.
+        has(out, "- raw/linked/t/uncited.md\n");
+        hasNot(out, "- raw/linked/t/cited.md\n");
+      });
+    });
+  });
+
+  it("cites a raw file through a symlinked source", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      withVault((vault) => {
+        write(vault, "t/cited.md", RAW_CONTENT);
+        fs.symlinkSync(vault, path.join(root, "raw", "linked"));
+        write(
+          root,
+          ".wiki/t/cites.md",
+          "# Cites\n\n> Sources: Example, 2026-04-16\n" +
+            "> Raw: [cited](../../raw/linked/t/cited.md)\n\n" +
+            "Ghostty reached 42K stars and 555K forks.\n",
+        );
+        const out = runChecker(root).stdout;
+        hasNot(out, "escapes raw/");
+        hasNot(out, "- 42K");
+        has(out, "- 555K");
+      });
+    });
+  });
+
+  it("checks an article named through a symlink to the project", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      write(
+        root,
+        ".wiki/t/a.md",
+        "# A\n\n> Sources: Example, 2026-04-16\n" +
+          "> Raw: [ghostty](../../raw/ai-research/2026-04-17-ghostty.md)\n\n" +
+          "Ghostty reached 42K stars and 555K forks.\n",
+      );
+      withVault((vault) => {
+        const alias = path.join(vault, "alias");
+        fs.symlinkSync(root, alias);
+        const out = runChecker(root, [path.join(alias, ".wiki", "t", "a.md")]).stdout;
+        hasNot(out, "escapes raw/");
+        hasNot(out, "- 42K");
+        has(out, "\n.wiki/t/a.md\n- 555K");
+      });
+    });
+  });
+
+  it("lists a file reached by several paths once, under its real path", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      fs.symlinkSync("misc", path.join(root, "raw", "aa-alias"));
+      fs.symlinkSync("misc", path.join(root, "raw", "zz-alias"));
+      const out = runChecker(root).stdout;
+      has(out, "- raw/misc/notes.md\n");
+      hasNot(out, "alias");
+    });
+  });
+
+  it("no material and filters apply to a file reached by several paths", () => {
+    const log = "# Wiki Log\n\n## [2026-05-01] ingest | no material: raw/misc/notes.md\n";
+    for (const alias of ["aa-alias", "zz-alias"]) {
+      const run = (setup) =>
+        withRoot((root) => {
+          setup(root);
+          fs.symlinkSync("misc", path.join(root, "raw", alias));
+          return runChecker(root).stdout;
+        });
+      hasNot(
+        run((root) => makeWiki(root, log)),
+        "notes.md",
+      );
+      hasNot(
+        run((root) => {
+          makeWiki(root);
+          write(root, "raw.config", "exclude misc/*\n");
+        }),
+        "notes.md",
+      );
+      has(
+        run((root) => {
+          makeWiki(root);
+          write(root, "raw.config", "include misc/*\n");
+        }),
+        "- raw/misc/notes.md\n",
+      );
+    }
+  });
+
+  it("raw link into the wiki through a symlink is an evidence error", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      fs.symlinkSync(path.join("..", ".wiki"), path.join(root, "raw", "wiki"));
+      write(
+        root,
+        ".wiki/t/self.md",
+        "# Self\n\n> Sources: Example, 2026-04-16\n" +
+          "> Raw: [self](../../raw/wiki/t/self.md)\n\nIt reached 987,654 users.\n",
+      );
+      const out = runChecker(root).stdout;
+      has(out, "Raw link resolves into .wiki/: ../../raw/wiki/t/self.md");
+      hasNot(out, "- raw/wiki/");
+    });
+  });
+
+  it("a linked vault that holds the project does not inventory the wiki", () => {
+    withVault((vault) => {
+      const root = path.join(vault, "proj");
+      makeWiki(root);
+      write(vault, "notes/n.md", SECOND_RAW);
+      fs.symlinkSync(vault, path.join(root, "raw", "vault"));
+      const out = runChecker(root).stdout;
+      has(out, "- raw/vault/notes/n.md\n");
+      hasNot(out, "- raw/vault/proj/");
+    });
+  });
+
+  it("does not follow symlinks inside the wiki", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      withVault((vault) => {
+        write(
+          vault,
+          "linked.md",
+          "# Linked\n\n> Sources: Example, 2026-04-16\n" +
+            "> Raw: [ghostty](../../raw/ai-research/2026-04-17-ghostty.md)\n\n" +
+            "Ghostty reached 777K stars.\n",
+        );
+        fs.symlinkSync(vault, path.join(root, ".wiki", "linked"));
+        fs.symlinkSync(path.join("..", "raw"), path.join(root, ".wiki", "sources"));
+        const out = runChecker(root).stdout;
+        hasNot(out, "777K");
+        hasNot(out, "article has no Raw field");
+      });
+    });
+  });
+
+  it("labels articles in a symlinked wiki by their wiki path", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      withVault((vault) => {
+        fs.renameSync(path.join(root, ".wiki"), path.join(vault, "wiki"));
+        fs.symlinkSync(path.join(vault, "wiki"), path.join(root, ".wiki"));
+        write(
+          root,
+          ".wiki/t/x.md",
+          "# X\n\n> Sources: Example, 2026-04-16\n" +
+            "> Raw: [ghostty](../../raw/ai-research/2026-04-17-ghostty.md)\n\n" +
+            "Ghostty reached 777K stars.\n",
+        );
+        has(runChecker(root).stdout, "\n.wiki/t/x.md\n- 777K");
+      });
+    });
+  });
+
+  it("collapses .. in a Raw link before following symlinks", () => {
+    withRoot((root) => {
+      makeWiki(root);
+      withVault((vault) => {
+        write(vault, "x.md", "# Outside\n\nIt reached 444K users.\n");
+        fs.mkdirSync(path.join(vault, "deep"));
+        fs.symlinkSync(path.join(vault, "deep"), path.join(root, "raw", "link"));
+        write(root, "raw/x.md", "# Inside\n\nIt reached 111K users.\n");
+        write(
+          root,
+          ".wiki/t/a.md",
+          "# A\n\n> Sources: Example, 2026-04-16\n" +
+            "> Raw: [x](../../raw/link/../x.md)\n\nIt reached 111K users.\n",
+        );
+        const out = runChecker(root).stdout;
+        hasNot(out, "escapes raw/");
+        hasNot(out, "- 111K");
+      });
     });
   });
 });
