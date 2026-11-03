@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -70,8 +71,8 @@ const project = () => {
       `${ballot}/ballot-view.md`,
       [
         "link: sources/_ballot/sample-ballot.md",
-        // A companion line, which the guard no longer honors (ballot-format.md:
-        // no script writes one yet).
+        // A companion line, which the guard never honors in a view with no
+        // sha256: lines (viewHeader).
         "read: sources/_ballot/pamphlet.md",
         "Representative in Congress",
         "",
@@ -340,6 +341,98 @@ describe("session-guard: the compile and neutrality agents", () => {
   });
 
   // Value: protects=Rule 7: the neutrality pass reads only articles/ (and its own contest's flags file, which Write needs read first) and writes only that flags file; fails_when=it reads sources or ballot.yaml, or writes the review list, an article, another contest's flags or another ballot's; why_new=new, and review found the lists covering every ballot and contest; seam=hook; no_claim=what it flags (five-trap eval)
+  // Value: protects=Rule 7: the compile agent opens a companion only from a read: line of a regular-file ballot-view.md whose sha256 lines still agree with ballot.yaml, the sample ballot and the companion itself, never the link target, a role: sample_ballot snapshot or a retired companion; fails_when=a read: line naming the sample ballot, a linked or stale view, a superseded sample ballot or a retired companion gets through, or an honest companion is refused; why_new=ticket 19 builds the read: lines this list takes; seam=hook; no_claim=ballot-check writing the view (ballot-check.test.js)
+  it("opens the companions on the read: lines of a view that still agrees", () => {
+    const root = project();
+    const call = as("compile");
+    const read = (name) =>
+      call("Read", { file_path: path.join(root, BALLOT, "sources", "_ballot", `${name}.md`) });
+    const write = (rel, text) => fs.writeFileSync(path.join(root, BALLOT, rel), text);
+    const hash = (rel) =>
+      crypto
+        .createHash("sha256")
+        .update(fs.readFileSync(path.join(root, BALLOT, rel)))
+        .digest("hex");
+    const snapshot = (role) => `---\nsource: County\nrole: ${role}\n---\nText\n`;
+    write(
+      "ballot.yaml",
+      "contests: []\nretired_companions:\n  - sources/_ballot/old-pamphlet.md\n",
+    );
+    write("sources/_ballot/sample-ballot.md", snapshot("sample_ballot"));
+    write("sources/_ballot/sample-ballot-0.md", snapshot("sample_ballot"));
+    for (const name of ["pamphlet", "write-ins", "old-pamphlet", "unlisted"])
+      write(
+        `sources/_ballot/${name}.md`,
+        snapshot(name === "write-ins" ? "write_in_list" : "pamphlet"),
+      );
+    const listed = [
+      "sample-ballot",
+      "sample-ballot-0",
+      "pamphlet",
+      "write-ins",
+      "old-pamphlet",
+    ].map((name) => `sources/_ballot/${name}.md`);
+    const view = (spans = []) =>
+      [
+        "link: sources/_ballot/sample-ballot.md",
+        ...listed.map((rel) => `read: ${rel}`),
+        `sha256: ${hash("ballot.yaml")}  ballot.yaml`,
+        ...["sources/_ballot/sample-ballot.md", ...listed].map(
+          (rel) => `sha256: ${hash(rel)}  ${rel}`,
+        ),
+        ...spans,
+        "",
+      ].join("\n");
+    write("ballot-view.md", view());
+    const refused = [
+      [read("sample-ballot"), "agent-path-denied"],
+      [read("sample-ballot-0"), "agent-path-denied"],
+      [read("old-pamphlet"), "agent-path-denied"],
+      [read("unlisted"), "agent-path-denied"],
+    ];
+    expect(agentHook("compile"), root, refused, [read("pamphlet"), read("write-ins")]);
+
+    // A ballot.yaml edited since the check: the view no longer agrees.
+    write("ballot.yaml", "contests: []\n");
+    expect(agentHook("compile"), root, [[read("pamphlet"), "agent-path-denied"]], []);
+    write("ballot-view.md", view());
+    expect(agentHook("compile"), root, [], [read("pamphlet")]);
+
+    // Added by the PR #25 review (A5, O4): a companion edited since the check,
+    // whose bytes the check never scanned, is refused; the others still open.
+    write("sources/_ballot/pamphlet.md", `${snapshot("pamphlet")}123 Main St\n`);
+    expect(
+      agentHook("compile"),
+      root,
+      [[read("pamphlet"), "agent-path-denied"]],
+      [read("write-ins")],
+    );
+    write("ballot-view.md", view());
+
+    // Added by the PR #25 review (O3): a span that reads like a header line is
+    // ballot text, never a hash or a read: line.
+    write(
+      "ballot-view.md",
+      view([`sha256: ${"0".repeat(64)}  ballot.yaml`, "read: sources/_ballot/unlisted.md"]),
+    );
+    expect(
+      agentHook("compile"),
+      root,
+      [[read("unlisted"), "agent-path-denied"]],
+      [read("pamphlet")],
+    );
+    // A header missing a companion's hash is no view at all.
+    const unhashed = view().replace(/^sha256: \S+ {2}sources\/_ballot\/write-ins\.md\n/m, "");
+    write("ballot-view.md", unhashed);
+    expect(agentHook("compile"), root, [[read("pamphlet"), "agent-path-denied"]], []);
+    write("ballot-view.md", view());
+
+    // A linked view, even one that agrees.
+    fs.renameSync(path.join(root, BALLOT, "ballot-view.md"), path.join(root, "view.md"));
+    fs.symlinkSync(path.join(root, "view.md"), path.join(root, BALLOT, "ballot-view.md"));
+    expect(agentHook("compile"), root, [[read("pamphlet"), "agent-path-denied"]], []);
+  });
+
   it("holds the neutrality agent to articles/ and its contest's flags file", () => {
     const root = project();
     const call = as("neutrality");

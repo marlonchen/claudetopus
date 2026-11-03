@@ -5,6 +5,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
+const { isAbbreviated } = require("../scripts/lib/ballot-companions");
+const { PARTY_FULL_WORDS, PARTY_JOINING_WORDS } = require("../scripts/lib/constants");
 const { figuresBacked } = require("../scripts/lib/figures");
 
 // The reference files depend on each other in ways markdown lint cannot see:
@@ -867,19 +869,27 @@ describe("BallotIds", () => {
   it("an abbreviated printed party shows its official full name", () => {
     const rule = ballotRuleLine("Party names");
     const shape = rule.match(
-      /fails, with no `party_name`, a `party` with any word written as an abbreviation: all capitals \(([^)]+)\), or holding a period, slash or hyphen \(([^)]+)\)\. A full name such as (.+?) passes/,
+      /fails, with no `party_name`, a `party` with any word written as an abbreviation: all capitals \(([^)]+)\), holding a period or slash \(([^)]+)\), or under 4 letters \(([^)]+)\), apart from the connecting words (.+?) in any case\. A full name such as (.+?) passes, since (.+?) are read as whole words/,
     );
     assert.ok(shape, "ballot-format.md no longer says which printed parties need party_name");
-    const abbreviatedWord = /^(?:[A-Z]+|\S*[./-]\S*)$/;
-    const isAbbreviated = (party) => party.split(/\s+/).some((w) => abbreviatedWord.test(w));
+    // Extended for ticket 19 (run 9 party_name item): a hyphen joins words, so
+    // Democratic-Farmer-Labor passes while D-NPL is still caught by its capitals.
+    assert.match(rule, /A hyphen joins words, so each part between hyphens is read as a word/);
+    // An abbreviated party_name, and the sample ballot's own printed party only in long words.
+    assert.match(rule, /in a name with a lowercase letter, a word in capitals \(`DFL Party`\)/);
+    assert.match(rule, /only when every word of it, connecting words aside, has 4 or more letters/);
     const examples = (list) => [...list.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-    const caught = [...examples(shape[1]), ...examples(shape[2])];
+    // Extended by the PR #25 review: the connecting and whole dotted words are
+    // the code's own lists, and the rule's examples are judged by its own test.
+    assert.deepEqual(examples(shape[4]), PARTY_JOINING_WORDS);
+    assert.deepEqual(examples(shape[6]), PARTY_FULL_WORDS);
+    const caught = [...examples(shape[1]), ...examples(shape[2]), ...examples(shape[3])];
     assert.ok(
       caught.some((p) => /\s/.test(p)),
       "the rule has no multi-word abbreviation example",
     );
     for (const p of caught) assert.ok(isAbbreviated(p), `the rule's example ${p} is not caught`);
-    for (const p of examples(shape[3])) assert.ok(!isAbbreviated(p), `full name ${p} is caught`);
+    for (const p of examples(shape[5])) assert.ok(!isAbbreviated(p), `full name ${p} is caught`);
     assert.match(rule, /a `party_name` that no `_ballot\/` snapshot contains/);
     // Ballots often print every party in capitals: those need party_name, matched ignoring case.
     assert.match(rule, /printed in capitals \(`GREEN PARTY`\) needs a `party_name`/);

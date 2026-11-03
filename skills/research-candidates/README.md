@@ -2,7 +2,7 @@
 
 Candidate research skill for Claude Code. For each voter address it builds a ballot guide where every claim is backed by a verbatim excerpt from a saved source, then publishes one static, phone-friendly page per ballot.
 
-See [SKILL.md](SKILL.md) for the full spec. **Status: mostly built**: every script in SKILL.md's script table runs, and so do the discovery, compile and neutrality agents ([Agents](#agents)). SKILL.md's status lists what is not built yet, among them `fetch-snapshot`'s Wayback copies (`archives.tsv`), `ballot-check`'s companion and supersedes rules, and `publish`'s installed-skill check.
+See [SKILL.md](SKILL.md) for the full spec. **Status: mostly built**: every script in SKILL.md's script table runs, and so do the discovery, compile and neutrality agents ([Agents](#agents)). SKILL.md's status lists what is not built yet, among them `fetch-snapshot`'s Wayback copies (`archives.tsv`) and `supersedes` field, and `publish`'s installed-skill check.
 
 This directory is the skill's *source*. The research data it works on (addresses, ballots, snapshots, review lists, articles) belongs in a separate **private** repo and must never be committed here: this repo is public.
 
@@ -60,7 +60,7 @@ SKILL.md Rule 7 runs three steps as separate agents, each defined in [agents/](a
 | `research-candidates-compile` | 4.3-4.4, 5 | Read, Glob, Grep, Write, Edit |
 | `research-candidates-neutrality` | 4.5 | Read, Glob, Grep, Write |
 
-Each definition also runs [scripts/session-guard](scripts/session-guard) with the agent's name on every call its agent makes, refusing a call that does not carry that name as its `agent_type`, and holds the agent to SKILL.md's allow lists for the one contest whose token started it: discovery's Bash to one `discovery-fetch` command with that token, compile's reads to `ballot.yaml`, `ballot-view.md`, the contest's sources and `articles/`, and its writes to the contest's article, and neutrality's to `articles/` and the contest's flags file. Both also read the skill's `references/`. Until `ballot-check` writes `ballot-view.md`'s `read:` lines, compile opens no `sources/_ballot/` file. A hook on an agent's calls cannot see its prompt, so the settings hook records the token of each launch it lets through and its SubagentStart hook hands it to the agent that starts; an agent with none is refused every call. Copy them into the data repo, overwriting older copies, and commit them:
+Each definition also runs [scripts/session-guard](scripts/session-guard) with the agent's name on every call its agent makes, refusing a call that does not carry that name as its `agent_type`, and holds the agent to SKILL.md's allow lists for the one contest whose token started it: discovery's Bash to one `discovery-fetch` command with that token, compile's reads to `ballot.yaml`, `ballot-view.md`, the companions on its `read:` lines (only while its `sha256:` lines still agree with `ballot.yaml`, the sample ballot and the companion), the contest's sources and `articles/`, and its writes to the contest's article, and neutrality's to `articles/` and the contest's flags file. Both also read the skill's `references/`. A hook on an agent's calls cannot see its prompt, so the settings hook records the token of each launch it lets through and its SubagentStart hook hands it to the agent that starts; an agent with none is refused every call. Copy them into the data repo, overwriting older copies, and commit them:
 
 ```bash
 cd ~/src/github/<user>/elections

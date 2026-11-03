@@ -297,14 +297,47 @@ const addContest = async (data, { id, article, snapshots = {}, log = "" }) => {
   commit(data);
 };
 
+// The county's notices: Di Dunn's write-in certification, which her On the
+// ballot claim cites, and Bo Baker's withdrawal (ballot-format.md, Write-ins
+// and Withdrawals).
+const WRITE_INS = "sources/_ballot/write-in-list.md";
+const WITHDRAWALS = "sources/_ballot/withdrawals.md";
+const notice = (url, role, body) =>
+  snapshot({
+    subject: "_ballot",
+    source: "Exampleton County elections",
+    url,
+    tier: "T1",
+    extra: `role: ${role}\n`,
+    body,
+  });
+const WRITE_IN_TEXT = notice(
+  "https://county.example.gov/write-ins",
+  "write_in_list",
+  "Di Dunn is a certified write-in candidate for School Director.",
+);
+const WITHDRAWAL_TEXT = notice(
+  "https://county.example.gov/withdrawals",
+  "withdrawal_notice",
+  "Bo Baker has withdrawn from the race for School Director.",
+);
+
 // A data repo whose ballot, `ballot` with the sample ballot `sample`, passes
-// ballot-check, with nothing researched yet.
+// ballot-check, with nothing researched yet. A ballot with a certified
+// write-in or a withdrawn candidate gets the county's notice of it.
 const checkedBallot = async ({ ballot = BALLOT_YAML, sample = SAMPLE_TEXT } = {}) => {
   const data = makeDataRepo({ ballot, private: PRIVATE });
   repos.push(data);
   data.write("publish.yaml", "branch: main\ndisplay_name: Sam\n");
-  plant(data, SAMPLE_BALLOT, sample);
-  appendTo(data, "ballot.ledger", `${SAMPLE_BALLOT}\tsample_ballot\turl\tnone\t2026-10-20\n`);
+  const saved = [[SAMPLE_BALLOT, "sample_ballot", sample]];
+  if (ballot.includes("certified_write_in"))
+    saved.push([WRITE_INS, "write_in_list", WRITE_IN_TEXT]);
+  if (ballot.includes("withdrawn_still_printed"))
+    saved.push([WITHDRAWALS, "withdrawal_notice", WITHDRAWAL_TEXT]);
+  for (const [rel, role, text] of saved) {
+    plant(data, rel, text);
+    appendTo(data, "ballot.ledger", `${rel}\t${role}\turl\tnone\t2026-10-20\n`);
+  }
   const checked = await run(data, "ballot-check", [BALLOT]);
   assert.strictEqual(checked.status, 0, checked.stdout);
   return data;
@@ -447,6 +480,7 @@ const page = (data) => load("linkedom").parseHTML(data.read(`${BALLOT}/site/inde
 const text = (el) => el.textContent.replace(/\s+/g, " ").trim();
 
 module.exports = {
+  BALLOT_YAML,
   CLAIMS,
   ISSUES,
   JANE_BIO,
@@ -455,6 +489,8 @@ module.exports = {
   PAGES_REPO,
   SAMPLE_BALLOT,
   SAMPLE_TEXT,
+  WITHDRAWALS,
+  WRITE_INS,
   addContest,
   ballotClaim,
   checkedBallot,

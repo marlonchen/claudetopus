@@ -40,7 +40,9 @@ const SOURCES = fs
   .split("\n")
   .filter(Boolean)
   .map((line) => line.split("\t"));
+// The county's notices ballot-check needs for the write-in and the withdrawal.
 const WRITE_INS = ["https://county.example.gov/write-ins", "write-ins.html"];
+const WITHDRAWALS = ["https://county.example.gov/withdrawals", "withdrawals.html"];
 // The discovery checklist items run (source-tiers.md: 1-5 for a candidate,
 // 6 for a measure, 7 for a retention official), by contest and subject.
 const CANDIDATE_ITEMS = ["1", "2", "3", "4", "5"];
@@ -114,7 +116,7 @@ const review = async (data, contest) => {
 };
 
 // SKILL.md steps 2-5 on the fixture, through the local web server: import
-// the sample ballot and the write-in list, check the ballot, save every
+// the sample ballot, the write-in list and the withdrawal notice, check the ballot, save every
 // source and log every search, then check, cover and review each article
 // and commit. Returns the data repo, ready to publish.
 const research = async (web) => {
@@ -133,6 +135,8 @@ const research = async (web) => {
   assert.strictEqual(sample.status, 0, sample.stdout);
   const writeIns = await tty(["--ballot", BALLOT, "write_in_list", WRITE_INS[0]]);
   assert.strictEqual(writeIns.status, 0, writeIns.stdout);
+  const withdrawals = await tty(["--ballot", BALLOT, "withdrawal_notice", WITHDRAWALS[0]]);
+  assert.strictEqual(withdrawals.status, 0, withdrawals.stdout);
   const checked = await run(data, "ballot-check", [BALLOT]);
   passes(checked);
   assert.deepStrictEqual(lines(checked), ["ballot-view.md written"]);
@@ -172,7 +176,7 @@ let web;
 let researched;
 before(async () => {
   const routes = Object.fromEntries(
-    [...SOURCES.map((s) => s.slice(3)), WRITE_INS].map(([url, file]) => [
+    [...SOURCES.map((s) => s.slice(3)), WRITE_INS, WITHDRAWALS].map(([url, file]) => [
       url,
       { body: fs.readFileSync(path.join(FIXTURE, "web", file), "utf8") },
     ]),

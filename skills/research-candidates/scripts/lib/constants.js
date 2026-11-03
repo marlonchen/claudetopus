@@ -61,7 +61,14 @@ const SHORT_PAGE = 500;
 
 // snapshot-format.md: the _ballot snapshot roles, and the ledger that lists them.
 const ROLES = ["sample_ballot", "candidate_list", "pamphlet", "write_in_list", "withdrawal_notice"];
+// The _ballot roles the compile agent reads whole (ballot-format.md, Ballot view).
+const COMPANION_ROLES = ROLES.filter((role) => role !== "sample_ballot");
 const LEDGER = "ballot.ledger";
+
+// ballot-format.md, Party names: the connecting words the 4-letter rule skips,
+// case folded, and the dotted words read as whole words, case kept.
+const PARTY_JOINING_WORDS = ["and", "of", "for", "the", "no", "non"];
+const PARTY_FULL_WORDS = ["U.S.", "U.S.A."];
 
 // snapshot-format.md, Manifest: the operating-system and editor leftovers
 // that check, ballot-check and the ballot gate skip.
@@ -279,6 +286,9 @@ module.exports = {
   ABBREVIATIONS,
   ALLEGATION_WORDS,
   ALWAYS_REVIEWED,
+  COMPANION_ROLES,
+  PARTY_FULL_WORDS,
+  PARTY_JOINING_WORDS,
   BALLOT_ID_PATTERN,
   BINDINGS,
   BINDING_TOKEN,

@@ -37,7 +37,7 @@ ignored_lines:
 
 const sha256 = (text) => crypto.createHash("sha256").update(text).digest("hex");
 
-const snapshot = (role, body) => `---
+const snapshot = (role, body, front = "") => `---
 source: Exampleton County elections
 url: https://county.example.gov/
 fetched: 2026-10-20
@@ -47,17 +47,24 @@ statements_only: false
 subject: _ballot
 owner: third-party
 role: ${role}
----
+${front}---
 ${body}
 `;
 
 // Save a _ballot snapshot as --ballot would: manifest line, ledger line, file.
-// `ledger: false` leaves out the ledger line, `manifest: false` the hash.
-const plant = (data, name, role, body, { ledger = true, manifest = true } = {}) => {
+// `ledger: false` leaves out the ledger line, `manifest: false` the hash;
+// `query` is the ledger's <query> field and `supersedes` a front matter value.
+const plant = (
+  data,
+  name,
+  role,
+  body,
+  { ledger = true, manifest = true, query = "none", supersedes } = {},
+) => {
   const rel = `sources/_ballot/${name}.md`;
-  const text = snapshot(role, body);
+  const text = snapshot(role, body, supersedes ? `supersedes: ${supersedes}\n` : "");
   if (manifest) appendTo(data, "snapshots.sha256", `${sha256(text)}  ${rel}\n`);
-  if (ledger) appendTo(data, "ballot.ledger", `${rel}\t${role}\turl\tnone\t2026-10-20\n`);
+  if (ledger) appendTo(data, "ballot.ledger", `${rel}\t${role}\turl\t${query}\t2026-10-20\n`);
   data.write(`${BALLOT}/${rel}`, text);
   return rel;
 };
@@ -248,7 +255,9 @@ describe("ballot-check: listed to official", () => {
       "        status: on_ballot\n  - id: supreme",
       "        status: on_ballot\n      - id: wendy-write\n        name: Wendy Write\n        status: certified_write_in\n  - id: supreme",
     );
-    const result = await ballotCheck(setup({ ballot }));
+    const data = setup({ ballot });
+    plant(data, "write-in-list", "write_in_list", "Certified write-in: Wendy Write");
+    const result = await ballotCheck(data);
     assert.equal(result.status, 0, result.stdout);
   });
 });
@@ -331,7 +340,9 @@ describe("ballot-check: counts", () => {
       "Jane Example\nExample Party\nJohn Sample\nSample Party\n",
       "",
     );
-    assert.equal((await ballotCheck(setup({ ballot, body }))).status, 0);
+    const data = setup({ ballot, body });
+    plant(data, "write-in-list", "write_in_list", "Jane Example\nJohn Sample");
+    assert.equal((await ballotCheck(data)).status, 0);
   });
 });
 
@@ -408,7 +419,12 @@ describe("ballot-check --show", () => {
     assert.equal(result.status, 1);
     assert.equal(
       result.stdout.trim(),
-      `sources/_ballot/sample-ballot.md:${at} line-unaccounted\n    Hidden �[2JLine`,
+      [
+        `sources/_ballot/sample-ballot.md:${at} line-unaccounted`,
+        "    Hidden �[2JLine",
+        `sources/_ballot/sample-ballot.md:${bodyLine("Precinct 12")} line-private`,
+        "    Precinct 12",
+      ].join("\n"),
     );
   });
 
@@ -976,5 +992,418 @@ describe("ballot-check: private text", () => {
       "private.yaml private-zip ignored_lines",
     ]);
     assert.doesNotMatch(result.stdout, /99999/);
+  });
+});
+
+const withList = (key, ...paths) =>
+  `${DEFAULT_BALLOT}${key}:\n${paths.map((p) => `  - ${p}\n`).join("")}`;
+const PAMPHLET = "sources/_ballot/pamphlet.md";
+
+describe("ballot-check: a ballot.yaml with no contests", () => {
+  it("fails ballot-invalid, never internal-error", async () => {
+    const data = setup({ ballot: DEFAULT_BALLOT.replace(/contests:[\s\S]*$/, "contests: []\n") });
+    const result = await ballotCheck(data);
+    assert.ok(
+      lines(result).includes(`ballot.yaml:${yamlLine(data, "contests:")} ballot-invalid contests`),
+      result.stdout,
+    );
+    assert.doesNotMatch(result.stdout, /internal-error/);
+  });
+});
+
+describe("ballot-check: companion documents", () => {
+  it("lists each companion on a read: line, in path order, between the link and the hashes", async () => {
+    const data = setup();
+    plant(data, "pamphlet", "pamphlet", "Voter pamphlet");
+    plant(data, "candidate-list", "candidate_list", "Candidates");
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
+    // Each companion's hash too (PR #25 review, A5), so session-guard opens
+    // only the bytes this check read.
+    const hash = (rel) => `sha256: ${sha256(data.read(`${BALLOT}/${rel}`))}  ${rel}`;
+    assert.deepEqual(data.read(VIEW).split("\n").slice(0, 7), [
+      "link: sources/_ballot/sample-ballot.md",
+      "read: sources/_ballot/candidate-list.md",
+      `read: ${PAMPHLET}`,
+      hash("ballot.yaml"),
+      hash("sources/_ballot/sample-ballot.md"),
+      hash("sources/_ballot/candidate-list.md"),
+      hash(PAMPHLET),
+    ]);
+  });
+
+  it("fails a companion fetched from a URL with a query, and passes a --file one", async () => {
+    const data = setup();
+    plant(data, "pamphlet", "pamphlet", "Voter pamphlet", { query: "query" });
+    plant(data, "candidate-list", "candidate_list", "Candidates", { query: "unknown" });
+    assert.deepEqual(lines(await ballotCheck(data)), [`${PAMPHLET} companion-query`]);
+    assert.ok(!data.exists(VIEW));
+  });
+
+  it("fails a companion holding an address, street line or label, by its line, never the text", async () => {
+    const data = setup();
+    plant(data, "pamphlet", "pamphlet", "Voter pamphlet\nMail to 123 Elm Street\nZIP 99999");
+    plant(data, "candidate-list", "candidate_list", "Prepared for addr-mom");
+    const result = await ballotCheck(data);
+    // The ZIP alone passes: county-wide documents print the county's ZIP codes.
+    assert.deepEqual(lines(result), [
+      "sources/_ballot/candidate-list.md:12 private-label",
+      `${PAMPHLET}:13 private-address`,
+    ]);
+    assert.doesNotMatch(result.stdout, /Elm|addr-mom/);
+  });
+
+  it("retires a companion: off the read: lines and out of the companion checks", async () => {
+    const data = setup({ ballot: withList("retired_companions", PAMPHLET) });
+    plant(data, "pamphlet", "pamphlet", "Mail to 123 Elm Street", { query: "query" });
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
+    assert.doesNotMatch(data.read(VIEW), /pamphlet/);
+  });
+
+  it("fails a retired_companions entry that is not a ledgered companion", async () => {
+    const data = setup({
+      ballot: withList(
+        "retired_companions",
+        "sources/_ballot/sample-ballot.md",
+        "sources/_ballot/missing.md",
+      ),
+    });
+    const at = yamlLine(data, "retired_companions:");
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${at + 1} ballot-invalid retired_companions`,
+      `ballot.yaml:${at + 2} ballot-invalid retired_companions`,
+    ]);
+  });
+
+  it("fails a companion edited after it was saved", async () => {
+    const data = setup();
+    plant(data, "pamphlet", "pamphlet", "Voter pamphlet");
+    const file = `${BALLOT}/${PAMPHLET}`;
+    data.write(file, data.read(file).replace("Voter", "Voters"));
+    assert.deepEqual(lines(await ballotCheck(data)), [`${PAMPHLET} snapshot-hash`]);
+  });
+});
+
+describe("ballot-check: write-ins and withdrawals", () => {
+  const writeIn = edit(
+    "        status: on_ballot\n  - id: supreme",
+    "        status: on_ballot\n      - id: wendy-write\n        name: Wendy Write\n        status: certified_write_in\n  - id: supreme",
+  );
+  const withdrawn = edit(
+    "name: John Sample\n        party: Sample Party\n        status: on_ballot",
+    "name: John Sample\n        party: Sample Party\n        status: withdrawn_still_printed",
+  );
+
+  it("fails a certified write-in no write-in list names, by its name line", async () => {
+    const data = setup({ ballot: writeIn });
+    // A candidate list names every candidate, so it is no proof.
+    plant(data, "candidate-list", "candidate_list", "Wendy Write");
+    plant(data, "write-in-list", "write_in_list", "Certified write-ins: Wendy Wright");
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${yamlLine(data, "name: Wendy Write")} write-in-not-found name`,
+    ]);
+  });
+
+  it("never takes a write-in from a retired list", async () => {
+    const data = setup({
+      ballot: `${writeIn}retired_companions:\n  - sources/_ballot/write-in-list.md\n`,
+    });
+    plant(data, "write-in-list", "write_in_list", "Wendy Write");
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${yamlLine(data, "name: Wendy Write")} write-in-not-found name`,
+    ]);
+  });
+
+  it("matches the name as an excerpt, across a wrapped line", async () => {
+    const data = setup({ ballot: writeIn });
+    plant(data, "write-in-list", "write_in_list", "Certified: Wendy\nWrite (School Board)");
+    assert.equal((await ballotCheck(data)).status, 0);
+  });
+
+  it("fails a withdrawn candidate no withdrawal notice names, and passes one that does", async () => {
+    const data = setup({ ballot: withdrawn });
+    plant(data, "candidate-list", "candidate_list", "John Sample, Sample Party");
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${yamlLine(data, "name: John Sample")} withdrawal-not-found name`,
+    ]);
+    plant(data, "withdrawals", "withdrawal_notice", "John Sample has withdrawn.");
+    assert.equal((await ballotCheck(data)).status, 0);
+  });
+
+  // Added by the PR #25 review (A4).
+  // Value: protects=a notice in the county's own case still vouches, while the name's words and order stay exact; fails_when=JOHN SAMPLE fails against John Sample, or Sample, John passes; why_new=the match kept case, so a ballot in capitals could never mark a withdrawal; seam=ballot-check CLI; no_claim=Last, First notices (not matched)
+  it("matches the name in any case, never in another order", async () => {
+    const data = setup({ ballot: withdrawn });
+    plant(data, "withdrawals", "withdrawal_notice", "Sample, John has withdrawn.");
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${yamlLine(data, "name: John Sample")} withdrawal-not-found name`,
+    ]);
+    plant(data, "withdrawals", "withdrawal_notice", "JOHN SAMPLE HAS WITHDRAWN.");
+    assert.equal((await ballotCheck(data)).status, 0);
+  });
+});
+
+describe("ballot-check: corrected sample ballots", () => {
+  const CORRECTED = SAMPLE_BODY.replace("John Sample", "John Q. Sample");
+  const corrected = edit("name: John Sample", "name: John Q. Sample");
+  const NEW = "sources/_ballot/sample-ballot-2.md";
+
+  it("fails a correction confirmed_supersedes does not name", async () => {
+    const data = setup({ ballot: corrected });
+    plant(data, "sample-ballot-2", "sample_ballot", CORRECTED, { supersedes: "sample-ballot.md" });
+    assert.deepEqual(lines(await ballotCheck(data)), [`${NEW} supersedes-unconfirmed`]);
+    assert.ok(!data.exists(VIEW));
+  });
+
+  it("checks against the confirmed correction and links it", async () => {
+    const data = setup({ ballot: `${corrected}confirmed_supersedes:\n  - ${NEW}\n` });
+    plant(data, "sample-ballot-2", "sample_ballot", CORRECTED, { supersedes: "sample-ballot.md" });
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
+    const view = data.read(VIEW);
+    assert.match(view, new RegExp(`^link: ${NEW}\n`));
+    assert.match(view, /^John Q\. Sample Sample Party$/m);
+  });
+
+  it("fails a supersedes that names no sample ballot, itself, or one already superseded", async () => {
+    const data = setup();
+    plant(data, "sample-ballot-2", "sample_ballot", SAMPLE_BODY, { supersedes: "missing.md" });
+    plant(data, "sample-ballot-3", "sample_ballot", SAMPLE_BODY, {
+      supersedes: "sample-ballot-3.md",
+    });
+    plant(data, "pamphlet", "pamphlet", "Voter pamphlet", { supersedes: "sample-ballot.md" });
+    const result = lines(await ballotCheck(data));
+    for (const name of ["sample-ballot-2", "sample-ballot-3", "pamphlet"])
+      assert.ok(result.includes(`sources/_ballot/${name}.md supersedes-invalid`), result);
+    assert.ok(result.includes("sources/_ballot sample-ballot-not-unique"), result);
+  });
+
+  it("fails two corrections of one ballot, and a loop", async () => {
+    const twice = setup();
+    plant(twice, "sample-ballot-2", "sample_ballot", SAMPLE_BODY, {
+      supersedes: "sample-ballot.md",
+    });
+    plant(twice, "sample-ballot-3", "sample_ballot", SAMPLE_BODY, {
+      supersedes: "sample-ballot.md",
+    });
+    assert.ok(
+      lines(await ballotCheck(twice)).includes(
+        "sources/_ballot/sample-ballot-3.md supersedes-invalid",
+      ),
+    );
+    const loop = setup({ body: null });
+    plant(loop, "sample-ballot-a", "sample_ballot", SAMPLE_BODY, {
+      supersedes: "sample-ballot-b.md",
+    });
+    plant(loop, "sample-ballot-b", "sample_ballot", SAMPLE_BODY, {
+      supersedes: "sample-ballot-a.md",
+    });
+    assert.deepEqual(lines(await ballotCheck(loop)), [
+      "sources/_ballot/sample-ballot-a.md supersedes-invalid",
+      "sources/_ballot/sample-ballot-b.md supersedes-invalid",
+      "sources/_ballot sample-ballot-not-unique",
+    ]);
+  });
+
+  it("fails a confirmed_supersedes entry that names no correction", async () => {
+    const data = setup({ ballot: withList("confirmed_supersedes", NEW) });
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${yamlLine(data, "confirmed_supersedes:") + 1} ballot-invalid confirmed_supersedes`,
+    ]);
+  });
+});
+
+describe("ballot-check: party names", () => {
+  // ballot.yaml and the sample ballot with John Sample's party printed as `printed`.
+  const party = (printed, partyName) => ({
+    ballot: edit(
+      "party: Sample Party",
+      `party: "${printed}"${partyName ? `\n        party_name: ${partyName}` : ""}`,
+    ),
+    body: SAMPLE_BODY.replace("Sample Party", printed),
+  });
+  const result = async (printed, partyName, companion) => {
+    const data = setup(party(printed, partyName));
+    if (companion) plant(data, "pamphlet", "pamphlet", companion);
+    return { data, lines: lines(await ballotCheck(data)) };
+  };
+
+  it("fails an abbreviated printed party with no party_name", async () => {
+    for (const printed of [
+      "DEM",
+      "D-NPL",
+      "Dem.",
+      "DEM/WF",
+      "Ind. Am.",
+      "GREEN PARTY",
+      "Dem",
+      "Natural Law",
+    ]) {
+      const { data, lines: got } = await result(printed);
+      assert.deepEqual(got, [`ballot.yaml:${yamlLine(data, 'party: "')} party-abbreviated party`]);
+    }
+  });
+
+  it("passes a full printed name, hyphens and all", async () => {
+    for (const printed of [
+      "Working Families",
+      "Democratic-Farmer-Labor",
+      "Peace and Freedom",
+      "No Party Preference",
+      "Non-Partisan",
+      "U.S. Taxpayers",
+    ]) {
+      assert.deepEqual((await result(printed)).lines, ["ballot-view.md written"], printed);
+    }
+  });
+
+  it("fails a party_name written as an abbreviation", async () => {
+    for (const name of ["DFL Party", "D.F.L."]) {
+      const { data, lines: got } = await result("DFL", name, `The ${name}`);
+      assert.deepEqual(got, [
+        `ballot.yaml:${yamlLine(data, "party_name")} party-name-abbreviated party_name`,
+      ]);
+    }
+  });
+
+  it("takes party_name only from an official source, ignoring case", async () => {
+    const missing = await result("DFL", "Democratic-Farmer-Labor");
+    assert.deepEqual(missing.lines, [
+      `ballot.yaml:${yamlLine(missing.data, "party_name")} party-name-not-found party_name`,
+    ]);
+    const pamphlet = await result("DFL", "Democratic-Farmer-Labor", "DEMOCRATIC-FARMER-LABOR");
+    assert.deepEqual(pamphlet.lines, ["ballot-view.md written"]);
+  });
+
+  it("lets the sample ballot vouch for its own printed party only in words of 4+ letters", async () => {
+    for (const [printed, name] of [
+      ["GREEN PARTY", "Green Party"],
+      ["PEACE AND FREEDOM", "Peace and Freedom"],
+    ]) {
+      assert.deepEqual((await result(printed, name)).lines, ["ballot-view.md written"], printed);
+    }
+    for (const [printed, name] of [
+      ["DEM", "Dem"],
+      ["NATURAL LAW", "Natural Law"],
+    ]) {
+      const { data, lines: got } = await result(printed, name);
+      assert.deepEqual(got, [
+        `ballot.yaml:${yamlLine(data, "party_name")} party-name-not-found party_name`,
+      ]);
+    }
+  });
+
+  // Added by the PR #25 review (A3b): only the case is the researcher's here.
+  // Value: protects=a short printed party read in mixed case (DEM as Dem) stays an abbreviation unless an official companion writes it in that case; fails_when=a legend such as DEM = Democratic vouches for Dem, or a companion writing Natural Law Party no longer vouches for Natural Law; why_new=the any-case match let a DEM legend vouch for Dem; seam=ballot-check CLI; no_claim=which companions are official (Companion documents)
+  it("takes a short printed party read in mixed case only from a companion in that case", async () => {
+    const legend = await result("DEM", "Dem", "Key: DEM = Democratic");
+    assert.deepEqual(legend.lines, [
+      `ballot.yaml:${yamlLine(legend.data, "party_name")} party-name-not-found party_name`,
+    ]);
+    for (const [printed, name, companion] of [
+      ["DEM", "Dem", "The Dem slate"],
+      ["NATURAL LAW", "Natural Law", "Natural Law Party"],
+      ["DEM", "Democratic", "Key: DEM = DEMOCRATIC"],
+    ]) {
+      const { lines: got } = await result(printed, name, companion);
+      assert.deepEqual(got, ["ballot-view.md written"], name);
+    }
+  });
+
+  // Added by the PR #25 review (A2).
+  // Value: protects=an official name holding U.S. can pass, printed or as party_name; fails_when=U.S. Taxpayers needs a party_name, or U.S. Taxpayers Party fails party-name-abbreviated; why_new=such a ballot could never pass; seam=ballot-check CLI; no_claim=other dotted words (D.F.L. stays caught, above)
+  it("reads U.S. as a whole word", async () => {
+    const got = await result("U.S. TAXPAYERS", "U.S. Taxpayers Party", "U.S. Taxpayers Party");
+    assert.deepEqual(got.lines, ["ballot-view.md written"]);
+  });
+
+  it("never takes party_name from a retired companion", async () => {
+    const { ballot, body } = party("DFL", "Democratic-Farmer-Labor");
+    const data = setup({ ballot: `${ballot}retired_companions:\n  - ${PAMPHLET}\n`, body });
+    plant(data, "pamphlet", "pamphlet", "Democratic-Farmer-Labor");
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${yamlLine(data, "party_name")} party-name-not-found party_name`,
+    ]);
+  });
+});
+
+describe("ballot-check: private lines (run 10)", () => {
+  const header = (line, ...entries) => ({
+    body: SAMPLE_BODY.replace("Precinct 12", line),
+    priv: `private_strings:\n${entries.map((e) => `  - ${e}\n`).join("")}ignored_lines:\n  - OFFICIAL SAMPLE BALLOT\n  - "Yes"\n  - "No"\n`,
+  });
+  const at = bodyLine("Precinct 12");
+
+  it("accounts for a line by overlapping entries, so a bare number never needs its own", async () => {
+    const both = setup(header("Springfield Township 12", "Springfield Township", "Township 12"));
+    assert.deepEqual(lines(await ballotCheck(both)), ["ballot-view.md written"]);
+    const one = setup(header("Springfield Township 12", "Springfield Township"));
+    assert.deepEqual(lines(await ballotCheck(one)), [
+      `sources/_ballot/sample-ballot.md:${at} line-unaccounted`,
+    ]);
+  });
+
+  it("warns, by line and entry number, when one compound entry is a whole line", async () => {
+    const data = setup(
+      header(
+        "Springfield Township Precinct 12",
+        "Pat Q. Voter",
+        "Springfield Township Precinct 12",
+      ),
+    );
+    const result = await ballotCheck(data);
+    assert.deepEqual(lines(result), [
+      `sources/_ballot/sample-ballot.md:${at} private-whole-line 2`,
+      "ballot-view.md written",
+    ]);
+    assert.equal(result.status, 0);
+  });
+
+  it("does not warn when the line's parts are listed too, or the entry is one place", async () => {
+    for (const [line, ...entries] of [
+      [
+        "Springfield Township Precinct 12",
+        "Springfield Township Precinct 12",
+        "Springfield Township",
+        "Precinct 12",
+      ],
+      ["Precinct 12", "Precinct 12"],
+      ["Spring Valley Township", "Spring Valley Township"],
+    ]) {
+      assert.deepEqual(lines(await ballotCheck(setup(header(line, ...entries)))), [
+        "ballot-view.md written",
+      ]);
+    }
+  });
+
+  it("lists, with --show only, each line private_strings alone account for", async () => {
+    // An entry equal to a contest title hides the contest from both counts.
+    const body = SAMPLE_BODY.replace("Shall Justice", "County Sheriff\nShall Justice");
+    const priv = `${PRIVATE.replace("ignored_lines", "  - County Sheriff\nignored_lines")}`;
+    const data = setup({ body, priv });
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
+    const shown = await runInTty("ballot-check", ["--show", BALLOT], {
+      cwd: data.root,
+      env: data.env,
+    });
+    const sheriff = FIRST + body.split("\n").indexOf("County Sheriff");
+    assert.equal(
+      shown.stdout.trim(),
+      [
+        `sources/_ballot/sample-ballot.md:${at} line-private`,
+        "    Precinct 12",
+        `sources/_ballot/sample-ballot.md:${sheriff} line-private`,
+        "    County Sheriff",
+        "ballot-view.md written",
+      ].join("\n"),
+    );
+  });
+
+  it("counts only a candidate's span on a two-column line", async () => {
+    const body = SAMPLE_BODY.replace(
+      "Jane Example\nExample Party",
+      "Jane Example Example Party    Mo Moss Other Party",
+    );
+    assert.deepEqual(lines(await ballotCheck(setup({ body }))), [
+      `sources/_ballot/sample-ballot.md:${bodyLine("Jane Example")} line-unaccounted`,
+    ]);
   });
 });

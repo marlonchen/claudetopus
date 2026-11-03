@@ -7,7 +7,8 @@
 // the previous one; a contest's Vote for phrase and names are searched for only
 // between its title and the next placed title. A line is accounted for when
 // every letter and digit on it is inside a matched span, when it equals an
-// ignored_lines entry, or when it is made up wholly of private_strings entries.
+// ignored_lines entry, or when it is made up wholly of private_strings
+// entries, which may overlap, read in the publish scan's third form.
 
 const { Failure } = require("./output");
 const { WORD, normalizeLine, wholeWords } = require("./normalize");
@@ -48,20 +49,36 @@ const voteForCount = (text) => {
 // missing party after it reads as name-not-found.
 const GLUED = /^['-][\p{L}\p{M}\p{Nd}]/u;
 
-const madeOfEntries = (line, entries) => {
-  let rest = privateForm(line);
-  for (const entry of entries) {
-    for (const i of wholeWords(rest, entry).reverse()) {
-      rest = `${rest.slice(0, i)} ${rest.slice(i + entry.length)}`;
-    }
+// A place-type word: an entry holding one before its last word, or a digit
+// run, joins parts the scan could catch alone ("Springfield Township 12").
+const PLACE_WORDS = new Set(["township", "precinct", "ward", "borough", "village", "city"]);
+const isCompound = (entry) => {
+  const words = entry.split(" ").filter((w) => WORD.test(w));
+  return (
+    words.length >= 3 &&
+    (/\p{Nd}/u.test(entry) || words.slice(0, -1).some((w) => PLACE_WORDS.has(w)))
+  );
+};
+
+// Is every letter and digit of `form` (a line in privateForm) inside an
+// occurrence of one of `entries` ([{ text }]), overlaps allowed?
+const madeOfEntries = (form, entries) => {
+  const covered = new Uint8Array(form.length);
+  for (const { text } of entries) {
+    for (const i of wholeWords(form, text)) covered.fill(1, i, i + text.length);
   }
+  let rest = "";
+  for (let i = 0; i < form.length; i++) rest += covered[i] ? " " : form[i];
   return !WORD.test(rest);
 };
 
 // `body`: the snapshot body; `firstLine`: the file line number of its first
 // line; `contests`: [{ title, at, type, vote_for, entries: [{ name, party, at,
 // printed, official }] }], where `at` is a ballot.yaml location. Returns
-// { failures, spans: [text] in ballot order, unaccounted: [{ line, text }] }.
+// { failures, spans: [text] in ballot order, unaccounted: [{ line, text }],
+// privateLines: [{ line, text }] that private_strings entries alone account
+// for, wholeLines: [{ line, entry }] where one compound entry (isCompound),
+// numbered from 1, accounts for a line the others do not }.
 const matchBallot = ({ body, firstLine, contests, privateStrings, ignoredLines }) => {
   const raw = body.split("\n");
   const norm = raw.map(normalizeLine);
@@ -155,24 +172,43 @@ const matchBallot = ({ body, firstLine, contests, privateStrings, ignoredLines }
   for (const [s, e] of spans) covered.fill(1, s, e);
   const ignored = new Set(ignoredLines.map(normalizeLine));
   const entries = privateStrings
-    .map(privateForm)
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length);
+    .map((entry, n) => ({ text: privateForm(entry), entry: n + 1 }))
+    .filter(({ text }) => text);
   const unaccounted = [];
+  const privateLines = [];
+  const wholeLines = [];
   for (const [j, range] of lineRange.entries()) {
     if (!range) continue;
     let all = true;
     for (let i = range[0]; i < range[1] && all; i++) {
       if (!covered[i] && WORD.test(joined[i])) all = false;
     }
-    if (all || ignored.has(norm[j]) || madeOfEntries(norm[j], entries)) continue;
-    unaccounted.push({ line: firstLine + j, text: raw[j] });
+    if (all || ignored.has(norm[j])) continue;
+    const line = firstLine + j;
+    const form = privateForm(norm[j]);
+    if (!madeOfEntries(form, entries)) {
+      unaccounted.push({ line, text: raw[j] });
+      continue;
+    }
+    privateLines.push({ line, text: raw[j] });
+    for (const e of entries) {
+      if (!isCompound(e.text) || !madeOfEntries(form, [e])) continue;
+      if (
+        !madeOfEntries(
+          form,
+          entries.filter((other) => other !== e),
+        )
+      )
+        wholeLines.push({ line, entry: e.entry });
+    }
   }
 
   return {
     failures,
     spans: spans.sort((a, b) => a[0] - b[0]).map(([s, e]) => joined.slice(s, e)),
     unaccounted,
+    privateLines,
+    wholeLines,
   };
 };
 

@@ -24,7 +24,8 @@ Your tools let you read only:
 
 - the skill's references, under `.claude/skills/research-candidates/references/`: read `article-format.md`, `sections.md` and `source-tiers.md` (Claim tags) before you write;
 - `<ballot>/ballot.yaml`, for the contest's candidates, its `office_type` and its `not_researched` list;
-- `<ballot>/ballot-view.md`, the matched spans of the sample ballot. Its `link:` line names the sample ballot, which you cite as a link target and never open; you open no file under `sources/_ballot/`;
+- `<ballot>/ballot-view.md`, the matched spans of the sample ballot. Its `link:` line names the sample ballot, which you cite as a link target and never open;
+- the companion `_ballot` snapshots its `read:` lines name (candidate list, voter pamphlet, write-in list, withdrawal notice), and no other file under `sources/_ballot/`;
 - `<ballot>/sources/<contest>/`, your own contest's only, and `<ballot>/articles/`.
 
 You write only `<ballot>/articles/<contest>.md`. Give Glob and Grep a `path` every time, with a relative pattern.
