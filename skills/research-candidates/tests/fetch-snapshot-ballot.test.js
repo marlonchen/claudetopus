@@ -807,10 +807,12 @@ describe("the data repo's Claude Code settings", () => {
   // Value: protects=D1: the PreToolUse hook refuses the commands that got past the terminal guard in review (CLAUDECODE unset under a pty), quoted flags, and Bash writes to script-only files, and lets ordinary commands run; it fails closed when it cannot run; fails_when=a refusal is dropped, the hook widens to git or rg flags, or a hook failure lets the call through; why_new=the review bypassed the guard from a session; seam=hook; no_claim=a flag or name built at run time (documented)
   it("runs a PreToolUse hook that refuses guard bypasses and fails closed", () => {
     assert.deepEqual(hookGroup.matcher.split("|").sort(), [
+      "Agent",
       "Bash",
       "Edit",
       "MultiEdit",
       "NotebookEdit",
+      "Task",
       "Write",
     ]);
     const project = projectWithSkill();

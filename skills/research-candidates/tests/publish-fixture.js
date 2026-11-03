@@ -297,6 +297,19 @@ const addContest = async (data, { id, article, snapshots = {}, log = "" }) => {
   commit(data);
 };
 
+// A data repo whose ballot, `ballot` with the sample ballot `sample`, passes
+// ballot-check, with nothing researched yet.
+const checkedBallot = async ({ ballot = BALLOT_YAML, sample = SAMPLE_TEXT } = {}) => {
+  const data = makeDataRepo({ ballot, private: PRIVATE });
+  repos.push(data);
+  data.write("publish.yaml", "branch: main\ndisplay_name: Sam\n");
+  plant(data, SAMPLE_BALLOT, sample);
+  appendTo(data, "ballot.ledger", `${SAMPLE_BALLOT}\tsample_ballot\turl\tnone\t2026-10-20\n`);
+  const checked = await run(data, "ballot-check", [BALLOT]);
+  assert.strictEqual(checked.status, 0, checked.stdout);
+  return data;
+};
+
 // A data repo whose ballot passes ballot-check and whose House contest is
 // reviewed and ready, all committed. `ballot` and `house` override parts:
 // `house` is the House article, `snapshots` more snapshots to save first,
@@ -307,13 +320,7 @@ const setup = async ({
   snapshots = {},
   sample = SAMPLE_TEXT,
 } = {}) => {
-  const data = makeDataRepo({ ballot, private: PRIVATE });
-  repos.push(data);
-  data.write("publish.yaml", "branch: main\ndisplay_name: Sam\n");
-  plant(data, SAMPLE_BALLOT, sample);
-  appendTo(data, "ballot.ledger", `${SAMPLE_BALLOT}\tsample_ballot\turl\tnone\t2026-10-20\n`);
-  const checked = await run(data, "ballot-check", [BALLOT]);
-  assert.strictEqual(checked.status, 0, checked.stdout);
+  const data = await checkedBallot({ ballot, sample });
   await addContest(data, {
     id: "us-house-07",
     article: house,
@@ -450,6 +457,7 @@ module.exports = {
   SAMPLE_TEXT,
   addContest,
   ballotClaim,
+  checkedBallot,
   block,
   claim,
   commit,

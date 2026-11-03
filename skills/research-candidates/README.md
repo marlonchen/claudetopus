@@ -2,7 +2,7 @@
 
 Candidate research skill for Claude Code. For each voter address it builds a ballot guide where every claim is backed by a verbatim excerpt from a saved source, then publishes one static, phone-friendly page per ballot.
 
-See [SKILL.md](SKILL.md) for the full spec. **Status: scaffold** — the spec and reference formats are in place. Of the scripts in SKILL.md's script table, only `fetch-snapshot`'s plain fetch of an HTML page, with its Rule 7 privacy refusals, its `--ballot` import and its `--searched` search log are built, and so are `ballot-check`'s core and privacy rules (without its companion and supersedes rules), `check`, `coverage` and `review-list`, and `publish` through its privacy scan and its render to `site/index.html`, without its installed-skill check or push to the Pages repo; `fetch-snapshot`'s Wayback copies (`archives.tsv`) are not.
+See [SKILL.md](SKILL.md) for the full spec. **Status: mostly built**: every script in SKILL.md's script table runs, and so do the discovery, compile and neutrality agents ([Agents](#agents)). SKILL.md's status lists what is not built yet, among them `fetch-snapshot`'s Wayback copies (`archives.tsv`), `ballot-check`'s companion and supersedes rules, and `publish`'s installed-skill check.
 
 This directory is the skill's *source*. The research data it works on (addresses, ballots, snapshots, review lists, articles) belongs in a separate **private** repo and must never be committed here: this repo is public.
 
@@ -29,14 +29,14 @@ Pin a commit of this repo you have read that is on its default branch (`main`; p
 
 Never install it at user scope (`--scope user`): Rule 8 lets it run only in the private data repo, so everywhere else it would only load and refuse. To try local changes before they are pushed, see [Install a skill](../../README.md#install-a-skill), and never run `--from-local` into the real data repo: use a throwaway private repo with made-up addresses, so unreviewed code never runs next to real ones.
 
-Then install the data repo's Claude Code settings (next section) and the scripts' dependencies (the one after), and from inside the data repo ask Claude Code to "research my ballot" or "add an address".
+Then install the data repo's Claude Code settings (next section), its agents (the one after) and the scripts' dependencies, and from inside the data repo ask Claude Code to "research my ballot" or "add an address".
 
 ## Data-repo settings
 
 [data-repo-settings.json](data-repo-settings.json) holds what Rules 3 and 5 rely on:
 
 - **Deny rules** for the model's file edits to `sources/`, `snapshots.sha256`, `search-log/`, `ballot.ledger` and `published.log` under any ballot and to `downloads/`, and for Bash calls running `fetch-snapshot --ballot`, `ballot-check --show` or `publish --show`, which print or prompt with private text and run only in the researcher's own terminal, `fetch-snapshot --keep-short`, which saves a page the short-page rule refused on the researcher's own judgment, and `publish --push` or `publish --device-check`, which push the page after the researcher's own yes.
-- **A PreToolUse hook**, [scripts/session-guard](scripts/session-guard), which reads every Bash command and every file the model writes before it runs. It refuses `--ballot`, `--show`, `--keep-short`, `--push` or `--device-check` anywhere in them, even quoted apart (`--bal''lot`), and refuses a command or file that names `CLAUDECODE`, empties the environment (`env -i`) or runs a program under a pseudo-terminal (`script`, `expect`, Python's `pty`), since those get past the scripts' terminal guard. It also refuses a Bash command naming `ballot.ledger`, `snapshots.sha256`, `published.log` or `downloads/`, so the model cannot plant a file for `--ballot --file`, write a ledger line itself, or record a slug it never published. It prints only the tool and a code, and if it cannot run (the skill missing, bad input), the hook command exits 2 and the call is refused.
+- **A PreToolUse hook**, [scripts/session-guard](scripts/session-guard), which reads every Bash command, every file the model writes and every agent it starts before it runs. It refuses `--ballot`, `--show`, `--keep-short`, `--push` or `--device-check` anywhere in them, even quoted apart (`--bal''lot`), and refuses a command or file that names `CLAUDECODE`, empties the environment (`env -i`) or runs a program under a pseudo-terminal (`script`, `expect`, Python's `pty`), since those get past the scripts' terminal guard. It also refuses a Bash command naming `ballot.ledger`, `snapshots.sha256`, `published.log` or `downloads/`, so the model cannot plant a file for `--ballot --file`, write a ledger line itself, or record a slug it never published. It refuses to start the discovery agent with any prompt but a token `discovery-bind` printed. It prints only the tool and a code, and if it cannot run (the skill missing, bad input), the hook command exits 2 and the call is refused.
 
 Merge the `deny` list and the `hooks` entry into the data repo's `.claude/settings.json` (copy the file there if it has none) and commit it:
 
@@ -48,6 +48,26 @@ cp .claude/skills/research-candidates/data-repo-settings.json .claude/settings.j
 Start Claude Code at the data repo's top level: Claude Code reads a rule starting with `/` from the session's starting directory, so a session started in `<election>/` loses the `downloads/` rule, and the hook is found through `$CLAUDE_PROJECT_DIR`. Check the merged file again after each upgrade of the skill.
 
 These layers stop mistakes and the plain ways around the terminal guard. They are not a wall against a session that sets out to get past them: a command that builds the flag or a file name at run time, from a variable or an encoding, still gets through, so `snapshots.sha256` records every snapshot's hash (Rule 3), and `ballot.ledger` shows what the researcher imported, not proof against a hostile session.
+
+## Agents
+
+SKILL.md Rule 7 runs three steps as separate agents, each defined in [agents/](agents/) with the tools it gets:
+
+| Agent | Step | Tools |
+| --- | --- | --- |
+| `research-candidates-discovery` | 4.1-4.2 | Web search, and Bash for its fetch tool, `discovery-fetch`, only |
+| `research-candidates-compile` | 4.3-4.4, 5 | Read, Glob, Grep, Write, Edit |
+| `research-candidates-neutrality` | 4.5 | Read, Glob, Grep, Write |
+
+Each definition also runs [scripts/session-guard](scripts/session-guard) on every call its agent makes, which holds the agent to SKILL.md's allow lists: discovery's Bash to one `discovery-fetch` command bound to its contest, compile's reads to `ballot.yaml`, `ballot-view.md`, the companions on its `read:` lines, the contests' sources and `articles/`, and its writes to `articles/`, and neutrality's to `articles/` and its own flags file. Both also read the skill's `references/`. Copy them into the data repo, overwriting older copies, and commit them:
+
+```bash
+cd ~/src/github/<user>/elections
+mkdir -p .claude/agents
+cp .claude/skills/research-candidates/agents/*.md .claude/agents/
+```
+
+Do this after each install or upgrade of the skill, and review the diff before committing. Claude Code runs the agents' hooks only once the data repo's folder is trusted, as it does the settings hook. `discovery-bind` keeps its tokens under `.discovery/` at the data repo's top level; they are not research data, so add `.discovery/` to the data repo's `.gitignore`.
 
 ## Dependencies
 

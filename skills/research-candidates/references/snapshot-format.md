@@ -91,6 +91,20 @@ The agents' fetch tool fixes the ballot and the contest, so the agent gives only
 - `search-log-invalid`: the log, or `search-log/`, is not a regular file or directory (a symlink is neither), or the log holds a line `coverage` would fail (Search log), such as a last line with no newline, which the next line would join, located `search-log/<contest>.tsv`;
 - `ballot-locked` and `internal-error`.
 
+The agents' fetch tool is `discovery-fetch`, which the discovery agent runs with a token in place of the ballot and contest (SKILL.md Rule 7). The main session binds the token first:
+
+```text
+discovery-bind <election>/<ballot-id> <contest>
+discovery-fetch <token> --brief
+discovery-fetch <token> <subject> <name> <url>
+discovery-fetch <token> --searched <subject> <item>
+```
+
+`discovery-bind` checks Rule 8, runs `ballot-check`, and once it passes writes `.discovery/<token>` at the project root, holding the ballot and contest, and prints `<contest> bound <token>`; the token is 32 random hex digits. `discovery-fetch` reads the ballot and contest from that file. `--brief` runs `ballot-check` again and prints the contest's `contest:`, `type:`, `office_type:`, `jurisdiction:` and `search_terms:` lines as `ballot.yaml` has them, `items:` (the checklist items its type uses), a `candidate:` or `official:` line with each id and name (`subject: _race` for a measure), and a `domain:` line for each host in `tiers.yaml`, once each. The other two forms are this section's plain fetch and `--searched`, with the bound ballot and contest, and print what those print; any other form, a flag or an extra argument among them, fails `usage`. Their own codes are `usage`, `bad-ballot`, `unknown-contest` (a contest `ballot.yaml` does not list), and:
+
+- `ballot-check-failed`: `ballot-check` does not pass, located at the ballot's `ballot.yaml`; run it to see why;
+- `unknown-token`: no binding for the token, located `-`.
+
 ## Names
 
 Use a short kebab-case name for the source (`fec-totals.md`). Re-fetching writes a new file with a numeric suffix (`fec-totals-2.md`); a file is never overwritten. A suffix always means a re-fetch, so `fetch-snapshot` refuses a name that ends in `-` and digits (`bad-name`). Numbers in names are fine: `check` strips link targets, link text and inline code before looking for figures.

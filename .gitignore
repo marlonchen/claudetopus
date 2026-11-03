@@ -157,6 +157,7 @@ vite.config.ts.timestamp-*
 /publish.yaml
 /tiers.yaml
 /downloads/
+/.discovery/
 /*/*/ballot.yaml
 /*/*/private.yaml
 /*/*/unfetchable.md
