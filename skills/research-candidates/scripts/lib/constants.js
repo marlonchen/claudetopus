@@ -61,6 +61,8 @@ const SHORT_PAGE = 500;
 
 // snapshot-format.md: the _ballot snapshot roles, and the ledger that lists them.
 const ROLES = ["sample_ballot", "candidate_list", "pamphlet", "write_in_list", "withdrawal_notice"];
+// The _ballot roles the compile agent reads whole (ballot-format.md, Ballot view).
+const COMPANION_ROLES = ROLES.filter((role) => role !== "sample_ballot");
 const LEDGER = "ballot.ledger";
 
 // snapshot-format.md, Manifest: the operating-system and editor leftovers
@@ -279,6 +281,7 @@ module.exports = {
   ABBREVIATIONS,
   ALLEGATION_WORDS,
   ALWAYS_REVIEWED,
+  COMPANION_ROLES,
   BALLOT_ID_PATTERN,
   BINDINGS,
   BINDING_TOKEN,

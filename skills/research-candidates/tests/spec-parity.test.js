@@ -867,11 +867,17 @@ describe("BallotIds", () => {
   it("an abbreviated printed party shows its official full name", () => {
     const rule = ballotRuleLine("Party names");
     const shape = rule.match(
-      /fails, with no `party_name`, a `party` with any word written as an abbreviation: all capitals \(([^)]+)\), or holding a period, slash or hyphen \(([^)]+)\)\. A full name such as (.+?) passes/,
+      /fails, with no `party_name`, a `party` with any word written as an abbreviation: all capitals \(([^)]+)\), or holding a period or slash \(([^)]+)\)\. A full name such as (.+?) passes/,
     );
     assert.ok(shape, "ballot-format.md no longer says which printed parties need party_name");
-    const abbreviatedWord = /^(?:[A-Z]+|\S*[./-]\S*)$/;
-    const isAbbreviated = (party) => party.split(/\s+/).some((w) => abbreviatedWord.test(w));
+    // Extended for ticket 19 (run 9 party_name item): a hyphen joins words, so
+    // Democratic-Farmer-Labor passes while D-NPL is still caught by its capitals.
+    assert.match(rule, /A hyphen joins words, so each part between hyphens is read as a word/);
+    const abbreviatedWord = /^(?:[A-Z]+|\S*[./]\S*)$/;
+    const isAbbreviated = (party) => party.split(/[\s-]+/).some((w) => abbreviatedWord.test(w));
+    // An abbreviated party_name, and the sample ballot's own printed party only in long words.
+    assert.match(rule, /in a name with a lowercase letter, a word in capitals \(`DFL Party`\)/);
+    assert.match(rule, /only when every word of it has 4 or more letters/);
     const examples = (list) => [...list.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
     const caught = [...examples(shape[1]), ...examples(shape[2])];
     assert.ok(

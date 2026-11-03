@@ -23,6 +23,7 @@ const {
   STATUSES,
   VIEW,
 } = require("./constants");
+const { checkCompanions, checkPeople } = require("./ballot-companions");
 const { checkPrivacy } = require("./ballot-privacy");
 const {
   ballotEntries,
@@ -104,7 +105,9 @@ const idMatches = (id, state, county) => {
 const personKey = (name) => normalizeLine(name).toLowerCase();
 
 // ballot.yaml, validated. Returns { failures, contests (for matchBallot),
-// slug, slugAt, people: [{ id, name, at }], hash, parsed: { doc, lineCounter, text, data } }.
+// candidates (for checkPeople), lists: { confirmed_supersedes,
+// retired_companions } as [{ path, at }], slug, slugAt, people: [{ id, name,
+// at }], hash, parsed: { doc, lineCounter, text, data } }.
 const checkBallotYaml = (root, ballot) => {
   const [election, ballotId] = ballot.split("/");
   const { doc, lineCounter, text } = readYamlDocument(
@@ -158,16 +161,22 @@ const checkBallotYaml = (root, ballot) => {
   }
   if (typeof data.slug !== "string" || !SLUG_PATTERN.test(data.slug))
     fail(["slug"], "slug-invalid");
+  // Each list as [{ path, at }], checked against the snapshots later.
+  const lists = {};
   for (const key of ["confirmed_supersedes", "retired_companions"]) {
-    const list = data[key];
-    if (list !== undefined && (!Array.isArray(list) || !list.every(isText)))
+    const list = data[key] ?? [];
+    if (!Array.isArray(list) || !list.every(isText)) {
       fail([key], "ballot-invalid");
+      lists[key] = [];
+    } else lists[key] = list.map((entry, i) => ({ path: entry, at: at([key, i]) }));
   }
   if (!Array.isArray(data.contests) || data.contests.length === 0) {
     fail(["contests"], "ballot-invalid");
     return {
       failures,
       contests: [],
+      candidates: [],
+      lists,
       slug: data.slug,
       slugAt: at(["slug"]),
       people: [],
@@ -181,6 +190,7 @@ const checkBallotYaml = (root, ballot) => {
 
   const contests = [];
   const people = [];
+  const candidates = [];
   const contestIds = new Set();
   for (const [c, contest] of data.contests.entries()) {
     const keys = ["contests", c];
@@ -265,6 +275,15 @@ const checkBallotYaml = (root, ballot) => {
           if (candidate.party_name !== undefined && candidate.party === undefined) {
             fail([...pkeys, "party_name"], "ballot-invalid");
           }
+          candidates.push({
+            name: candidate.name,
+            status: candidate.status,
+            party: isText(candidate.party) ? candidate.party : undefined,
+            partyName: isText(candidate.party_name) ? candidate.party_name : undefined,
+            at: Object.fromEntries(
+              ["name", "party", "party_name"].map((key) => [key, at([...pkeys, key])]),
+            ),
+          });
           const isPrinted = candidate.status !== "certified_write_in";
           if (isPrinted) printed++;
           if (entry) {
@@ -300,6 +319,8 @@ const checkBallotYaml = (root, ballot) => {
   return {
     failures,
     contests,
+    candidates,
+    lists,
     slug: data.slug,
     slugAt: at(["slug"]),
     people,
@@ -350,12 +371,16 @@ const otherBallots = (root, ballot) => {
   return { failures, others };
 };
 
-// The authoritative sample ballot: every file under sources/_ballot/ must have
-// a ballot.ledger line and the role it records, and exactly one is a
-// sample ballot, whose hash matches snapshots.sha256. A file whose name
-// fetch-snapshot could not have given is located `sources/_ballot/-`.
-// Returns { failures, sample: { path, bytes, body, firstLine } | null }.
-const findSampleBallot = (ballotDir) => {
+// The _ballot snapshots: every file under sources/_ballot/ must have a
+// ballot.ledger line and the role it records, and a hash that matches
+// snapshots.sha256. A file whose name fetch-snapshot could not have given is
+// located `sources/_ballot/-`. Sample ballots a supersedes link replaces are
+// out of every check (ballot-format.md, Corrections); exactly one is left,
+// the authoritative sample ballot. `lists` are ballot.yaml's
+// confirmed_supersedes and retired_companions. Returns { failures, sample:
+// { path, bytes, body, firstLine } | null, companions: [{ path, role, query,
+// body, firstLine }] }, the companions in path order and none retired.
+const readBallotSnapshots = (ballotDir, lists) => {
   const failures = [];
   const ledger = new Map();
   const ledgerFile = path.join(ballotDir, LEDGER);
@@ -367,14 +392,16 @@ const findSampleBallot = (ballotDir) => {
     for (const [n, line] of lines.entries()) {
       const m = LEDGER_LINE.exec(line);
       const valid = m && ROLES.includes(m[2]);
-      if (valid) ledger.set(m[1], m[2]);
+      if (valid) ledger.set(m[1], { role: m[2], query: m[4] });
       if (!valid || (!ended && n === lines.length - 1))
         failures.push(new Failure(`${LEDGER}:${n + 1}`, "ledger-invalid"));
     }
   }
   const dir = path.join(ballotDir, BALLOT_DIR);
-  const samples = [];
-  for (const entry of isDir(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
+  const hashes = new Map(readManifest(ballotDir).map((line) => [line.path, line.hash]));
+  const snapshots = [];
+  const entries = isDir(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [];
+  for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
     const rel = `${BALLOT_DIR}/${entry.name}`;
     if (entry.isFile() && LEFTOVER.test(entry.name)) continue;
     if (!SNAPSHOT_NAME.test(entry.name)) {
@@ -388,33 +415,74 @@ const findSampleBallot = (ballotDir) => {
     const bytes = fs.readFileSync(path.join(ballotDir, rel));
     const text = bytes.toString("utf8");
     const front = FRONT_MATTER.exec(text);
-    let role = null;
+    let fields = null;
     try {
-      role = front ? load("yaml").parse(front[1] ?? "")?.role : null;
+      fields = front ? load("yaml").parse(front[1] ?? "") : null;
     } catch {
-      role = null;
+      fields = null;
     }
-    if (role !== ledger.get(rel)) {
+    if (fields?.role !== ledger.get(rel).role) {
       failures.push(new Failure(rel, "ledger-mismatch"));
       continue;
     }
-    if (role === "sample_ballot") {
-      samples.push({
-        path: rel,
-        bytes,
-        body: text.slice(front[0].length),
-        firstLine: front[0].split("\n").length,
-      });
+    if (hashes.get(rel) !== sha256(bytes)) failures.push(new Failure(rel, "snapshot-hash"));
+    snapshots.push({
+      path: rel,
+      role: fields.role,
+      supersedes: fields.supersedes,
+      query: ledger.get(rel).query,
+      bytes,
+      body: text.slice(front[0].length),
+      firstLine: front[0].split("\n").length,
+    });
+  }
+
+  // Corrections: each valid link replaces its target, confirmed or not, since
+  // an unconfirmed one fails the check anyway.
+  const byPath = new Map(snapshots.map((s) => [s.path, s]));
+  const isSample = (s) => s?.role === "sample_ballot";
+  const replaced = new Map();
+  for (const s of snapshots.filter((s) => s.supersedes !== undefined)) {
+    const target =
+      typeof s.supersedes === "string" && SNAPSHOT_NAME.test(s.supersedes)
+        ? `${BALLOT_DIR}/${s.supersedes}`
+        : null;
+    if (!isSample(s) || !isSample(byPath.get(target)) || target === s.path || replaced.has(target))
+      failures.push(new Failure(s.path, "supersedes-invalid"));
+    else replaced.set(target, s.path);
+  }
+  // A loop has no first ballot to correct: none of its links count.
+  for (const start of [...replaced.keys()]) {
+    const seen = [];
+    for (let at = start; at && !seen.includes(at); at = replaced.get(at)) seen.push(at);
+    const last = replaced.get(seen.at(-1));
+    if (last && seen.includes(last)) {
+      for (const target of seen.slice(seen.indexOf(last))) {
+        if (!replaced.has(target)) continue;
+        failures.push(new Failure(replaced.get(target), "supersedes-invalid"));
+        replaced.delete(target);
+      }
     }
   }
-  if (samples.length === 0) failures.push(new Failure(BALLOT_DIR, "no-sample-ballot"));
+  const confirmed = new Set(lists.confirmed_supersedes.map((entry) => entry.path));
+  for (const by of replaced.values())
+    if (!confirmed.has(by)) failures.push(new Failure(by, "supersedes-unconfirmed"));
+  for (const entry of lists.confirmed_supersedes) {
+    if (byPath.get(entry.path)?.supersedes === undefined)
+      failures.push(new Failure(entry.at, "ballot-invalid", "confirmed_supersedes"));
+  }
+  const retired = new Set(lists.retired_companions.map((entry) => entry.path));
+  for (const entry of lists.retired_companions) {
+    const s = byPath.get(entry.path);
+    if (!s || isSample(s))
+      failures.push(new Failure(entry.at, "ballot-invalid", "retired_companions"));
+  }
+
+  const samples = snapshots.filter((s) => isSample(s) && !replaced.has(s.path));
+  if (!snapshots.some(isSample)) failures.push(new Failure(BALLOT_DIR, "no-sample-ballot"));
   if (samples.length > 1) failures.push(new Failure(BALLOT_DIR, "sample-ballot-not-unique"));
-  if (samples.length !== 1) return { failures, sample: null };
-  const [sample] = samples;
-  const hashes = readManifest(ballotDir).filter((line) => line.path === sample.path);
-  if (hashes.at(-1)?.hash !== sha256(sample.bytes))
-    failures.push(new Failure(sample.path, "snapshot-hash"));
-  return { failures, sample };
+  const companions = snapshots.filter((s) => !isSample(s) && !retired.has(s.path));
+  return { failures, sample: samples.length === 1 ? samples[0] : null, companions };
 };
 
 const parseArgs = (argv) => {
@@ -425,11 +493,13 @@ const parseArgs = (argv) => {
   return { show, ballot: rest[0] };
 };
 
-// The view, then the hashes of what it was checked against, so a later gate
-// can tell a view that ballot.yaml or the sample ballot no longer agree with.
-const viewText = (yaml, sample, spans) =>
+// The view: the link, the companions the compile agent may read, then the
+// hashes of what it was checked against, so a later gate can tell a view that
+// ballot.yaml or the sample ballot no longer agree with.
+const viewText = (yaml, sample, companions, spans) =>
   [
     `link: ${sample.path}`,
+    ...companions.map((companion) => `read: ${companion.path}`),
     `sha256: ${yaml.hash}  ballot.yaml`,
     `sha256: ${sha256(sample.bytes)}  ${sample.path}`,
     ...spans,
@@ -484,14 +554,29 @@ const check = (root, ballot, ballotDir, show) => {
     give(id, name);
   }
 
-  const found = findSampleBallot(ballotDir);
-  failures.push(...found.failures);
+  const found = readBallotSnapshots(
+    ballotDir,
+    yaml?.lists ?? { confirmed_supersedes: [], retired_companions: [] },
+  );
+  failures.push(...found.failures, ...checkCompanions(found.companions, addresses));
+  if (yaml) {
+    failures.push(
+      ...checkPeople({
+        candidates: yaml.candidates,
+        sample: found.sample,
+        companions: found.companions,
+      }),
+    );
+  }
   let spans = [];
   // The last failure in another ballot carries the hint to run ballot-check on
   // each ballot, which locates its own failures.
   const elsewhere = failures.filter((f) => f.location === "-" && !f.hint);
   if (elsewhere.length) elsewhere.at(-1).hint = "check-each-ballot";
-  const lines = [...privacy.warnings, ...failures.map((f) => f.line)];
+  const warnings = [...privacy.warnings];
+  const lines = failures.map((f) => f.line);
+  // Lines only --show prints, which fail nothing.
+  const shown = [];
   // Matching needs both files; without them it would only add noise.
   if (found.sample && yaml && privateLists) {
     const match = matchBallot({
@@ -501,18 +586,25 @@ const check = (root, ballot, ballotDir, show) => {
       ignoredLines: privateLists.ignored_lines,
     });
     spans = match.spans;
+    const at = (line) => `${found.sample.path}:${line}`;
+    for (const { line, entry } of match.wholeLines)
+      warnings.push(`${at(line)} private-whole-line ${entry}`);
     lines.push(...match.failures.map((f) => f.line));
     for (const { line, text } of match.unaccounted) {
-      const unaccounted = new Failure(`${found.sample.path}:${line}`, "line-unaccounted").line;
+      const unaccounted = new Failure(at(line), "line-unaccounted").line;
       lines.push(show ? `${unaccounted}\n    ${printable(text)}` : unaccounted);
     }
+    if (show) {
+      for (const { line, text } of match.privateLines)
+        shown.push(`${at(line)} line-private\n    ${printable(text)}`);
+    }
   }
-  if (lines.length > privacy.warnings.length) throw new Failures(lines);
+  if (lines.length) throw new Failures([...warnings, ...lines, ...shown]);
 
   const tmp = `${view}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, viewText(yaml, found.sample, spans));
+  fs.writeFileSync(tmp, viewText(yaml, found.sample, found.companions, spans));
   fs.renameSync(tmp, view);
-  return [...privacy.warnings, `${VIEW} written`];
+  return [...warnings, ...shown, `${VIEW} written`];
 };
 
 const main = (argv) =>

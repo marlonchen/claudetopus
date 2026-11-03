@@ -12,7 +12,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { apiRecords } = require("./api-text");
 const { parseArticle } = require("./article");
-const { EXCERPT_LENGTH, ID_PATTERN, ROLES, VIEW } = require("./constants");
+const { COMPANION_ROLES, EXCERPT_LENGTH, ID_PATTERN, VIEW } = require("./constants");
 const { hiddenTitles, readYamlDocument } = require("./data-files");
 const { figuresBacked } = require("./figures");
 const { load } = require("./deps");
@@ -25,8 +25,6 @@ const { FRONT_MATTER } = require("./snapshot-file");
 const { sha256, withLock } = require("./snapshot-store");
 const { TIER_RANK } = require("./tiers");
 
-// The _ballot roles the compile agent reads whole (ballot-format.md, Ballot view).
-const COMPANION_ROLES = ROLES.filter((role) => role !== "sample_ballot");
 // source-tiers.md, Claim tags: a claim tag as its tier and mark.
 const CLAIM_TAG = /^(T[1-4])([si])?$/;
 // articles/<contest>.md, for a contest id.

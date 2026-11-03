@@ -6,8 +6,10 @@ const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
 const { BALLOT } = require("./harness");
 const {
+  BALLOT_YAML,
   NOT_RESEARCHED,
   SAMPLE_TEXT,
+  WRITE_INS,
   addContest,
   ballotClaim,
   block,
@@ -172,7 +174,13 @@ describe("publish: ballot screen", () => {
 
 describe("publish: candidate race", () => {
   it("is topic first: chips, sections, issues and candidates in ballot order", async () => {
-    const data = await setup();
+    // No certified write-in, so the county need publish no write-in list.
+    const data = await setup({
+      ballot: BALLOT_YAML.replace(
+        "      - id: di-dunn\n        name: Di Dunn\n        status: certified_write_in\n",
+        "",
+      ),
+    });
     const race = (await published(data)).getElementById("us-house-07");
     assert.strictEqual(
       text(race.querySelector(".banner")),
@@ -477,7 +485,6 @@ describe("publish: receipts", () => {
 
 // School Director: multi-seat, a withdrawn candidate, a certified write-in
 // and Money left for later, unless `moneyLater` is false.
-const WRITE_INS = "sources/_ballot/write-in-list.md";
 const LOCAL_ISSUES = [
   "Taxes and budget",
   "Public safety",
@@ -485,17 +492,8 @@ const LOCAL_ISSUES = [
   "Housing and development",
   "Roads and transit",
 ];
+// checkedBallot saved the write-in list and the withdrawal notice.
 const addSchoolDirector = async (data, { moneyLater = true } = {}) => {
-  const writeIns = snapshot({
-    subject: "_ballot",
-    source: "Exampleton County elections",
-    url: "https://county.example.gov/write-ins",
-    tier: "T1",
-    extra: "role: write_in_list\n",
-    body: "Di Dunn is a certified write-in candidate for School Director.",
-  });
-  const ledger = `${BALLOT}/ballot.ledger`;
-  data.write(ledger, `${data.read(ledger)}${WRITE_INS}\twrite_in_list\turl\tnone\t2026-10-20\n`);
   const money = moneyLater ? NOT_RESEARCHED : undefined;
   const later = (name, onBallot) => block(name, { onBallot, money }, "local");
   const article = [
@@ -516,7 +514,6 @@ const addSchoolDirector = async (data, { moneyLater = true } = {}) => {
   await addContest(data, {
     id: "school-director",
     article,
-    snapshots: { [WRITE_INS]: writeIns },
     log: logLines("school-director", ["ann-able", "cy-cole", "di-dunn"], ["1", "2", "3", "4", "5"]),
   });
 };
