@@ -53,6 +53,20 @@ const visibility = field(String(repo.visibility ?? "PRIVATE").toLowerCase());
 process.stdout.write(visibility + " " + field(repo.sourceId ?? repo.id ?? 1) + "\\n");
 `;
 
+// A stub pdftotext for PATH: prints whatever follows a "%%TEXT\n" marker in
+// the PDF (a form feed when there is none), fails on "%%BROKEN", and logs its
+// arguments to PDFTOTEXT_LOG.
+const PDFTOTEXT_STUB = `#!/usr/bin/env node
+"use strict";
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.PDFTOTEXT_LOG, JSON.stringify(args) + "\\n");
+const pdf = fs.readFileSync(args[args.length - 2], "latin1");
+if (pdf.includes("%%BROKEN")) process.exit(1);
+const at = pdf.indexOf("%%TEXT\\n");
+process.stdout.write(at < 0 ? "\\f" : pdf.slice(at + 7));
+`;
+
 const DEFAULT_TIERS = `- match: county.example.gov
   tier: T1
   owner: third-party
@@ -354,6 +368,7 @@ module.exports = {
   DEFAULT_BALLOT,
   DEFAULT_PRIVATE,
   DEFAULT_TIERS,
+  PDFTOTEXT_STUB,
   SCRIPTS_DIR,
   articlePage,
   git,

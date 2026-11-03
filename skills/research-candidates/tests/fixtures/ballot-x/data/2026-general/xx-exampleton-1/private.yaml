@@ -1,0 +1,7 @@
+private_strings:
+  - Precinct 12
+  - Springfield Township
+ignored_lines:
+  - OFFICIAL SAMPLE BALLOT
+  - "Yes"
+  - "No"
