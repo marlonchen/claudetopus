@@ -59,7 +59,7 @@ SKILL.md Rule 7 runs three steps as separate agents, each defined in [agents/](a
 | `research-candidates-compile` | 4.3-4.4, 5 | Read, Glob, Grep, Write, Edit |
 | `research-candidates-neutrality` | 4.5 | Read, Glob, Grep, Write |
 
-Each definition also runs [scripts/session-guard](scripts/session-guard) on every call its agent makes, which holds the agent to SKILL.md's allow lists: discovery's Bash to one `discovery-fetch` command bound to its contest, compile's reads to `ballot.yaml`, `ballot-view.md`, the companions on its `read:` lines, the contests' sources and `articles/`, and its writes to `articles/`, and neutrality's to `articles/` and its own flags file. Both also read the skill's `references/`. Copy them into the data repo, overwriting older copies, and commit them:
+Each definition also runs [scripts/session-guard](scripts/session-guard) with the agent's name on every call its agent makes, refusing a call that does not carry that name as its `agent_type`, and holds the agent to SKILL.md's allow lists: discovery's Bash to one `discovery-fetch` command bound to its contest, compile's reads to `ballot.yaml`, `ballot-view.md`, the companions on its `read:` lines, the contests' sources and `articles/`, and its writes to `articles/`, and neutrality's to `articles/` and its own flags file. Both also read the skill's `references/`. The lists are per ballot, not per contest: which contest an agent works on is in its prompt, which a hook cannot see. Copy them into the data repo, overwriting older copies, and commit them:
 
 ```bash
 cd ~/src/github/<user>/elections

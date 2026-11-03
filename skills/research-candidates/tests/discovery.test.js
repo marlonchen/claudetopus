@@ -159,6 +159,8 @@ describe("discovery-fetch: fetch-snapshot bound to one contest", () => {
       [BALLOT, "us-house-07", "_race", "page", "https://county.example.gov/"],
       ["_race", "--keep-short", "https://county.example.gov/"],
       ["--brief", "x"],
+      ["--searched", "--file", "x"],
+      ["--searched", "jane-example", "--keep-short"],
       [],
     ]) {
       const result = await run(data, "discovery-fetch", [token, ...args]);

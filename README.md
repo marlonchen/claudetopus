@@ -7,7 +7,7 @@ My Claude Code skills.
 | Skill | What it does |
 | --- | --- |
 | [mywiki](skills/mywiki/README.md) | Personal journal (dated daily entries with carry-forward) plus a Karpathy-style LLM wiki: ingest sources, compile durable articles, query with citations, lint for source fidelity. |
-| [research-candidates](skills/research-candidates/README.md) | Cited, equal-depth candidate research for a voter's ballot: every claim backed by a verbatim excerpt from a saved source, reviewed, then published as one phone-friendly page per ballot. Scaffold. |
+| [research-candidates](skills/research-candidates/README.md) | Cited, equal-depth candidate research for a voter's ballot: every claim backed by a verbatim excerpt from a saved source, reviewed, then published as one phone-friendly page per ballot. Mostly built. |
 
 ## Install a skill
 
@@ -181,7 +181,7 @@ fix: handle missing raw.config
   workflows/ci.yml   # runs lint + test on pull requests and pushes to main
 skills/
   mywiki/            # the skill: SKILL.md, references, scripts, tests
-  research-candidates/  # the skill, partly built: SKILL.md, references, tests, scripts
+  research-candidates/  # the skill, mostly built: SKILL.md, references, agents, scripts, tests
 biome.jsonc          # JavaScript lint + format config
 .rumdl.toml          # Markdown lint config
 .yamlfmt             # YAML lint + format config

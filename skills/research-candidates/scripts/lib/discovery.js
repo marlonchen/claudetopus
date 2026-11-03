@@ -23,15 +23,12 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { check: checkBallot } = require("./ballot-check");
-const { CHECKLIST_ITEMS, ID_PATTERN } = require("./constants");
+const { CHECKLIST_ITEMS, DISCOVERY_BINDINGS, DISCOVERY_TOKEN, ID_PATTERN } = require("./constants");
 const { loadPrivateValues, loadTiers, readYamlDocument } = require("./data-files");
 const { openBallot, parseBallot } = require("./fetch-common");
 const fetchSnapshot = require("./fetch-snapshot").main;
 const { Failure, Failures, runCommand } = require("./output");
 const { withLock } = require("./snapshot-store");
-
-const BINDINGS = ".discovery";
-const TOKEN = /^[0-9a-f]{32}$/;
 
 // ballot-check, under the ballot lock as ballot-check runs it; its own lines
 // say why it failed, so only the code is printed here.
@@ -66,16 +63,18 @@ const bind = (argv) =>
     requireBallotCheck(root, ballot, ballotDir);
     readContest(root, ballot, contest);
     const token = crypto.randomBytes(16).toString("hex");
-    fs.mkdirSync(path.join(root, BINDINGS), { recursive: true });
-    fs.writeFileSync(path.join(root, BINDINGS, token), `${ballot} ${contest}\n`, { flag: "wx" });
+    fs.mkdirSync(path.join(root, DISCOVERY_BINDINGS), { recursive: true });
+    fs.writeFileSync(path.join(root, DISCOVERY_BINDINGS, token), `${ballot} ${contest}\n`, {
+      flag: "wx",
+    });
     return [`${contest} bound ${token}`];
   });
 
 // { ballot, contest } bound to `token`, or unknown-token. A binding that is not
 // a regular file, or does not hold one ballot and contest, is no binding.
 const readBinding = (root, token) => {
-  if (!TOKEN.test(token ?? "")) throw new Failure("-", "usage");
-  const file = path.join(root, BINDINGS, token);
+  if (!DISCOVERY_TOKEN.test(token ?? "")) throw new Failure("-", "usage");
+  const file = path.join(root, DISCOVERY_BINDINGS, token);
   const stat = fs.lstatSync(file, { throwIfNoEntry: false });
   const m = stat?.isFile() && /^(\S+) (\S+)\n$/.exec(fs.readFileSync(file, "utf8"));
   if (!m || !ID_PATTERN.test(m[2])) throw new Failure("-", "unknown-token");
@@ -102,30 +101,33 @@ const brief = (root, { ballot, contest }) => {
   return lines;
 };
 
+// A command that fails with `failure` before it runs.
+const fail = (failure) =>
+  runCommand(async () => {
+    throw failure;
+  });
+
 const fetch = (argv) => {
   const root = process.cwd();
   let binding;
   try {
     binding = readBinding(root, argv[0]);
   } catch (error) {
-    return runCommand(async () => {
-      throw error;
-    });
+    return fail(error);
   }
   const { ballot, contest } = binding;
   const rest = argv.slice(1);
   if (rest.length === 1 && rest[0] === "--brief") {
     return runCommand(async () => brief(root, binding));
   }
-  if (rest.length === 3 && rest[0] === "--searched") {
+  const flagged = rest.slice(1).some((arg) => arg.startsWith("--"));
+  if (rest.length === 3 && rest[0] === "--searched" && !flagged) {
     return fetchSnapshot(["--searched", ballot, contest, rest[1], rest[2]]);
   }
-  if (rest.length === 3 && !rest.some((arg) => arg.startsWith("--"))) {
+  if (rest.length === 3 && !rest[0].startsWith("--") && !flagged) {
     return fetchSnapshot([ballot, contest, ...rest]);
   }
-  return runCommand(async () => {
-    throw new Failure("-", "usage");
-  });
+  return fail(new Failure("-", "usage"));
 };
 
 module.exports = { bind, fetch };

@@ -24,6 +24,10 @@ const BALLOT_ID_PATTERN = /^[a-z]{2}-[a-z]+(-[a-z]+)*-[1-9][0-9]?$/;
 const SLUG_PATTERN = /^[a-z0-9]{6}$/;
 // ballot-format.md, Ids: contest, candidate and official ids. Snapshot names use it too.
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+// discovery-bind's tokens (discovery.js), each a file of this directory at
+// the project root.
+const DISCOVERY_TOKEN = /^[0-9a-f]{32}$/;
+const DISCOVERY_BINDINGS = ".discovery";
 
 // snapshot-format.md, Cleaning the URL: the API-key environment variables the
 // scripts read, each with the one host its key is sent to, as a header.
@@ -278,6 +282,8 @@ module.exports = {
   BALLOT_ID_PATTERN,
   CHECKLIST_ITEMS,
   DEVICE_CHECK,
+  DISCOVERY_BINDINGS,
+  DISCOVERY_TOKEN,
   ELECTION_PATTERN,
   EXCERPT_LENGTH,
   EXEMPTION,

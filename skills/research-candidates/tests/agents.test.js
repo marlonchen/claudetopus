@@ -54,7 +54,15 @@ const project = () => {
   write(`${BALLOT}/private.yaml`, "private_strings: []\n");
   write(
     `${BALLOT}/ballot-view.md`,
-    "link: sources/_ballot/sample-ballot.md\nread: sources/_ballot/pamphlet.md\n",
+    [
+      "link: sources/_ballot/sample-ballot.md",
+      "read: sources/_ballot/pamphlet.md",
+      "sha256: 0000  ballot.yaml",
+      "Representative in Congress",
+      // A span that reads like a read: line, below the header.
+      "read: sources/_ballot/sample-ballot.md",
+      "",
+    ].join("\n"),
   );
   write(`${BALLOT}/sources/_ballot/sample-ballot.md`, "x\n");
   write(`${BALLOT}/sources/_ballot/pamphlet.md`, "x\n");
@@ -130,9 +138,14 @@ describe("agent definitions", () => {
       const [group, extra] = front.hooks.PreToolUse;
       assert.strictEqual(extra, undefined);
       assert.strictEqual(group.matcher, "*", `${agent}: the hook skips some tools`);
+      // The settings hook's command, naming the agent, so session-guard knows
+      // whose limits apply whatever agent_type the call carries.
       assert.strictEqual(
         group.hooks[0].command,
-        settings.hooks.PreToolUse[0].hooks[0].command,
+        settings.hooks.PreToolUse[0].hooks[0].command.replace(
+          " || exit 2",
+          ` ${agentName(agent)} || exit 2`,
+        ),
         `${agent}: the hook is not session-guard`,
       );
     }
@@ -233,6 +246,16 @@ describe("session-guard: the compile and neutrality agents", () => {
           "agent-path-denied",
         ],
         [call("Grep", { pattern: "Elm" }), "agent-path-denied"],
+        [
+          call("Glob", { pattern: "{..,x}/*.yaml", path: at(root, `${BALLOT}/articles`) }),
+          "agent-path-denied",
+        ],
+        // A call that does not say it is this agent's is refused, never let through.
+        [
+          { tool_name: "Read", tool_input: { file_path: at(root, "addresses.yaml") } },
+          "agent-type-mismatch",
+        ],
+        [{ ...read(`${BALLOT}/ballot.yaml`), agent_type: "Explore" }, "agent-type-mismatch"],
         [
           call("Grep", { pattern: "Elm", path: at(root, `${BALLOT}/articles`), glob: "../*.yaml" }),
           "agent-path-denied",

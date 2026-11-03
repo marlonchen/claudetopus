@@ -7,7 +7,7 @@ hooks:
     - matcher: "*"
       hooks:
         - type: command
-          command: 'node "$CLAUDE_PROJECT_DIR/.claude/skills/research-candidates/scripts/session-guard" || exit 2'
+          command: 'node "$CLAUDE_PROJECT_DIR/.claude/skills/research-candidates/scripts/session-guard" research-candidates-neutrality || exit 2'
 ---
 
 # Neutrality pass
