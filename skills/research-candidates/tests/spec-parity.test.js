@@ -2960,6 +2960,7 @@ describe("NotResearched", () => {
     assert.match(PAGE, /shows the note alone, without its sentence about candidates/);
     assert.match(PAGE, /the second counts `ready` contests that are not not-researched contests/);
     assert.match(PAGE, /is not counted as ready to read, though it is `ready`/);
+    assert.match(PAGE, /where N counts the official records \(`T1` snapshots\) its claims cite/);
   });
 });
 

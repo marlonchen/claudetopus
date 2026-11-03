@@ -277,7 +277,9 @@ const bannerOf = (raw, people, article, pending) => {
   let parts;
   if (raw.type === "measure") parts = ["Official text and fiscal note saved"];
   else if (raw.type === "retention") {
-    const cited = new Set(article.claims.map((c) => resolveTarget(c.target)));
+    // Only official records count: news, analysis and statements are no record searched.
+    const records = article.claims.filter((c) => c.tag === "T1");
+    const cited = new Set(records.map((c) => resolveTarget(c.target)));
     parts = [`Official record searched: ${plural(cited.size, "source")}`];
   } else {
     const printed = people.filter((p) => p.status === "on_ballot").length;

@@ -476,7 +476,7 @@ describe("publish: receipts", () => {
 });
 
 // School Director: multi-seat, a withdrawn candidate, a certified write-in
-// and Money left for later.
+// and Money left for later, unless `moneyLater` is false.
 const WRITE_INS = "sources/_ballot/write-in-list.md";
 const LOCAL_ISSUES = [
   "Taxes and budget",
@@ -485,7 +485,7 @@ const LOCAL_ISSUES = [
   "Housing and development",
   "Roads and transit",
 ];
-const addSchoolDirector = async (data) => {
+const addSchoolDirector = async (data, { moneyLater = true } = {}) => {
   const writeIns = snapshot({
     subject: "_ballot",
     source: "Exampleton County elections",
@@ -496,7 +496,8 @@ const addSchoolDirector = async (data) => {
   });
   const ledger = `${BALLOT}/ballot.ledger`;
   data.write(ledger, `${data.read(ledger)}${WRITE_INS}\twrite_in_list\turl\tnone\t2026-10-20\n`);
-  const later = (name, onBallot) => block(name, { onBallot, money: NOT_RESEARCHED }, "local");
+  const money = moneyLater ? NOT_RESEARCHED : undefined;
+  const later = (name, onBallot) => block(name, { onBallot, money }, "local");
   const article = [
     "# school-director\n",
     later("Ann Able", ballotClaim("Ann Able Example Party")),
@@ -568,6 +569,22 @@ describe("publish: multi-seat race", () => {
       "4 contests on your ballot · 2 ready to read",
     );
   });
+
+  it("says covered for the write-in too when no topic is still to come", async () => {
+    const data = await setup();
+    const rel = `${BALLOT}/ballot.yaml`;
+    data.write(
+      rel,
+      data.read(rel).replace("    vote_for: 2\n    not_researched: [Money]\n", "    vote_for: 2\n"),
+    );
+    commit(data);
+    await addSchoolDirector(data, { moneyLater: false });
+    const race = (await published(data)).getElementById("school-director");
+    assert.strictEqual(
+      text(race.querySelector(".banner")),
+      "✓ 2 of 2 candidates covered · Vote for up to 2 · +1 certified write-in covered",
+    );
+  });
 });
 
 // The retention contest, its sections all Unknown but On the ballot.
@@ -605,6 +622,46 @@ describe("publish: retention race", () => {
     ]);
     assert.ok(texts(race, ".meta").includes("Thin records are common for judges."));
     assert.ok(texts(race, "summary .vh").includes("for Pat Example, On the ballot section"));
+  });
+
+  it("counts only the official records its claims cite, never news", async () => {
+    const data = await setup();
+    const COURT = "sources/supreme-court-retention-a/pat-example/court.md";
+    const NEWS = "sources/supreme-court-retention-a/pat-example/news.md";
+    const article = retentionArticle()
+      .replace(
+        "### B. Record in office\n\nUnknown, no source found",
+        `### B. Record in office\n\n${claim("Pat Example joined the Supreme Court in 2016.", "T1", COURT, "Pat Example joined the Supreme Court in 2016.")}\n${claim("Pat Example wrote 40 majority opinions.", "T2", NEWS, "Pat Example wrote 40 majority opinions.")}`,
+      )
+      .replace(
+        "### C. Evaluation findings\n\nUnknown, no source found",
+        `### C. Evaluation findings\n\n${claim("The state bar rated Pat Example recommended.", "T2", NEWS, "The state bar rated Pat Example recommended.")}`,
+      );
+    await addContest(data, {
+      id: "supreme-court-retention-a",
+      article,
+      snapshots: {
+        [COURT]: snapshot({
+          subject: "pat-example",
+          source: "XX Supreme Court",
+          url: "https://county.example.gov/courts/pat-example",
+          tier: "T1",
+          body: "Pat Example joined the Supreme Court in 2016.",
+        }),
+        [NEWS]: snapshot({
+          subject: "pat-example",
+          url: "https://news.example.com/pat-example",
+          body: "Pat Example wrote 40 majority opinions. The state bar rated Pat Example recommended.",
+        }),
+      },
+      log: logLines("supreme-court-retention-a", ["pat-example"], ["7"]),
+    });
+    const race = (await published(data)).getElementById("supreme-court-retention-a");
+    // The sample ballot and the court record; the news page cited twice adds nothing.
+    assert.strictEqual(
+      text(race.querySelector(".banner")),
+      "✓ Official record searched: 2 sources",
+    );
   });
 
   it("says a section left for later is still to come, in its line and its banner", async () => {
@@ -668,42 +725,43 @@ describe("publish: retention race", () => {
 });
 
 const MEASURE = "sources/question-1/_race";
-const addMeasure = (data) =>
+const MEASURE_ARTICLE = [
+  "# question-1\n",
+  "## question-1\n",
+  section(
+    "A. What it does",
+    claim(
+      "The measure would fund the county library system.",
+      "T1",
+      `${MEASURE}/text.md`,
+      "The measure would fund the county library system.",
+    ),
+  ),
+  section("B. Fiscal effect"),
+  section(
+    "C. Arguments for",
+    claim(
+      "Says: The library levy keeps every branch open.",
+      "T1s",
+      `${MEASURE}/pamphlet.md`,
+      "The library levy keeps every branch open.",
+    ),
+  ),
+  section(
+    "D. Arguments against",
+    claim(
+      "Says: The levy raises taxes on every household.",
+      "T1s",
+      `${MEASURE}/pamphlet.md`,
+      "The levy raises taxes on every household.",
+    ),
+  ),
+  section("E. Independent analysis"),
+].join("\n");
+const addMeasure = (data, article = MEASURE_ARTICLE) =>
   addContest(data, {
     id: "question-1",
-    article: [
-      "# question-1\n",
-      "## question-1\n",
-      section(
-        "A. What it does",
-        claim(
-          "The measure would fund the county library system.",
-          "T1",
-          `${MEASURE}/text.md`,
-          "The measure would fund the county library system.",
-        ),
-      ),
-      section("B. Fiscal effect"),
-      section(
-        "C. Arguments for",
-        claim(
-          "Says: The library levy keeps every branch open.",
-          "T1s",
-          `${MEASURE}/pamphlet.md`,
-          "The library levy keeps every branch open.",
-        ),
-      ),
-      section(
-        "D. Arguments against",
-        claim(
-          "Says: The levy raises taxes on every household.",
-          "T1s",
-          `${MEASURE}/pamphlet.md`,
-          "The levy raises taxes on every household.",
-        ),
-      ),
-      section("E. Independent analysis"),
-    ].join("\n"),
+    article,
     snapshots: {
       [`${MEASURE}/text.md`]: snapshot({
         subject: "_race",
@@ -754,5 +812,66 @@ describe("publish: measure race", () => {
     assert.ok(texts(race, "summary .vh").includes("for Question 1, Arguments for section"));
     // The last race on the ballot ends with All races alone.
     assert.deepStrictEqual(texts(race, ".next a"), ["← All races"]);
+  });
+  // A measure's ballot.yaml entry with `line` added after its display_title.
+  const measureLater = (data, line) => {
+    const rel = `${BALLOT}/ballot.yaml`;
+    data.write(
+      rel,
+      data
+        .read(rel)
+        .replace("    display_title: Question 1\n", `    display_title: Question 1\n${line}\n`),
+    );
+    commit(data);
+  };
+
+  it("says a section left for later is still to come, without naming candidates", async () => {
+    const data = await setup();
+    measureLater(data, "    not_researched: [Independent analysis]");
+    await addMeasure(
+      data,
+      MEASURE_ARTICLE.replace(
+        "### E. Independent analysis\n\nUnknown, no source found",
+        `### E. Independent analysis\n\n${NOT_RESEARCHED}`,
+      ),
+    );
+    const race = (await published(data)).getElementById("question-1");
+    assert.strictEqual(
+      text(race.querySelector(".banner")),
+      "✓ Official text and fiscal note saved · 1 topic not researched yet",
+    );
+    assert.strictEqual(
+      text(race.querySelector("#question-1--independent-analysis").nextElementSibling),
+      "Not researched yet. Research on this topic is still to come. Check back; this link stays the same.",
+    );
+  });
+
+  it("shows only the note, without its sentence about candidates, when not researched", async () => {
+    const data = await setup();
+    measureLater(data, "    not_researched: all");
+    const later = (heading) => section(heading, NOT_RESEARCHED);
+    await addMeasure(
+      data,
+      [
+        "# question-1\n",
+        "## question-1\n",
+        later("A. What it does"),
+        later("B. Fiscal effect"),
+        later("C. Arguments for"),
+        later("D. Arguments against"),
+        later("E. Independent analysis"),
+      ].join("\n"),
+    );
+    const doc = await published(data);
+    const race = doc.getElementById("question-1");
+    assert.strictEqual(all(race, "h2, nav.chips, .banner").length, 0);
+    assert.strictEqual(
+      text(raceNote(race)),
+      "Not researched yet. This race is on your ballot, but we haven't researched it yet. Check back; this link stays the same.",
+    );
+    assert.strictEqual(
+      row(doc.querySelector('#ballot a[href="#question-1"]'))[3],
+      "Not researched yet",
+    );
   });
 });
