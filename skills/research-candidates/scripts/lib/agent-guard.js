@@ -15,7 +15,7 @@
 //     outside its contest's allow list, a link or a `..` out of it included;
 //     the compile agent's list takes the companions on ballot-view.md's
 //     `read:` lines only while that view still agrees with what it was
-//     checked against (companionReadable).
+//     checked against, each companion included (companionReadable).
 // The main session's launch of each agent is checked too:
 //   - agent-prompt-invalid: a prompt that is not a token agent-bind bound
 //     (discovery's whole prompt; the first line of the others'), so nothing
@@ -87,39 +87,56 @@ const locate = (root, cwd, given, ballot) => {
 
 const isFile = (parts, dir, name) => parts.length === 2 && parts[0] === dir && parts[1] === name;
 
+// ballot-view.md's header: its `link:` line, its `read:` lines, then one
+// `sha256:` line each for ballot.yaml, the sample ballot and every companion
+// read. Only that many lines are read as the header; the spans after them are
+// ballot text, whatever they start with. Returns { link, reads: Set, hashes:
+// Map(path -> hash) }, or null for a view not in that shape.
+const viewHeader = (text) => {
+  const lines = text.split("\n");
+  const link = /^link: (.+)$/.exec(lines[0] ?? "")?.[1];
+  if (!link) return null;
+  const reads = new Set();
+  let i = 1;
+  while (lines[i]?.startsWith("read: ")) reads.add(lines[i++].slice("read: ".length));
+  const hashes = new Map();
+  for (const end = i + 2 + reads.size; i < end; i++) {
+    const m = /^sha256: ([0-9a-f]{64}) {2}(.+)$/.exec(lines[i] ?? "");
+    if (!m) return null;
+    hashes.set(m[2], m[1]);
+  }
+  return { link, reads, hashes };
+};
+
 // May the compile agent open the _ballot snapshot at `parts`? Only one on a
 // `read:` line of a regular-file ballot-view.md whose `sha256:` lines still
-// agree with ballot.yaml and the sample ballot it links, never that link's
-// target, a snapshot whose role is not a companion's (a sample ballot,
-// superseded or not) or a companion ballot.yaml retires (ballot-format.md,
-// Ballot view). Anything it cannot read is refused.
+// agree with ballot.yaml, the sample ballot it links and the companion itself,
+// never that link's target, a snapshot whose role is not a companion's (a
+// sample ballot, superseded or not) or a companion ballot.yaml retires
+// (ballot-format.md, Ballot view). Anything it cannot read is refused.
 const companionReadable = (ballotDir, parts) => {
   if (parts.length !== 3 || parts[0] !== "sources" || parts[1] !== "_ballot") return false;
   const rel = parts.join("/");
   try {
     const view = path.join(ballotDir, VIEW);
     if (!fs.lstatSync(view).isFile()) return false;
-    let link = null;
-    const reads = new Set();
-    const hashes = new Map();
-    for (const line of fs.readFileSync(view, "utf8").split("\n")) {
-      const m = /^(link|read): (.+)$/.exec(line) ?? /^sha256: ([0-9a-f]{64}) {2}(.+)$/.exec(line);
-      if (m?.[1] === "link") link ??= m[2];
-      else if (m?.[1] === "read") reads.add(m[2]);
-      else if (m) hashes.set(m[2], m[1]);
-    }
-    if (!link?.startsWith("sources/_ballot/") || rel === link || !reads.has(rel)) return false;
+    const header = viewHeader(fs.readFileSync(view, "utf8"));
+    if (!header) return false;
+    const { link, reads, hashes } = header;
+    if (!link.startsWith("sources/_ballot/") || rel === link || !reads.has(rel)) return false;
     const read = (file) => {
       const p = path.join(ballotDir, file);
       return fs.lstatSync(p).isFile() ? fs.readFileSync(p) : null;
     };
     const ballotYaml = read("ballot.yaml");
     const sample = read(link);
-    if (!ballotYaml || !sample) return false;
-    if (hashes.get("ballot.yaml") !== sha256(ballotYaml) || hashes.get(link) !== sha256(sample))
+    const companion = read(rel);
+    if (!ballotYaml || !sample || !companion) return false;
+    const agree = (file, bytes) => hashes.get(file) === sha256(bytes);
+    if (!agree("ballot.yaml", ballotYaml) || !agree(link, sample) || !agree(rel, companion))
       return false;
     const YAML = load("yaml");
-    const front = FRONT_MATTER.exec(read(rel)?.toString("utf8") ?? "");
+    const front = FRONT_MATTER.exec(companion.toString("utf8"));
     if (!front || !COMPANION_ROLES.includes(YAML.parse(front[1] ?? "")?.role)) return false;
     const retired = YAML.parse(ballotYaml.toString("utf8"))?.retired_companions;
     return !(Array.isArray(retired) && retired.includes(rel));

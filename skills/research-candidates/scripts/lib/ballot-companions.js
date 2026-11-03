@@ -7,6 +7,7 @@
 // retired one vouches for nothing. Failures name the field or the class,
 // never the text (Rule 5).
 
+const { PARTY_FULL_WORDS, PARTY_JOINING_WORDS } = require("./constants");
 const { addressValues } = require("./data-files");
 const { Failure } = require("./output");
 const { bodyText, findExcerpt, normalizeLine } = require("./normalize");
@@ -17,17 +18,23 @@ const { CLASSES, scan } = require("./privacy");
 const COMPANION_CLASSES = ["address", "label"];
 
 // Each part between spaces or hyphens: a hyphen joins words
-// (Democratic-Farmer-Labor), so each part is read as a word.
+// (Democratic-Farmer-Labor), so each part is read as a word. A dotted word
+// on the full-word list (U.S.) is never read as an abbreviation.
 const words = (text) =>
   normalizeLine(text)
     .split(/[\s-]+/)
-    .filter(Boolean);
+    .filter((w) => w && !PARTY_FULL_WORDS.includes(w));
 const hasLetter = (word) => /\p{L}/u.test(word);
 const inCapitals = (word) => hasLetter(word) && !/\p{Ll}/u.test(word);
 const dotted = (word) => /[./]/.test(word);
+// Under 4 letters and no connecting word (and, no, non): DEM, Dem, Law.
+const isShort = (word) =>
+  hasLetter(word) &&
+  !PARTY_JOINING_WORDS.includes(word.toLowerCase()) &&
+  [...word.matchAll(/\p{L}/gu)].length < 4;
 
-// A printed party with any word in capitals or holding a period or slash.
-const isAbbreviated = (party) => words(party).some((w) => inCapitals(w) || dotted(w));
+// A printed party with any word in capitals, holding a period or slash, or short.
+const isAbbreviated = (party) => words(party).some((w) => inCapitals(w) || dotted(w) || isShort(w));
 
 // A party_name written as an abbreviation: a word holding a period or slash,
 // or, in a name with a lowercase letter, a word in capitals (`DFL Party`). A
@@ -37,13 +44,6 @@ const isAbbreviatedName = (name) => {
   if (parts.some(dotted)) return true;
   return /\p{Ll}/u.test(name) && parts.some(inCapitals);
 };
-
-// The sample ballot vouches for its own printed party only when every word
-// has 4 or more letters (GREEN PARTY as Green Party, never DEM as Dem).
-const longWords = (name) =>
-  words(name)
-    .filter(hasLetter)
-    .every((w) => [...w.matchAll(/\p{L}/gu)].length >= 4);
 
 // `text` is in `snapshot`'s body, matched as an excerpt (article-format.md,
 // Matching), case kept or folded.
@@ -79,9 +79,10 @@ const checkPeople = ({ candidates, sample, companions }) => {
     withdrawn_still_printed: [ofRole("withdrawal_notice"), "withdrawal-not-found"],
   };
   for (const c of candidates) {
+    // In any case: a county prints one name in its own case (BO BAKER, Bo Baker).
     if (Object.hasOwn(vouched, c.status) && typeof c.name === "string") {
       const [sources, code] = vouched[c.status];
-      if (!sources.some((s) => holds(s, c.name)))
+      if (!sources.some((s) => holds(s, c.name, { anyCase: true })))
         failures.push(new Failure(c.at.name, code, "name"));
     }
     if (typeof c.party !== "string") continue;
@@ -94,10 +95,13 @@ const checkPeople = ({ candidates, sample, companions }) => {
       failures.push(new Failure(c.at.party_name, "party-name-abbreviated", "party_name"));
       continue;
     }
+    // The printed words with a short one (DEM as Dem): only the case is the
+    // researcher's, so only a companion spelling it in that case vouches.
     const sameWords =
       normalizeLine(c.partyName).toLowerCase() === normalizeLine(c.party).toLowerCase();
-    const fromSample = sample && (!sameWords || longWords(c.partyName)) ? [sample] : [];
-    if (![...fromSample, ...companions].some((s) => holds(s, c.partyName, { anyCase: true })))
+    const plain = !sameWords || !words(c.partyName).some(isShort);
+    const sources = plain && sample ? [sample, ...companions] : companions;
+    if (!sources.some((s) => holds(s, c.partyName, { anyCase: plain })))
       failures.push(new Failure(c.at.party_name, "party-name-not-found", "party_name"));
   }
   return failures;

@@ -495,13 +495,14 @@ const parseArgs = (argv) => {
 
 // The view: the link, the companions the compile agent may read, then the
 // hashes of what it was checked against, so a later gate can tell a view that
-// ballot.yaml or the sample ballot no longer agree with.
+// ballot.yaml, the sample ballot or a companion no longer agree with.
 const viewText = (yaml, sample, companions, spans) =>
   [
     `link: ${sample.path}`,
     ...companions.map((companion) => `read: ${companion.path}`),
     `sha256: ${yaml.hash}  ballot.yaml`,
     `sha256: ${sha256(sample.bytes)}  ${sample.path}`,
+    ...companions.map((companion) => `sha256: ${sha256(companion.bytes)}  ${companion.path}`),
     ...spans,
     "",
   ].join("\n");

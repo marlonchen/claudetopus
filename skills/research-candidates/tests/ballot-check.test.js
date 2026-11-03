@@ -1017,11 +1017,17 @@ describe("ballot-check: companion documents", () => {
     plant(data, "pamphlet", "pamphlet", "Voter pamphlet");
     plant(data, "candidate-list", "candidate_list", "Candidates");
     assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
-    assert.deepEqual(data.read(VIEW).split("\n").slice(0, 4), [
+    // Each companion's hash too (PR #25 review, A5), so session-guard opens
+    // only the bytes this check read.
+    const hash = (rel) => `sha256: ${sha256(data.read(`${BALLOT}/${rel}`))}  ${rel}`;
+    assert.deepEqual(data.read(VIEW).split("\n").slice(0, 7), [
       "link: sources/_ballot/sample-ballot.md",
       "read: sources/_ballot/candidate-list.md",
       `read: ${PAMPHLET}`,
-      `sha256: ${sha256(data.read(`${BALLOT}/ballot.yaml`))}  ballot.yaml`,
+      hash("ballot.yaml"),
+      hash("sources/_ballot/sample-ballot.md"),
+      hash("sources/_ballot/candidate-list.md"),
+      hash(PAMPHLET),
     ]);
   });
 
@@ -1122,6 +1128,18 @@ describe("ballot-check: write-ins and withdrawals", () => {
     plant(data, "withdrawals", "withdrawal_notice", "John Sample has withdrawn.");
     assert.equal((await ballotCheck(data)).status, 0);
   });
+
+  // Added by the PR #25 review (A4).
+  // Value: protects=a notice in the county's own case still vouches, while the name's words and order stay exact; fails_when=JOHN SAMPLE fails against John Sample, or Sample, John passes; why_new=the match kept case, so a ballot in capitals could never mark a withdrawal; seam=ballot-check CLI; no_claim=Last, First notices (not matched)
+  it("matches the name in any case, never in another order", async () => {
+    const data = setup({ ballot: withdrawn });
+    plant(data, "withdrawals", "withdrawal_notice", "Sample, John has withdrawn.");
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${yamlLine(data, "name: John Sample")} withdrawal-not-found name`,
+    ]);
+    plant(data, "withdrawals", "withdrawal_notice", "JOHN SAMPLE HAS WITHDRAWN.");
+    assert.equal((await ballotCheck(data)).status, 0);
+  });
 });
 
 describe("ballot-check: corrected sample ballots", () => {
@@ -1209,14 +1227,30 @@ describe("ballot-check: party names", () => {
   };
 
   it("fails an abbreviated printed party with no party_name", async () => {
-    for (const printed of ["DEM", "D-NPL", "Dem.", "DEM/WF", "Ind. Am.", "GREEN PARTY"]) {
+    for (const printed of [
+      "DEM",
+      "D-NPL",
+      "Dem.",
+      "DEM/WF",
+      "Ind. Am.",
+      "GREEN PARTY",
+      "Dem",
+      "Natural Law",
+    ]) {
       const { data, lines: got } = await result(printed);
       assert.deepEqual(got, [`ballot.yaml:${yamlLine(data, 'party: "')} party-abbreviated party`]);
     }
   });
 
   it("passes a full printed name, hyphens and all", async () => {
-    for (const printed of ["Working Families", "Democratic-Farmer-Labor"]) {
+    for (const printed of [
+      "Working Families",
+      "Democratic-Farmer-Labor",
+      "Peace and Freedom",
+      "No Party Preference",
+      "Non-Partisan",
+      "U.S. Taxpayers",
+    ]) {
       assert.deepEqual((await result(printed)).lines, ["ballot-view.md written"], printed);
     }
   });
@@ -1240,13 +1274,45 @@ describe("ballot-check: party names", () => {
   });
 
   it("lets the sample ballot vouch for its own printed party only in words of 4+ letters", async () => {
-    assert.deepEqual((await result("GREEN PARTY", "Green Party")).lines, [
-      "ballot-view.md written",
+    for (const [printed, name] of [
+      ["GREEN PARTY", "Green Party"],
+      ["PEACE AND FREEDOM", "Peace and Freedom"],
+    ]) {
+      assert.deepEqual((await result(printed, name)).lines, ["ballot-view.md written"], printed);
+    }
+    for (const [printed, name] of [
+      ["DEM", "Dem"],
+      ["NATURAL LAW", "Natural Law"],
+    ]) {
+      const { data, lines: got } = await result(printed, name);
+      assert.deepEqual(got, [
+        `ballot.yaml:${yamlLine(data, "party_name")} party-name-not-found party_name`,
+      ]);
+    }
+  });
+
+  // Added by the PR #25 review (A3b): only the case is the researcher's here.
+  // Value: protects=a short printed party read in mixed case (DEM as Dem) stays an abbreviation unless an official companion writes it in that case; fails_when=a legend such as DEM = Democratic vouches for Dem, or a companion writing Natural Law Party no longer vouches for Natural Law; why_new=the any-case match let a DEM legend vouch for Dem; seam=ballot-check CLI; no_claim=which companions are official (Companion documents)
+  it("takes a short printed party read in mixed case only from a companion in that case", async () => {
+    const legend = await result("DEM", "Dem", "Key: DEM = Democratic");
+    assert.deepEqual(legend.lines, [
+      `ballot.yaml:${yamlLine(legend.data, "party_name")} party-name-not-found party_name`,
     ]);
-    const dem = await result("DEM", "Dem");
-    assert.deepEqual(dem.lines, [
-      `ballot.yaml:${yamlLine(dem.data, "party_name")} party-name-not-found party_name`,
-    ]);
+    for (const [printed, name, companion] of [
+      ["DEM", "Dem", "The Dem slate"],
+      ["NATURAL LAW", "Natural Law", "Natural Law Party"],
+      ["DEM", "Democratic", "Key: DEM = DEMOCRATIC"],
+    ]) {
+      const { lines: got } = await result(printed, name, companion);
+      assert.deepEqual(got, ["ballot-view.md written"], name);
+    }
+  });
+
+  // Added by the PR #25 review (A2).
+  // Value: protects=an official name holding U.S. can pass, printed or as party_name; fails_when=U.S. Taxpayers needs a party_name, or U.S. Taxpayers Party fails party-name-abbreviated; why_new=such a ballot could never pass; seam=ballot-check CLI; no_claim=other dotted words (D.F.L. stays caught, above)
+  it("reads U.S. as a whole word", async () => {
+    const got = await result("U.S. TAXPAYERS", "U.S. Taxpayers Party", "U.S. Taxpayers Party");
+    assert.deepEqual(got.lines, ["ballot-view.md written"]);
   });
 
   it("never takes party_name from a retired companion", async () => {
