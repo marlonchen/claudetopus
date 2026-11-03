@@ -4,27 +4,27 @@
 // Each agent's definition (agents/) runs session-guard with its own name on
 // every call it makes, and the call's `agent_type` must be that name, so a
 // call that does not say which agent made it is refused, never let through.
+// Each agent is held to the one contest of the token it was started with
+// (bindings.js), looked up by the `agent_id` its calls carry:
 //   - agent-type-mismatch: the call's agent_type is not the definition's agent;
 //   - agent-tool-denied: a tool the agent's definition does not give it;
+//   - agent-unbound: an agent no launch session-guard let through started;
 //   - agent-command-denied: a discovery Bash call that is not exactly one
-//     discovery-fetch command, its URL single-quoted;
+//     discovery-fetch command with its own token, its URL single-quoted;
 //   - agent-path-denied: a compile or neutrality read, Glob, Grep or write
-//     outside its allow list, a link or a `..` out of it included.
-// The allow lists are per ballot directory: which contest an agent works on
-// is in its prompt, which a hook cannot see. The main session's launch of
-// discovery is checked too:
-//   - discovery-prompt-invalid: a prompt that is not one token discovery-bind
-//     bound, so nothing else the session holds reaches the agent.
+//     outside its contest's allow list, a link or a `..` out of it included.
+// The main session's launch of each agent is checked too:
+//   - agent-prompt-invalid: a prompt that is not a token agent-bind bound
+//     (discovery's whole prompt; the first line of the others'), so nothing
+//     else the session holds reaches discovery;
+//   - agent-launch-pending: a second launch of an agent while the first has
+//     not started, which could leave each with the other's token;
+//   - agent-isolation-denied: a launch into a worktree or another machine,
+//     where these hooks may not run.
 
 const fs = require("node:fs");
 const path = require("node:path");
-const {
-  BALLOT_ID_PATTERN,
-  DISCOVERY_BINDINGS,
-  DISCOVERY_TOKEN,
-  ELECTION_PATTERN,
-  ID_PATTERN,
-} = require("./constants");
+const { agentBinding, pendingLaunch, readBinding, recordLaunch } = require("./bindings");
 
 const SKILL = ".claude/skills/research-candidates";
 const DISCOVERY = "research-candidates-discovery";
@@ -37,14 +37,15 @@ const AGENT_TOOLS = {
 };
 // discovery-fetch <token> --brief | --searched <subject> <item> | <subject> <name> '<url>'
 // (discovery.js), and nothing else: no second command, and a URL in single
-// quotes, inside which the shell expands nothing.
+// quotes, inside which the shell expands nothing. The token is the agent's own.
 const WORD = "[a-z0-9_][a-z0-9_-]*";
 const FETCH_COMMAND = new RegExp(
-  `^node ${SKILL}/scripts/discovery-fetch ${DISCOVERY_TOKEN.source.slice(1, -1)} ` +
+  `^node ${SKILL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/scripts/discovery-fetch (\\S+) ` +
     `(--brief|--searched ${WORD} [0-9]+|${WORD} ${WORD} '[^'\\s]+')$`,
 );
 
-// The real path of `p`: links resolved in every part that exists.
+// The real path of `p`, links resolved in every part that exists, or null
+// when a part is a link to nothing, which a write would follow out of any list.
 const realPath = (p) => {
   const tail = [];
   let at = p;
@@ -52,6 +53,7 @@ const realPath = (p) => {
     try {
       return path.join(fs.realpathSync(at), ...tail);
     } catch {
+      if (fs.lstatSync(at, { throwIfNoEntry: false })) return null;
       if (path.dirname(at) === at) return p;
       tail.unshift(path.basename(at));
       at = path.dirname(at);
@@ -60,68 +62,36 @@ const realPath = (p) => {
 };
 const within = (inner, outer) => inner === outer || inner.startsWith(`${outer}${path.sep}`);
 
-// Where `given` lies: { references } for the skill's references, or
-// { ballotDir, parts }, its path parts under an <election>/<ballot-id>
-// directory; null anywhere else, and for any path with a `..` part.
-const locate = (root, cwd, given) => {
+// Where `given` lies: { references } for the skill's references, or { parts },
+// its path parts under the `ballot` directory; null anywhere else, and for any
+// path with a `..` part.
+const locate = (root, cwd, given, ballot) => {
   if (typeof given !== "string" || given === "" || given.split(/[\\/]/).includes("..")) {
     return null;
   }
   const real = realPath(path.resolve(cwd, given));
-  if (within(real, realPath(path.join(root, SKILL, "references")))) return { references: true };
-  const realRoot = realPath(root);
-  if (!within(real, realRoot)) return null;
-  const [election, ballotId, ...parts] = path.relative(realRoot, real).split(path.sep);
-  if (!ELECTION_PATTERN.test(election ?? "") || !BALLOT_ID_PATTERN.test(ballotId ?? "")) {
-    return null;
-  }
-  if (!parts.length) return null;
-  return { ballotDir: path.join(realRoot, election, ballotId), parts };
+  if (real === null) return null;
+  const references = realPath(path.join(root, SKILL, "references"));
+  if (references !== null && within(real, references)) return { references: true };
+  const ballotDir = realPath(path.join(root, ballot));
+  if (ballotDir === null || real === ballotDir || !within(real, ballotDir)) return null;
+  return { parts: path.relative(ballotDir, real).split(path.sep) };
 };
 
-// The companion snapshots on ballot-view.md's read: lines (ballot-format.md),
-// from its header only, so a span below it can never name one.
-const companionReads = (ballotDir) => {
-  let text;
-  try {
-    text = fs.readFileSync(path.join(ballotDir, "ballot-view.md"), "utf8");
-  } catch {
-    return new Set();
-  }
-  const reads = new Set();
-  for (const line of text.split("\n")) {
-    const m = /^(link|read|sha256): (.*)$/.exec(line);
-    if (!m) break;
-    if (m[1] === "read") reads.add(m[2]);
-  }
-  return reads;
-};
+const isFile = (parts, dir, name) => parts.length === 2 && parts[0] === dir && parts[1] === name;
 
-// Is `name` an id followed by `suffix` (`us-house-07.neutrality.md`)?
-const isIdFile = (name, suffix) =>
-  name?.endsWith(suffix) && ID_PATTERN.test(name.slice(0, -suffix.length));
-
-// SKILL.md Rule 7's allow lists, over a located path.
+// SKILL.md Rule 7's allow lists, over a located path's parts and the contest.
 const READS = {
-  [COMPILE]: ({ ballotDir, parts }) => {
-    const [top, contest = "", , extra] = parts;
-    if (top === "articles") return true;
-    if (parts.length === 1) return top === "ballot.yaml" || top === "ballot-view.md";
-    if (top !== "sources") return false;
-    if (ID_PATTERN.test(contest)) return true;
-    return (
-      contest === "_ballot" && extra === undefined && companionReads(ballotDir).has(parts.join("/"))
-    );
-  },
-  [NEUTRALITY]: ({ parts }) =>
+  [COMPILE]: (parts, contest) =>
     parts[0] === "articles" ||
-    (parts.length === 2 && parts[0] === "review" && isIdFile(parts[1], ".neutrality.md")),
+    (parts.length === 1 && (parts[0] === "ballot.yaml" || parts[0] === "ballot-view.md")) ||
+    (parts[0] === "sources" && parts[1] === contest),
+  [NEUTRALITY]: (parts, contest) =>
+    parts[0] === "articles" || isFile(parts, "review", `${contest}.neutrality.md`),
 };
 const WRITES = {
-  [COMPILE]: ({ parts }) =>
-    parts.length === 2 && parts[0] === "articles" && isIdFile(parts[1], ".md"),
-  [NEUTRALITY]: ({ parts }) =>
-    parts.length === 2 && parts[0] === "review" && isIdFile(parts[1], ".neutrality.md"),
+  [COMPILE]: (parts, contest) => isFile(parts, "articles", `${contest}.md`),
+  [NEUTRALITY]: (parts, contest) => isFile(parts, "review", `${contest}.neutrality.md`),
 };
 
 // A Glob pattern or Grep glob that stays under the path it is given: no
@@ -135,6 +105,9 @@ const relativePattern = (pattern) =>
     !pattern.split(/[\\/]/).includes(".."));
 
 // Each file tool's check: the input fields it reads, and whether it writes.
+// Glob and Grep are checked by the path they start from only: Claude Code
+// runs them through ripgrep without --follow, so a link under that path is
+// listed but never walked or searched.
 const FILE_CHECKS = {
   Read: (input, readable) => readable(input.file_path),
   Glob: (input, readable) => relativePattern(input.pattern) && readable(input.path),
@@ -149,32 +122,39 @@ const agentRefusal = (agent, input, root, cwd) => {
   const tool = input.tool_name;
   const toolInput = input.tool_input;
   if (!AGENT_TOOLS[agent].includes(tool)) return "agent-tool-denied";
+  const binding = agentBinding(root, agent, input.agent_id);
+  if (!binding) return "agent-unbound";
   if (agent === DISCOVERY) {
     if (tool !== "Bash") return null;
-    return FETCH_COMMAND.test(toolInput.command.trim()) ? null : "agent-command-denied";
+    const m = FETCH_COMMAND.exec(toolInput.command.trim());
+    return m?.[1] === binding.token ? null : "agent-command-denied";
   }
+  const { ballot, contest } = binding;
   const readable = (given) => {
-    const at = locate(root, cwd, given);
-    return Boolean(at && (at.references || READS[agent](at)));
+    const at = locate(root, cwd, given, ballot);
+    return Boolean(at && (at.references || READS[agent](at.parts, contest)));
   };
   const writable = (given) => {
-    const at = locate(root, cwd, given);
-    return Boolean(at && !at.references && WRITES[agent](at));
+    const at = locate(root, cwd, given, ballot);
+    return Boolean(at && !at.references && WRITES[agent](at.parts, contest));
   };
   return FILE_CHECKS[tool](toolInput, readable, writable) ? null : "agent-path-denied";
 };
 
-// The main session may start discovery only with a prompt that is a token
-// discovery-bind bound (discovery.js).
-const launchRefusal = (toolInput, root) => {
-  if (toolInput.subagent_type !== DISCOVERY) return null;
-  const token = typeof toolInput.prompt === "string" ? toolInput.prompt.trim() : "";
-  const bound =
-    DISCOVERY_TOKEN.test(token) &&
-    fs.lstatSync(path.join(root, DISCOVERY_BINDINGS, token), { throwIfNoEntry: false })?.isFile();
-  return bound ? null : "discovery-prompt-invalid";
+const isAgent = (name) => typeof name === "string" && Object.hasOwn(AGENT_TOOLS, name);
+
+// The main session may start a Rule 7 agent only with a token agent-bind
+// bound, which it records for SubagentStart to hand to the agent.
+const launchRefusal = (toolInput, root, now = Date.now()) => {
+  const agent = toolInput.subagent_type;
+  if (!isAgent(agent)) return null;
+  if (toolInput.isolation !== undefined) return "agent-isolation-denied";
+  const prompt = typeof toolInput.prompt === "string" ? toolInput.prompt : "";
+  const token = (agent === DISCOVERY ? prompt : prompt.split("\n")[0]).trim();
+  if (!readBinding(root, token)) return "agent-prompt-invalid";
+  if (pendingLaunch(root, agent, now)) return "agent-launch-pending";
+  recordLaunch(root, agent, token, now);
+  return null;
 };
 
-const isAgent = (name) => Object.hasOwn(AGENT_TOOLS, name);
-
-module.exports = { agentRefusal, isAgent, launchRefusal };
+module.exports = { AGENT_TOOLS, agentRefusal, isAgent, launchRefusal };

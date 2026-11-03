@@ -1,29 +1,31 @@
 "use strict";
 
-// The discovery agent's fetch tool (SKILL.md Rule 7, step 4.1).
+// The Rule 7 agents' binding and the discovery agent's fetch tool (SKILL.md
+// Rule 7, step 4).
 //
-// discovery-bind <election>/<ballot-id> <contest>
+// agent-bind <election>/<ballot-id> <contest>
 //   The main session's: once ballot-check passes, binds the contest to a new
-//   random token, kept in .discovery/<token>, and prints it. The token is the
-//   discovery agent's whole prompt, so nothing else the session holds reaches it.
+//   random token (bindings.js) and prints it. Each of the contest's agents is
+//   started with it: it is discovery's whole prompt, and the first line of
+//   compile's and neutrality's, and session-guard holds each agent to the
+//   contest its token names.
 //
 // discovery-fetch <token> --brief
-// discovery-fetch <token> <subject> <name> <url>
+// discovery-fetch <token> <subject> <name> '<url>'
 // discovery-fetch <token> --searched <subject> <item>
-//   The agent's only command (session-guard holds it to these three forms).
-//   --brief prints what the agent may search with: the contest id, type,
-//   office type, jurisdiction, a measure's search_terms, the checklist items
-//   its type runs, the candidate or official ids and names, and the hosts in
-//   tiers.yaml, rerunning ballot-check first. The other two are fetch-snapshot's
-//   plain fetch and --searched with the bound ballot and contest filled in, so
-//   the agent never gives either, and every other mode (--ballot, --file,
-//   --keep-short) is out of reach.
+//   The discovery agent's only command (session-guard holds it to these three
+//   forms and its own token). --brief prints what the agent may search with:
+//   the contest id, type, office type, jurisdiction, a measure's search_terms,
+//   the checklist items its type runs, the candidate or official ids and
+//   names, and the hosts in tiers.yaml, rerunning ballot-check first. The
+//   other two are fetch-snapshot's plain fetch and --searched with the bound
+//   ballot and contest filled in, so the agent never gives either, and every
+//   other mode (--ballot, --file, --keep-short) is out of reach.
 
-const crypto = require("node:crypto");
-const fs = require("node:fs");
 const path = require("node:path");
 const { check: checkBallot } = require("./ballot-check");
-const { CHECKLIST_ITEMS, DISCOVERY_BINDINGS, DISCOVERY_TOKEN, ID_PATTERN } = require("./constants");
+const { bindContest, readBinding } = require("./bindings");
+const { BINDING_TOKEN, CHECKLIST_ITEMS, ID_PATTERN } = require("./constants");
 const { loadPrivateValues, loadTiers, readYamlDocument } = require("./data-files");
 const { openBallot, parseBallot } = require("./fetch-common");
 const fetchSnapshot = require("./fetch-snapshot").main;
@@ -62,24 +64,16 @@ const bind = (argv) =>
     if (!ID_PATTERN.test(contest)) throw new Failure(`${ballot}/ballot.yaml`, "unknown-contest");
     requireBallotCheck(root, ballot, ballotDir);
     readContest(root, ballot, contest);
-    const token = crypto.randomBytes(16).toString("hex");
-    fs.mkdirSync(path.join(root, DISCOVERY_BINDINGS), { recursive: true });
-    fs.writeFileSync(path.join(root, DISCOVERY_BINDINGS, token), `${ballot} ${contest}\n`, {
-      flag: "wx",
-    });
-    return [`${contest} bound ${token}`];
+    return [`${contest} bound ${bindContest(root, ballot, contest)}`];
   });
 
-// { ballot, contest } bound to `token`, or unknown-token. A binding that is not
-// a regular file, or does not hold one ballot and contest, is no binding.
-const readBinding = (root, token) => {
-  if (!DISCOVERY_TOKEN.test(token ?? "")) throw new Failure("-", "usage");
-  const file = path.join(root, DISCOVERY_BINDINGS, token);
-  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
-  const m = stat?.isFile() && /^(\S+) (\S+)\n$/.exec(fs.readFileSync(file, "utf8"));
-  if (!m || !ID_PATTERN.test(m[2])) throw new Failure("-", "unknown-token");
-  parseBallot(m[1]);
-  return { ballot: m[1], contest: m[2] };
+// { ballot, contest } bound to `token`: usage for a token that is not one,
+// unknown-token for one agent-bind never bound.
+const bound = (root, token) => {
+  if (!BINDING_TOKEN.test(token ?? "")) throw new Failure("-", "usage");
+  const binding = readBinding(root, token);
+  if (!binding) throw new Failure("-", "unknown-token");
+  return binding;
 };
 
 const brief = (root, { ballot, contest }) => {
@@ -111,7 +105,7 @@ const fetch = (argv) => {
   const root = process.cwd();
   let binding;
   try {
-    binding = readBinding(root, argv[0]);
+    binding = bound(root, argv[0]);
   } catch (error) {
     return fail(error);
   }

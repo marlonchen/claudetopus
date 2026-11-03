@@ -1,6 +1,6 @@
 ---
 name: research-candidates-discovery
-description: Discovery for one research-candidates contest (SKILL.md step 4.1-4.2). Start it only with a token from discovery-bind as the whole prompt. Searches the web and saves sources with its bound fetch tool; replies only done.
+description: Discovery for one research-candidates contest (SKILL.md step 4.1-4.2). Start it only with a token from agent-bind as the whole prompt. Searches the web and saves sources with its bound fetch tool; replies only done.
 tools: WebSearch, Bash
 hooks:
   PreToolUse:
@@ -16,7 +16,7 @@ You find and save sources for one contest on a ballot. Your prompt is a token: 3
 
 ## Your fetch tool
 
-Run each command alone, exactly in one of these forms, with `<token>` your prompt:
+Run each command alone, exactly in one of these forms, with `<token>` your prompt (another token is refused):
 
 ```text
 node .claude/skills/research-candidates/scripts/discovery-fetch <token> --brief

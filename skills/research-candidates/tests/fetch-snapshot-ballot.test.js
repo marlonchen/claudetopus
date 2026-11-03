@@ -755,6 +755,8 @@ describe("the data repo's Claude Code settings", () => {
       "Edit(/**/ballot.ledger)",
       "Edit(/**/published.log)",
       "Edit(/downloads/**)",
+      "Edit(/.bindings/**)",
+      "Edit(/**/ballot-view.md)",
     ]) {
       assert.ok(deny.includes(rule), `${rule} is not denied`);
     }
@@ -812,6 +814,7 @@ describe("the data repo's Claude Code settings", () => {
       "Edit",
       "MultiEdit",
       "NotebookEdit",
+      "SendMessage",
       "Task",
       "Write",
     ]);

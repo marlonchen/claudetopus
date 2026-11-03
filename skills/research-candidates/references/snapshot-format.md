@@ -94,13 +94,13 @@ The agents' fetch tool fixes the ballot and the contest, so the agent gives only
 The agents' fetch tool is `discovery-fetch`, which the discovery agent runs with a token in place of the ballot and contest (SKILL.md Rule 7). The main session binds the token first:
 
 ```text
-discovery-bind <election>/<ballot-id> <contest>
+agent-bind <election>/<ballot-id> <contest>
 discovery-fetch <token> --brief
-discovery-fetch <token> <subject> <name> <url>
+discovery-fetch <token> <subject> <name> '<url>'
 discovery-fetch <token> --searched <subject> <item>
 ```
 
-`discovery-bind` checks Rule 8, runs `ballot-check`, and once it passes writes `.discovery/<token>` at the project root, holding the ballot and contest, and prints `<contest> bound <token>`; the token is 32 random hex digits. `discovery-fetch` reads the ballot and contest from that file. `--brief` runs `ballot-check` again and prints the contest's `contest:`, `type:`, `office_type:`, `jurisdiction:` and `search_terms:` lines as `ballot.yaml` has them, `items:` (the checklist items its type uses), a `candidate:` or `official:` line with each id and name (`subject: _race` for a measure), and a `domain:` line for each host in `tiers.yaml`, once each. The other two forms are this section's plain fetch and `--searched`, with the bound ballot and contest, and print what those print; any other form, a flag or an extra argument among them, fails `usage`. Their own codes are `usage`, `bad-ballot`, `unknown-contest` (a contest `ballot.yaml` does not list), and:
+`agent-bind` checks Rule 8, so it runs only at the project root, runs `ballot-check`, and once it passes writes `.bindings/<token>` at the project root, holding the ballot and contest, and prints `<contest> bound <token>`; the token is 32 random hex digits, and it starts each of the contest's agents. `discovery-fetch` reads the ballot and contest from that file. `--brief` runs `ballot-check` again and prints the contest's `contest:`, `type:`, `office_type:`, `jurisdiction:` and `search_terms:` lines as `ballot.yaml` has them, `items:` (the checklist items its type uses), a `candidate:` or `official:` line with each id and name (`subject: _race` for a measure), and a `domain:` line for each host in `tiers.yaml`, once each. The other two forms are this section's plain fetch and `--searched`, with the bound ballot and contest, and print what those print; any other form, a flag or an extra argument among them, fails `usage`. The agent's session-guard refuses first a command that is not one of these forms with its own token and the URL in single quotes, so a URL holding a quote or a space is never fetched. Their own codes are `usage`, `bad-ballot`, `unknown-contest` (a contest `ballot.yaml` does not list), and:
 
 - `ballot-check-failed`: `ballot-check` does not pass, located at the ballot's `ballot.yaml`; run it to see why;
 - `unknown-token`: no binding for the token, located `-`.

@@ -1,6 +1,6 @@
 ---
 name: research-candidates-compile
-description: Compiles and fixes one research-candidates contest's article from saved snapshots only (SKILL.md steps 4.3-4.4 and 5). Give it the ballot and contest, plus failures as location and code lines only.
+description: Compiles and fixes one research-candidates contest's article from saved snapshots only (SKILL.md steps 4.3-4.4 and 5). Start it with a token from agent-bind as the first line, then the ballot and contest, plus failures as location and code lines only.
 tools: Read, Glob, Grep, Write, Edit
 hooks:
   PreToolUse:
@@ -16,7 +16,7 @@ You compile one contest's article, `<election>/<ballot-id>/articles/<contest>.md
 
 ## What you get
 
-Your prompt names `<election>/<ballot-id>` and `<contest>`. On a rerun it also lists failures from `check`, `coverage` or `publish`, each only as a location (file, line, key) and a code from the failure codes in article-format.md; fix each one there.
+Your prompt's first line is a token, which holds your tools to this contest; then it names `<election>/<ballot-id>` and `<contest>`. On a rerun it also lists failures from `check`, `coverage` or `publish`, each only as a location (file, line, key) and a code from the failure codes in article-format.md; fix each one there.
 
 ## What you read and write
 
@@ -24,8 +24,8 @@ Your tools let you read only:
 
 - the skill's references, under `.claude/skills/research-candidates/references/`: read `article-format.md`, `sections.md` and `source-tiers.md` (Claim tags) before you write;
 - `<ballot>/ballot.yaml`, for the contest's candidates, its `office_type` and its `not_researched` list;
-- `<ballot>/ballot-view.md`, the matched spans of the sample ballot. Its `link:` line names the sample ballot, which you cite as a link target and never open; its `read:` lines name the only other `sources/_ballot/` files you may open;
-- `<ballot>/sources/<contest>/`, and `<ballot>/articles/`.
+- `<ballot>/ballot-view.md`, the matched spans of the sample ballot. Its `link:` line names the sample ballot, which you cite as a link target and never open; you open no file under `sources/_ballot/`;
+- `<ballot>/sources/<contest>/`, your own contest's only, and `<ballot>/articles/`.
 
 You write only `<ballot>/articles/<contest>.md`. Give Glob and Grep a `path` every time, with a relative pattern.
 

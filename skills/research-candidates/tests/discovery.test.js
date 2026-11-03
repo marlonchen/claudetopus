@@ -5,7 +5,7 @@ const { afterEach, describe, it } = require("node:test");
 const { BALLOT, articlePage, runCli, startServer } = require("./harness");
 const { checkedBallot, repos } = require("./publish-fixture");
 
-// The discovery agent's fetch tool (SKILL.md Rule 7): discovery-bind binds one
+// The discovery agent's fetch tool (SKILL.md Rule 7): agent-bind binds one
 // contest after ballot-check passes, and discovery-fetch, given only the token
 // it printed, fills in the ballot and contest, run as subprocesses against a
 // temp data repo (seam 1).
@@ -18,14 +18,14 @@ const run = (data, script, args) => runCli(script, args, { cwd: data.root, env: 
 
 // Bind `contest` and return its token.
 const bind = async (data, contest) => {
-  const result = await run(data, "discovery-bind", [BALLOT, contest]);
+  const result = await run(data, "agent-bind", [BALLOT, contest]);
   assert.strictEqual(result.status, 0, result.stdout);
   const m = result.stdout.match(new RegExp(`^${contest} bound ([0-9a-f]{32})\\n$`));
   assert.ok(m, result.stdout);
   return m[1];
 };
 
-describe("discovery-bind and discovery-fetch --brief", () => {
+describe("agent-bind and discovery-fetch --brief", () => {
   // Value: protects=Rule 7: the discovery agent's whole prompt is the contest id, its jurisdiction, the candidate names and ids, the tiers.yaml domains and the items its type runs, read from the bound contest, never from the main session; fails_when=the brief adds a title, party, private value or other contest, or drops a field; why_new=new; seam=cli; no_claim=what the agent does with it (five-trap eval)
   it("prints only the bound contest's ids, names, jurisdiction, items and domains", async () => {
     const data = await checkedBallot();
@@ -60,10 +60,10 @@ describe("discovery-bind and discovery-fetch --brief", () => {
       ballot,
       data.read(ballot).replace("XX congressional district 7", "XX Springfield Township"),
     );
-    const bound = await run(data, "discovery-bind", [BALLOT, "us-house-07"]);
+    const bound = await run(data, "agent-bind", [BALLOT, "us-house-07"]);
     assert.strictEqual(bound.stdout, `${ballot} ballot-check-failed\n`);
     assert.strictEqual(bound.status, 1);
-    assert.deepStrictEqual(data.list(".discovery"), [token]);
+    assert.deepStrictEqual(data.list(".bindings"), [token]);
     const brief = await run(data, "discovery-fetch", [token, "--brief"]);
     assert.strictEqual(brief.stdout, `${ballot} ballot-check-failed\n`);
     assert.strictEqual(brief.status, 1);
@@ -72,14 +72,27 @@ describe("discovery-bind and discovery-fetch --brief", () => {
   // Value: protects=the binding: the main session names only a contest ballot.yaml lists, and a token the agent makes up or mistypes reaches nothing; fails_when=bind takes an unlisted contest, or fetch falls back to some binding; why_new=new; seam=cli; no_claim=a token the agent reads from elsewhere (it has no file tools)
   it("refuses an unlisted contest and an unknown or malformed token", async () => {
     const data = await checkedBallot();
-    const unlisted = await run(data, "discovery-bind", [BALLOT, "us-senate"]);
+    const unlisted = await run(data, "agent-bind", [BALLOT, "us-senate"]);
     assert.strictEqual(unlisted.stdout, `${BALLOT}/ballot.yaml unknown-contest\n`);
-    assert.deepStrictEqual(data.list(".discovery"), []);
+    assert.deepStrictEqual(data.list(".bindings"), []);
     const unknown = await run(data, "discovery-fetch", ["0".repeat(32), "--brief"]);
     assert.strictEqual(unknown.stdout, "- unknown-token\n");
     const malformed = await run(data, "discovery-fetch", ["../ballot.yaml", "--brief"]);
     assert.strictEqual(malformed.stdout, "- usage\n");
     assert.strictEqual(malformed.status, 1);
+  });
+
+  // Value: protects=the binding: agent-bind runs only at the project root (Rule 8), so its tokens land where session-guard looks for them; fails_when=a bind from a subdirectory writes a binding there; why_new=review found the hook and the script reading the root from different places; seam=cli; no_claim=Rule 8's other checks (repo-guard tests)
+  it("binds nothing from below the project root", async () => {
+    const data = await checkedBallot();
+    const below = await runCli("agent-bind", [BALLOT, "us-house-07"], {
+      cwd: `${data.root}/${BALLOT}`,
+      env: data.env,
+    });
+    assert.strictEqual(below.stdout, ". guard-not-repo-root\n");
+    assert.strictEqual(below.status, 1);
+    assert.strictEqual(data.exists(`${BALLOT}/.bindings`), false);
+    assert.deepStrictEqual(data.list(".bindings"), []);
   });
 
   // Value: protects=the brief of a measure and a retention contest: search_terms and _race for one, the official for the other, and each type's own items; fails_when=a type's fields or items go missing; why_new=new; seam=cli; no_claim=none

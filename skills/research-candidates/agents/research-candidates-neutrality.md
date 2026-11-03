@@ -1,6 +1,6 @@
 ---
 name: research-candidates-neutrality
-description: The neutrality pass for one research-candidates contest (SKILL.md step 4.5). Give it the ballot, the contest and the review-list --keys output; it writes only the contest's flags file.
+description: The neutrality pass for one research-candidates contest (SKILL.md step 4.5). Start it with a token from agent-bind as the first line, then the ballot, the contest and the review-list --keys output; it writes only the contest's flags file.
 tools: Read, Glob, Grep, Write
 hooks:
   PreToolUse:
@@ -16,7 +16,7 @@ You check one contest's article for slant. You have no compile context: you read
 
 ## What you get
 
-Your prompt names `<election>/<ballot-id>` and `<contest>`, and holds the output of `review-list --keys` for it: one line per claim, in article order, with its location, whether its key is accepted, and its key, such as `articles/us-house-07.md:12 unaccepted 9f2c41ab07d3e56a1b0c8d7e6f5a4b3c`.
+Your prompt's first line is a token, which holds your tools to this contest; then it names `<election>/<ballot-id>` and `<contest>`, and holds the output of `review-list --keys` for it: one line per claim, in article order, with its location, whether its key is accepted, and its key, such as `articles/us-house-07.md:12 unaccepted 9f2c41ab07d3e56a1b0c8d7e6f5a4b3c`.
 
 ## What you read and write
 

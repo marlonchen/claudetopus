@@ -7,6 +7,8 @@
       "Edit(/**/ballot.ledger)",
       "Edit(/**/published.log)",
       "Edit(/downloads/**)",
+      "Edit(/.bindings/**)",
+      "Edit(/**/ballot-view.md)",
       "Bash(*fetch-snapshot*--ballot*)",
       "Bash(*fetch-snapshot*--keep-short*)",
       "Bash(*ballot-check*--show*)",
@@ -18,7 +20,18 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|Agent|Task",
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|Agent|Task|SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/skills/research-candidates/scripts/session-guard\" || exit 2"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "research-candidates-discovery|research-candidates-compile|research-candidates-neutrality",
         "hooks": [
           {
             "type": "command",
