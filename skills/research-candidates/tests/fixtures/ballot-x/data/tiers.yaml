@@ -1,0 +1,18 @@
+- match: county.example.gov
+  tier: T1
+  owner: third-party
+  source: Exampleton County elections
+- match: county.example.gov/pamphlet/
+  tier: T1
+  statements_only: true
+  owner: third-party
+  source: Official voter guide
+- match: news.example.com
+  tier: T2
+  owner: third-party
+  source: Example News
+- match: janeexample.com
+  tier: T4
+  statements_only: true
+  owner: jane-example
+  source: Jane Example campaign site

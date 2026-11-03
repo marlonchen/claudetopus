@@ -641,6 +641,14 @@ describe("PrivateDataIgnored", () => {
       ...["ballot.yaml", "private.yaml", "tiers.yaml", "addresses.yaml", "archives.tsv"].map(
         (file) => `skills/research-candidates/tests/fixtures/${file}`,
       ),
+      // A fixture ballot's data repo, with files named like ones generic rules ignore.
+      ...[
+        "data/addresses.yaml",
+        "data/2026-general/xx-exampleton-1/ballot.yaml",
+        "data/2026-general/xx-exampleton-1/published.log",
+        "data/2026-general/xx-exampleton-1/coverage",
+        "out/index.html",
+      ].map((file) => `skills/research-candidates/tests/fixtures/ballot-x/${file}`),
     ];
     const result = checkIgnore([], probes);
     assert.strictEqual(result.status, 1, `skill source would be ignored: ${result.stdout}`);
@@ -651,9 +659,15 @@ describe("PrivateDataIgnored", () => {
   //   public repo; fails_when=a scripts/ negation is widened (scripts/**) and re-includes .env
   //   or node_modules; why_new=the probes above only check what must stay committable; seam=none
   it("secrets and build output under a skill's scripts/ stay ignored", () => {
-    const probes = [".env", ".env.local", "node_modules/x.js", "debug.log"].map(
-      (file) => `skills/research-candidates/scripts/${file}`,
-    );
+    const probes = [
+      ...[".env", ".env.local", "node_modules/x.js", "debug.log"].map(
+        (file) => `skills/research-candidates/scripts/${file}`,
+      ),
+      // The fixtures' exception re-includes everything under them but these.
+      ...[".env", ".env.local", "node_modules/x.js"].map(
+        (file) => `skills/research-candidates/tests/fixtures/ballot-x/data/${file}`,
+      ),
+    ];
     const result = checkIgnore(["-v"], probes);
     assert.strictEqual(result.status, 0, `no scripts/ probe is ignored: ${result.stderr}`);
     for (const p of probes) {
@@ -2946,6 +2960,7 @@ describe("NotResearched", () => {
     assert.match(PAGE, /shows the note alone, without its sentence about candidates/);
     assert.match(PAGE, /the second counts `ready` contests that are not not-researched contests/);
     assert.match(PAGE, /is not counted as ready to read, though it is `ready`/);
+    assert.match(PAGE, /where N counts the official records \(`T1` snapshots\) its claims cite/);
   });
 });
 

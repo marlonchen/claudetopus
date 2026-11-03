@@ -1,0 +1,93 @@
+election: 2026-general
+state: XX
+county: Exampleton County
+slug: k3x9qa
+contest_count: 6
+contests:
+  - id: us-house-07
+    type: candidate
+    jurisdiction: XX congressional district 7
+    office_type: federal
+    title: Representative in Congress, 7th District
+    printed_count: 2
+    vote_for: 1
+    candidates:
+      - id: jane-example
+        name: Jane Example
+        party: Example Party
+        status: on_ballot
+      - id: john-sample
+        name: John Sample
+        party: Sample Party
+        status: on_ballot
+  - id: county-controller
+    type: candidate
+    jurisdiction: XX Exampleton County
+    office_type: local
+    title: County Controller
+    printed_count: 2
+    vote_for: 1
+    not_researched: all
+    candidates:
+      - id: kim-kerr
+        name: Kim Kerr
+        party: Example Party
+        status: on_ballot
+      - id: lee-lord
+        name: Lee Lord
+        party: Sample Party
+        status: on_ballot
+  - id: county-sheriff
+    type: candidate
+    jurisdiction: XX Exampleton County
+    office_type: local
+    title: Sheriff
+    printed_count: 2
+    vote_for: 1
+    candidates:
+      - id: mo-moss
+        name: Mo Moss
+        party: Example Party
+        status: on_ballot
+      - id: ned-nash
+        name: Ned Nash
+        party: Sample Party
+        status: on_ballot
+  - id: school-director
+    type: candidate
+    jurisdiction: XX Exampleton County
+    office_type: local
+    title: School Director
+    printed_count: 3
+    vote_for: 2
+    not_researched: [Money]
+    candidates:
+      - id: ann-able
+        name: Ann Able
+        party: Example Party
+        status: on_ballot
+      - id: bo-baker
+        name: Bo Baker
+        party: Example Party
+        status: withdrawn_still_printed
+      - id: cy-cole
+        name: Cy Cole
+        party: Example Party
+        status: on_ballot
+      - id: di-dunn
+        name: Di Dunn
+        status: certified_write_in
+  - id: supreme-court-retention-a
+    type: retention
+    jurisdiction: XX supreme court
+    office_type: judicial
+    title: Shall Justice Pat Example of the Supreme Court be retained in office?
+    official:
+      id: pat-example
+      name: Pat Example
+  - id: question-1
+    type: measure
+    jurisdiction: XX Exampleton County
+    search_terms: library levy
+    title: "Question 1: Springfield Township Library Levy"
+    display_title: Question 1

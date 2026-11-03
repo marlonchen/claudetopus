@@ -15,4 +15,7 @@ exclude = [
     # quote to match verbatim between the raw file and the article. Reformatting
     # them would silently break the suite.
     "skills/mywiki/examples",
+    # The fixture ballot's articles: check compares their claims and excerpts with
+    # the snapshots byte for byte, and the golden page renders them.
+    "skills/*/tests/fixtures",
 ]

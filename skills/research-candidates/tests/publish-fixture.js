@@ -272,12 +272,12 @@ const review = async (data, contest) => {
   const keys = await run(data, "review-list", ["--keys", BALLOT, contest]);
   assert.strictEqual(keys.status, 0, keys.stdout);
   const reviewed = keys.stdout
-    .trim()
     .split("\n")
-    .map((line) => line.split(" ")[2]);
+    .filter(Boolean)
+    .map((line) => ` ${line.split(" ")[2]}`);
   data.write(
     `${BALLOT}/review/${contest}.neutrality.md`,
-    `<!-- reviewed: ${reviewed.join(" ")} -->\n`,
+    `<!-- reviewed:${reviewed.join("")} -->\n`,
   );
   const first = await run(data, "review-list", [BALLOT, contest]);
   assert.strictEqual(first.status, 0, first.stdout);

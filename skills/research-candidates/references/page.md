@@ -62,7 +62,7 @@ The same block works for 2 to 6 candidates and for multi-seat contests.
 The same stack, with one block per section instead of one per candidate.
 
 - **Measures:** What it does (official text) · Fiscal effect (official fiscal note) · Arguments for · Arguments against · Independent analysis. For and Against are sibling blocks of equal size, each labeled "from the official voter guide", and are never presented as facts. Banner: "Official text and fiscal note saved".
-- **Retention:** the judge's or official's name, then On the ballot · Record in office · Evaluation findings · Discipline · Statements. Banner: "Official record searched: N sources". A section with no source shows "○ Unknown: no source found" plus a one-line note that thin records are common for judges.
+- **Retention:** the judge's or official's name, then On the ballot · Record in office · Evaluation findings · Discipline · Statements. Banner: "Official record searched: N sources", where N counts the official records (`T1` snapshots) its claims cite; a news report, an analysis or the official's own statements never adds to it. A section with no source shows "○ Unknown: no source found" plus a one-line note that thin records are common for judges.
 
 A measure or retention race with a section not researched yet adds the same ending to its banner: "Official text and fiscal note saved · 1 topic not researched yet".
 

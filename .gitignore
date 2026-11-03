@@ -196,5 +196,12 @@ vite.config.ts.timestamp-*
 # Nor may it, or the .claude/ rule, swallow test fixtures that model a data repo.
 !/skills/*/tests/**/coverage
 !/skills/*/tests/**/.claude/
+# A fixture ballot is skill source, whatever its files are named (published.log, coverage,
+# a data repo's ballot.yaml): no generic rule above may swallow one.
+!/skills/*/tests/fixtures/**
+# But never secrets or installed packages, even there.
+/skills/*/tests/fixtures/**/.env
+/skills/*/tests/fixtures/**/.env.*
+/skills/*/tests/fixtures/**/node_modules/
 # But never per-user Claude Code settings, which can hold personal allowlists and env values.
 /skills/*/tests/**/.claude/settings.local.json

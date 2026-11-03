@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
-const { BALLOT, articlePage, runInTty } = require("./harness");
+const { BALLOT, PDFTOTEXT_STUB, articlePage, runInTty } = require("./harness");
 const {
   body,
   fetchSnapshot,
@@ -19,19 +19,8 @@ const {
 // Step 2's import, fetch-snapshot --ballot (snapshot-format.md, Command line
 // and Ballot ledger). It runs only at the researcher's terminal, so the tests
 // that get past the terminal guard run it on a pseudo-terminal and answer its
-// prompt. pdftotext is replaced by a stub on PATH that prints whatever follows
-// a "%%TEXT\n" marker in the PDF and logs its arguments.
+// prompt. pdftotext is replaced by the harness's stub on PATH.
 
-const PDFTOTEXT_STUB = `#!/usr/bin/env node
-"use strict";
-const fs = require("node:fs");
-const args = process.argv.slice(2);
-fs.appendFileSync(process.env.PDFTOTEXT_LOG, JSON.stringify(args) + "\\n");
-const pdf = fs.readFileSync(args[args.length - 2], "latin1");
-if (pdf.includes("%%BROKEN")) process.exit(1);
-const at = pdf.indexOf("%%TEXT\\n");
-process.stdout.write(at < 0 ? "\\f" : pdf.slice(at + 7));
-`;
 const pdfBytes = (text) => `%PDF-1.7\n%stub\n${text === null ? "" : `%%TEXT\n${text}`}`;
 
 // A data repo with the pdftotext stub on PATH.
