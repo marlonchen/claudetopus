@@ -3,7 +3,9 @@
 set -euo pipefail
 
 # Same scoping as lint:md — see that task for why each split exists.
-rumdl fmt README.md skills/*/README.md skills/*/SKILL.md
+shopt -s nullglob
+agents=(skills/*/agents/*.md)
+rumdl fmt README.md skills/*/README.md skills/*/SKILL.md "${agents[@]}"
 rumdl fmt --extend-disable MD057 skills/*/references/
 
 # skills/*/examples/ is excluded in .rumdl.toml: byte-exact test fixtures whose

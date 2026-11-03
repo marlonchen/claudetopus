@@ -24,6 +24,10 @@ const BALLOT_ID_PATTERN = /^[a-z]{2}-[a-z]+(-[a-z]+)*-[1-9][0-9]?$/;
 const SLUG_PATTERN = /^[a-z0-9]{6}$/;
 // ballot-format.md, Ids: contest, candidate and official ids. Snapshot names use it too.
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+// agent-bind's tokens and the agents started with them (bindings.js), under
+// this directory at the project root.
+const BINDING_TOKEN = /^[0-9a-f]{32}$/;
+const BINDINGS = ".bindings";
 
 // snapshot-format.md, Cleaning the URL: the API-key environment variables the
 // scripts read, each with the one host its key is sent to, as a header.
@@ -276,6 +280,8 @@ module.exports = {
   ALLEGATION_WORDS,
   ALWAYS_REVIEWED,
   BALLOT_ID_PATTERN,
+  BINDINGS,
+  BINDING_TOKEN,
   CHECKLIST_ITEMS,
   DEVICE_CHECK,
   ELECTION_PATTERN,

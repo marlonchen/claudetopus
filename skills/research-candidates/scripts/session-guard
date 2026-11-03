@@ -2,4 +2,4 @@
 "use strict";
 
 // Thin entry point; the hook lives in lib/ where Biome lints it.
-require("./lib/session-guard").main();
+require("./lib/session-guard").main(process.argv.slice(2));

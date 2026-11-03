@@ -2,8 +2,10 @@
 #MISE description="Lint Markdown with rumdl"
 set -euo pipefail
 
-# Prose docs get the full ruleset.
-rumdl check README.md skills/*/README.md skills/*/SKILL.md
+# Prose docs get the full ruleset, agent definitions (prompts) included.
+shopt -s nullglob
+agents=(skills/*/agents/*.md)
+rumdl check README.md skills/*/README.md skills/*/SKILL.md "${agents[@]}"
 
 # Reference templates additionally waive MD057 (relative link must exist):
 # their links are deliberate placeholders — {topic-name}/{article}.md,

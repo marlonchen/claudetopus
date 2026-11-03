@@ -19,7 +19,9 @@ fi
 # Skill frontmatter is the only YAML this repo actually carries, and it is
 # load-bearing: Claude Code reads name/description from it to decide when the
 # skill fires, so a malformed block silently stops the skill from triggering.
-for skill in skills/*/SKILL.md; do
+# Agent definitions (skills/*/agents/*.md) are read the same way, for their
+# name, tools and hooks.
+for skill in skills/*/SKILL.md skills/*/agents/*.md; do
   [ -e "$skill" ] || continue
   if ! frontmatter=$(awk 'NR==1{if($0!="---") exit 1; next} $0=="---"{exit} {print}' "$skill"); then
     echo "$skill: missing YAML frontmatter" >&2

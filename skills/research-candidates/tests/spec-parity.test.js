@@ -1170,6 +1170,8 @@ describe("FailureCodes", () => {
       "john-smith-2",
       // A Claude Code SKILL.md front-matter key the ballot gate names, not a failure code.
       "allowed-tools",
+      // The Rule 7 agents, by the names their definitions in agents/ give them.
+      ...fs.readdirSync(path.join(__dirname, "..", "agents")).map((f) => f.replace(/\.md$/, "")),
       exampleBallotId(),
       // ballot-format.md derives the ballot.yaml example's id.
       ...[...BALLOT.matchAll(/the example above is `([a-z0-9-]+)`/g)].map((m) => m[1]),
@@ -2393,7 +2395,7 @@ describe("ResearcherOnlyModes", () => {
     // Value: protects=agents get exactly one fetch-snapshot mode, --searched, bound to their
     //   contest, and every other mode stays rejected; fails_when=a mode is both allowed and
     //   rejected, or another mode joins the allow list; why_new=discovery must log the items it
-    //   ran; seam=none; no_claim=the agent tool configuration (not built yet)
+    //   ran; seam=none; no_claim=the agent tool configuration (agents.test.js)
     const allows = SNAPSHOT.match(
       /It allows only a plain fetch and ([^.]+?), both bound to the agent's own contest[.:]/,
     );
