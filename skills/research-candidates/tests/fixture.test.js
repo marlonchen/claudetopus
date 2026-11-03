@@ -4,7 +4,9 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 const { after, afterEach, before, describe, it } = require("node:test");
+const { load } = require("../scripts/lib/deps");
 const {
   BALLOT,
   PDFTOTEXT_STUB,
@@ -25,6 +27,7 @@ const {
 // UPDATE_GOLDEN=1 mise run test, and review its diff like any other.
 
 const FIXTURE = path.join(__dirname, "fixtures", "ballot-x");
+const CLOCK = path.join(__dirname, "fixed-clock.js");
 const GOLDEN = path.join(FIXTURE, "golden", "index.html");
 const SITE = `${BALLOT}/site/index.html`;
 // The day the fixture is researched and published, in every run.
@@ -38,12 +41,18 @@ const SOURCES = fs
   .filter(Boolean)
   .map((line) => line.split("\t"));
 const WRITE_INS = ["https://county.example.gov/write-ins", "write-ins.html"];
-// The checklist items discovery ran (source-tiers.md), by contest and subject.
+// The discovery checklist items run (source-tiers.md: 1-5 for a candidate,
+// 6 for a measure, 7 for a retention official), by contest and subject.
+const CANDIDATE_ITEMS = ["1", "2", "3", "4", "5"];
 const SEARCHED = {
-  "us-house-07": { "jane-example": "12345", "john-sample": "12345" },
-  "school-director": { "ann-able": "12345", "cy-cole": "12345", "di-dunn": "12345" },
-  "supreme-court-retention-a": { "pat-example": "7" },
-  "question-1": { _race: "6" },
+  "us-house-07": { "jane-example": CANDIDATE_ITEMS, "john-sample": CANDIDATE_ITEMS },
+  "school-director": {
+    "ann-able": CANDIDATE_ITEMS,
+    "cy-cole": CANDIDATE_ITEMS,
+    "di-dunn": CANDIDATE_ITEMS,
+  },
+  "supreme-court-retention-a": { "pat-example": ["7"] },
+  "question-1": { _race: ["6"] },
 };
 const ARTICLES = [
   "us-house-07",
@@ -67,7 +76,7 @@ const fixtureRepo = () => {
   copyTree(path.join(FIXTURE, "data"), data.root);
   copyTree(path.join(FIXTURE, "downloads"), data.file("downloads"));
   fs.writeFileSync(path.join(data.bin, "pdftotext"), PDFTOTEXT_STUB, { mode: 0o755 });
-  const clock = JSON.stringify(path.join(__dirname, "fixed-clock.js"));
+  const clock = JSON.stringify(CLOCK);
   Object.assign(data.env, {
     PDFTOTEXT_LOG: path.join(data.bin, "pdftotext.log"),
     NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require ${clock}`.trim(),
@@ -88,10 +97,10 @@ const passes = (result) => assert.strictEqual(result.status, 0, result.stdout + 
 const review = async (data, contest) => {
   const keys = await run(data, "review-list", ["--keys", BALLOT, contest]);
   passes(keys);
-  const reviewed = lines(keys).map((line) => line.split(" ")[2]);
+  const reviewed = lines(keys).map((line) => ` ${line.split(" ")[2]}`);
   data.write(
     `${BALLOT}/review/${contest}.neutrality.md`,
-    `<!-- reviewed: ${reviewed.join(" ")} -->\n`,
+    `<!-- reviewed:${reviewed.join("")} -->\n`,
   );
   passes(await run(data, "review-list", [BALLOT, contest]));
   const file = `${BALLOT}/review/${contest}.md`;
@@ -206,6 +215,16 @@ const PUBLISHED = [
   "articles/question-1.md ready",
 ];
 
+// Where `page` first differs from `golden`, as a line and column and the
+// bytes around it in each.
+const firstDifference = (page, golden) => {
+  let at = 0;
+  while (at < page.length && page[at] === golden[at]) at++;
+  const lines = page.subarray(0, at).toString("utf8").split("\n");
+  const around = (buf) => JSON.stringify(buf.subarray(Math.max(0, at - 40), at + 40).toString());
+  return `line ${lines.length}, column ${lines.at(-1).length + 1}: golden ${around(golden)}, page ${around(page)}`;
+};
+
 describe("fixture ballot: all six commands", () => {
   it("publishes the golden page, byte for byte", async () => {
     const data = copy();
@@ -213,41 +232,58 @@ describe("fixture ballot: all six commands", () => {
     passes(result);
     assert.deepStrictEqual(lines(result), [...PUBLISHED, "site/index.html written"]);
     const page = fs.readFileSync(data.file(SITE));
-    if (process.env.UPDATE_GOLDEN) fs.writeFileSync(GOLDEN, page);
-    assert.ok(
-      page.equals(fs.readFileSync(GOLDEN)),
-      "site/index.html differs from golden/index.html",
-    );
+    if (process.env.UPDATE_GOLDEN) {
+      assert.ok(!process.env.CI, "UPDATE_GOLDEN rewrites the golden page, so CI never sets it");
+      fs.writeFileSync(GOLDEN, page);
+    }
+    const golden = fs.readFileSync(GOLDEN);
+    if (!page.equals(golden)) {
+      const actual = path.join(os.tmpdir(), "rc-fixture-index.html");
+      fs.writeFileSync(actual, page);
+      assert.fail(
+        `site/index.html differs from golden/index.html at ${firstDifference(page, golden)}; the page is at ${actual}`,
+      );
+    }
   });
 });
 
 // A fictional API key, as OPENFEC_API_KEY holds one (snapshot-format.md, Cleaning the URL).
 const KEY = "Fx7kQ2mZpL9vR4tW";
-// Each planted leak: its name, the text planted, and the codes the page
-// scan refuses it with (SKILL.md step 6.3). The printed title holds a
-// private string too.
+// Each planted leak: its name, the text planted, the codes the page scan
+// refuses it with (SKILL.md step 6.3), and what a claim holding it gets.
+// publish drops the contest of a claim that passes check (private-match),
+// but check fails one first with a figure its excerpt lacks
+// (figure-missing), the printed title (title-in-claim) or an attribute
+// (claim-format). The printed title holds a private string too.
 const LEAKS = [
-  ["ballot id", "xx-exampleton-1", ["private-ballot-id"]],
-  ["ballot id with underscores", "xx_exampleton_1", ["private-ballot-id"]],
-  ["ballot id with slashes", "xx/exampleton/1", ["private-ballot-id"]],
-  ["private string", "Springfield Township", ["private-string"]],
-  ["private string hidden by a soft hyphen", "Spring\u00adfield Township", ["private-string"]],
-  ["private string hidden by a ligature", "Spring\ufb01eld Township", ["private-string"]],
-  ["ZIP", "99999", ["private-zip"]],
-  ["address label", "addr-mom", ["private-label"]],
+  ["ballot id", "xx-exampleton-1", ["private-ballot-id"], "private-match"],
+  ["ballot id with underscores", "xx_exampleton_1", ["private-ballot-id"], "private-match"],
+  ["ballot id with slashes", "xx/exampleton/1", ["private-ballot-id"], "private-match"],
+  ["private string", "Springfield Township", ["private-string"], "private-match"],
+  [
+    "private string hidden by a soft hyphen",
+    "Spring­field Township",
+    ["private-string"],
+    "private-match",
+  ],
+  [
+    "private string hidden by a ligature",
+    "Springﬁeld Township",
+    ["private-string"],
+    "private-match",
+  ],
+  ["ZIP", "99999", ["private-zip"], "figure-missing"],
+  ["address label", "addr-mom", ["private-label"], "private-match"],
   [
     "printed title",
     "Question 1: Springfield Township Library Levy",
     ["private-string", "private-title"],
+    "title-in-claim",
   ],
-  ["key value", KEY, ["private-key"]],
-  ["script", "<script", ["page-script"]],
-  ["external src", '<img src="https://tracker.example.net/p.png">', ["page-link"]],
+  ["key value", KEY, ["private-key"], "figure-missing"],
+  ["script", "<script", ["page-script"], "private-match"],
+  ["external src", '<img src="https://tracker.example.net/p.png">', ["page-link"], "claim-format"],
 ];
-// The leaks a claim can hold and still pass check, which fails a claim
-// with a figure its excerpt lacks (figure-missing) or an attribute
-// (claim-format) before publish ever reads it.
-const CLAIM_LEAKS = LEAKS.filter(([, leak]) => !/[0-9]|src=/.test(leak));
 
 // The golden page's line holding the trust header, where display_name shows.
 const TRUST_LINE =
@@ -272,35 +308,104 @@ describe("fixture ballot: a leak on the page refuses all of it", () => {
   }
 });
 
+// The measure's claim a leak is planted in: its excerpt holds the figure 1,
+// as "Question 1" or "District 1" often does, so a ballot id passes check.
+const MEASURE = `${BALLOT}/articles/question-1.md`;
+const CLAIM = "- Question 1 would fund the county library system with a levy of 0.5 mills.";
+const plantInClaim = (data, leak) => {
+  data.write(MEASURE, data.read(MEASURE).replace(CLAIM, `${CLAIM.slice(0, -1)} near ${leak}.`));
+  return (
+    data
+      .read(MEASURE)
+      .split("\n")
+      .findIndex((l) => l.startsWith(CLAIM.slice(0, -1))) + 1
+  );
+};
+
 describe("fixture ballot: a leak in a claim drops its contest", () => {
-  const ARTICLE = `${BALLOT}/articles/us-house-07.md`;
-  const CLAIM = "- She served two terms on the Exampleton school board.";
-  for (const [name, leak] of CLAIM_LEAKS) {
-    it(`drops the House race for the ${name}, as private-match`, async () => {
+  for (const [name, leak] of LEAKS.filter(([, , , outcome]) => outcome === "private-match")) {
+    it(`drops the measure for the ${name}, as private-match`, async () => {
       const data = copy();
-      data.write(ARTICLE, data.read(ARTICLE).replace(CLAIM, `${CLAIM.slice(0, -1)} near ${leak}.`));
-      const at =
-        data
-          .read(ARTICLE)
-          .split("\n")
-          .findIndex((l) => l.startsWith(CLAIM.slice(0, -1))) + 1;
-      await review(data, "us-house-07");
+      const at = plantInClaim(data, leak);
+      await review(data, "question-1");
       commit(data, "reword");
-      const keys = await run(data, "review-list", ["--keys", BALLOT, "us-house-07"]);
+      const keys = await run(data, "review-list", ["--keys", BALLOT, "question-1"]);
       const key = lines(keys)
-        .find((l) => l.startsWith(`articles/us-house-07.md:${at} `))
-        .split(" ")[2];
+        .find((l) => l.startsWith(`articles/question-1.md:${at} `))
+        ?.split(" ")[2];
+      assert.ok(key, keys.stdout);
       const result = await run(data, "publish", [BALLOT]);
       passes(result);
       assert.deepStrictEqual(lines(result), [
-        `articles/us-house-07.md:${at} private-match ${key}`,
-        "articles/us-house-07.md not-ready private-match",
-        ...PUBLISHED.slice(1),
+        `articles/question-1.md:${at} private-match ${key}`,
+        ...PUBLISHED.slice(0, -1),
+        "articles/question-1.md not-ready private-match",
         "site/index.html written",
       ]);
-      const page = data.read(SITE);
-      assert.ok(!page.includes("She served two terms"));
-      assert.ok(!page.includes("Jane Example taught school"));
+      const html = data.read(SITE);
+      assert.ok(!html.includes("would fund the county library system"));
+      // The drop reaches the ballot list too: the row and the ready count.
+      const { document } = load("linkedom").parseHTML(html);
+      const status = document.querySelector('#ballot a[href="#question-1"] .st');
+      assert.match(status.textContent, /^Not ready yet/);
+      assert.strictEqual(
+        document.querySelector("#ballot .banner").textContent,
+        "6 contests on your ballot · 3 ready to read",
+      );
     });
   }
+});
+
+describe("fixture ballot: check fails a claim holding the other leaks", () => {
+  for (const [name, leak, , code] of LEAKS.filter(
+    ([, , , outcome]) => outcome !== "private-match",
+  )) {
+    it(`fails the claim holding the ${name} as ${code}`, async () => {
+      const data = copy();
+      const at = plantInClaim(data, leak);
+      const result = await run(data, "check", [BALLOT]);
+      assert.strictEqual(result.status, 1, result.stdout);
+      assert.deepStrictEqual(
+        lines(result).filter((l) => l.startsWith("articles/question-1.md")),
+        [`articles/question-1.md:${at} ${code}`],
+      );
+    });
+  }
+});
+
+describe("fixture ballot: the fixed clock", () => {
+  it("fixes new Date() and a bare Date(), but not Date.now(), which a refreshed lock keeps", () => {
+    const store = JSON.stringify(path.join(__dirname, "..", "scripts", "lib", "snapshot-store"));
+    const script = `
+      const fs = require("node:fs");
+      const os = require("node:os");
+      const path = require("node:path");
+      const { withLock } = require(${store});
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-clock-"));
+      const lag = withLock(dir, (refresh) => {
+        refresh();
+        return Math.abs(Date.now() - fs.statSync(path.join(dir, ".lock", "held")).mtimeMs);
+      });
+      fs.rmSync(dir, { recursive: true, force: true });
+      process.stdout.write(JSON.stringify({
+        now: new Date().toISOString(),
+        bare: Date() === new Date(Date.parse(process.env.RESEARCH_CANDIDATES_TEST_NOW)).toString(),
+        given: new Date(0).toISOString(),
+        isDate: new Date() instanceof Date,
+        real: Date.now(),
+        lag,
+      }));`;
+    const result = spawnSync(process.execPath, ["--require", CLOCK, "-e", script], {
+      env: { ...process.env, RESEARCH_CANDIDATES_TEST_NOW: NOW, TZ: "UTC" },
+      encoding: "utf8",
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    const seen = JSON.parse(result.stdout);
+    assert.strictEqual(seen.now, new Date(NOW).toISOString());
+    assert.strictEqual(seen.bare, true);
+    assert.strictEqual(seen.given, "1970-01-01T00:00:00.000Z");
+    assert.strictEqual(seen.isDate, true);
+    assert.ok(Math.abs(seen.real - Date.now()) < 60 * 1000, "Date.now() is not the real clock");
+    assert.ok(seen.lag < 60 * 1000, `a refreshed lock is ${seen.lag} ms off Date.now()`);
+  });
 });

@@ -133,7 +133,8 @@ const withLock = (ballotDir, body, waitMs = LOCK_WAIT_MS) => {
   }
   const refresh = () => {
     if (readLock(lock)?.text !== text) throw new Failure(".lock", "ballot-locked");
-    const now = new Date();
+    // In seconds from Date.now(), the clock olderThan judges the lock's age by.
+    const now = Date.now() / 1000;
     fs.utimesSync(lock, now, now);
   };
   try {

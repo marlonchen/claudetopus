@@ -4,8 +4,8 @@
 
 ### A. What it does
 
-- The measure would fund the county library system with a levy of 0.5 mills. `T1` [s1](../sources/question-1/_race/text.md)
-  > The measure would fund the county library system with a levy of 0.5 mills.
+- Question 1 would fund the county library system with a levy of 0.5 mills. `T1` [s1](../sources/question-1/_race/text.md)
+  > Question 1 would fund the county library system with a levy of 0.5 mills.
 
 ### B. Fiscal effect
 
