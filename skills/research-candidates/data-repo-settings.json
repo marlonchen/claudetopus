@@ -16,6 +16,8 @@
       "Edit(/.gitattributes)",
       "Read(/addresses.yaml)",
       "Read(/**/private.yaml)",
+      "Read(/downloads/**)",
+      "Read(/**/unfetchable.md)",
       "Bash(*fetch-snapshot*--ballot*)",
       "Bash(*fetch-snapshot*--keep-short*)",
       "Bash(*ballot-check*--show*)",

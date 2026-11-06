@@ -12,7 +12,7 @@ The model reads whatever a script prints, so printing a match would hand it the 
 - [`privacy.js`](../../../skills/research-candidates/scripts/lib/privacy.js) returns only `{ line, class }` unless a caller asks for offsets.
 - Locations are chosen to carry nothing. A remote is named `remote:<name>`, never its URL. A failure in another ballot's file is located `-`, so no other ballot's id appears. `uncommitted` names an area, never a file, since a planted file name can take its name from private text.
 - `session-guard` prints only `<tool> <code>`, with `-` for a tool name that is not a plain word.
-- `review-list --refused-hosts` prints hosts, or a count of hosts it cannot show, so the session has no need to read `unfetchable.md`.
+- `session-guard` refuses a main-session call naming `unfetchable.md` (`session-file-denied`), and `review-list --refused-hosts` prints hosts, or a count of hosts it cannot show, so the session has no need to read the raw log.
 
 ## Considered Options
 
@@ -20,7 +20,8 @@ The model reads whatever a script prints, so printing a match would hand it the 
 
 ## Consequences
 
-- The main session passes a failure to the compile agent only as a location and a code from the fixed list, and never reads `unfetchable.md`. Both are instructions: `launchRefusal` checks only the prompt's first line, and nothing refuses that read.
+- The main session passes a failure to the compile agent only as a location and a code from the fixed list. This is an instruction: `launchRefusal` checks only the prompt's first line.
+- The refusal covers the raw `unfetchable.md` only. `review-list` copies each entry it lists, URL included, into `review/<contest>.md`, which the session can read, so those URLs still reach it. TODOS.md tracks closing this.
 - There are two exceptions. `--show` is researcher-only ([ADR 0007](0007-researcher-only-modes-need-their-own-terminal.md)). `discovery-fetch --brief` prints the discovery agent's own prompt, which holds only values that passed `ballot-check`.
 - A refusal alone cannot tell the model how to fix a match. Fixes take a round trip through the researcher, or through the compile agent working from a location.
 - `internal-error` writes its stack to stderr, and a Bash call returns stderr to the session. This path is the one output the `location code` shape does not cover, so a stack that quotes text would bypass the rule. Whether any stack can hold private text has not been audited.
