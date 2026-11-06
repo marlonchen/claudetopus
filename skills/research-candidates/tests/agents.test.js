@@ -230,6 +230,8 @@ describe("session-guard: the discovery agent", () => {
         bash(`${FETCH} ${TOKEN} --searched jane-example 4`),
         bash(`${FETCH} ${TOKEN} --searched _race 6`),
         bash(`${FETCH} ${TOKEN} jane-example bio 'https://news.example.com/a/b?c=d&e=f'`),
+        // The bare name refused in the main session stays open to a source's URL.
+        bash(`${FETCH} ${TOKEN} jane-example bio 'https://x.example/downloads'`),
         call("WebSearch", { query: "Jane Example congressional district 7" }),
       ],
     );
@@ -1089,6 +1091,100 @@ describe("session-guard: the main session and the ballot files", () => {
         as("compile")("Read", {
           file_path: path.join(ballotDir, "sources", "_ballot", "pamphlet.md"),
         }),
+      ],
+    );
+  });
+
+  // Value: protects=Rule 5: downloads/ holds the raw sample ballot, and --ballot --file reads what is planted there, so a session must not get in by the name with no slash; fails_when=a command or Grep path naming downloads bare runs, the researcher's ~/Downloads is treated differently by spelling, or prose saying "downloads" in a file body or a longer name is refused; why_new=only downloads/ with its slash matched, so cd downloads && cat ballot.pdf ran; seam=hook; no_claim=a glob, or a name built at run time
+  it("refuses a bare downloads in a command or a Grep path, not in a file body", () => {
+    const root = project();
+    const code = "session-file-denied";
+    expect(
+      hook,
+      root,
+      [
+        [bash("cd downloads && cat ballot.pdf"), code],
+        [bash("cd downloads; grep Elm *"), code],
+        [bash("tar cf - downloads | tar xOf -"), code],
+        [bash("cp -r downloads /tmp/d"), code],
+        [bash("cd downloads && cp /etc/hosts ballot.pdf"), code],
+        [bash("cd down''loads"), code],
+        [{ tool_name: "Monitor", tool_input: { command: "ls downloads" } }, code],
+        // The home folder too: the researcher may save a personalized ballot there.
+        [bash("ls ~/Downloads"), code],
+        [read("~/Downloads/report.pdf"), code],
+      ],
+      [
+        { tool_name: "Write", tool_input: { file_path: "/r/a.md", content: "offers downloads" } },
+        {
+          tool_name: "Edit",
+          tool_input: { file_path: "/r/a.md", old_string: "x", new_string: "downloads" },
+        },
+        bash(`cat ${BALLOT}/articles/downloads.md`),
+        bash("ls my-downloads downloads-old"),
+      ],
+    );
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "rc-home-"));
+    projects.push(home);
+    fs.mkdirSync(path.join(home, "Downloads"));
+    const result = runHook(hook, root, grep({ path: "~/Downloads" }), { HOME: home });
+    assert.strictEqual(result.status, 2);
+    assert.match(result.stderr, / session-file-denied\n$/);
+  });
+
+  // Value: protects=Rule 5 once this guard sends sessions to the contest level: every search form the private-file check catches must also stop at sources/, whose _ballot/ holds the sample ballot; fails_when=a search hidden behind a keyword, a wrapper or a redirect, or a cwd in sources/ or a climb out of a contest, reads sources/; why_new=the sources/ check ran on the word-splitting reading the private-file check replaced; seam=hook; no_claim=a directory changed by a script the command runs
+  it("refuses every search form from sources/, not only the plain one", () => {
+    const root = project();
+    const sources = path.join(root, BALLOT, "sources");
+    const contest = path.join(sources, "us-house-07");
+    const code = "session-file-denied";
+    const from = (command, cwd) => runHook(hook, root, { ...bash(command), cwd });
+    expect(
+      hook,
+      root,
+      [
+        [bash(`for d in a; do rg Elm ${BALLOT}/sources; done`), code],
+        [bash(`timeout 5 grep -rn Elm ${BALLOT}/sources`), code],
+        [bash(`grep -rnA3 Elm ${BALLOT}/sources`), code],
+        [bash(`bash -c 'rg Elm ${BALLOT}/sources'`), code],
+      ],
+      [],
+    );
+    for (const [command, cwd] of [
+      ["rg Elm 2>/dev/null", sources],
+      ["rg Elm .", sources],
+      ["rg Elm ..", contest],
+    ]) {
+      const result = from(command, cwd);
+      assert.strictEqual(result.status, 2, `${command} ran`);
+      assert.match(result.stderr, / session-file-denied\n$/, command);
+    }
+    // The check for the private files refuses these first: nothing is placed.
+    for (const command of ["cd .. && rg Elm", "cd ../.. && rg Elm"]) {
+      const result = from(command, contest);
+      assert.strictEqual(result.status, 2, `${command} ran`);
+      assert.match(result.stderr, / private-file-denied\n$/, command);
+    }
+    assert.strictEqual(from("rg Elm", contest).status, 0);
+  });
+
+  // Value: protects=the searches this guard leaves open: a false refusal pushes a session toward forms the hook misses; fails_when=a sources directory three parts down that is no ballot's is refused; why_new=the check tested only the part count and the last name; seam=hook; no_claim=a directory named sources directly under a ballot's sibling, which is a ballot by its shape
+  it("leaves alone a sources directory that is no ballot's", () => {
+    const root = project();
+    fs.mkdirSync(path.join(root, ".claude", "x", "sources"), { recursive: true });
+    const beside = fs.mkdtempSync(path.join(path.dirname(root), "rc-beside-"));
+    projects.push(beside);
+    fs.mkdirSync(path.join(beside, "sources"));
+    const relative = path.relative(root, path.join(beside, "sources"));
+    expect(
+      hook,
+      root,
+      [],
+      [
+        grep({ path: ".claude/x/sources" }),
+        bash("rg Elm .claude/x/sources"),
+        grep({ path: relative }),
+        bash(`rg Elm ${relative}`),
       ],
     );
   });

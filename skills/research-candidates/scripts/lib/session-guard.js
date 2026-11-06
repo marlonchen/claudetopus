@@ -25,9 +25,10 @@
 //     in a command unless each of its starts is placed below those directories,
 //     or an xargs, which hands a tool paths this never sees;
 //   - session-file-denied: the same calls from the main session alone, for
-//     sources/_ballot/, downloads/ and unfetchable.md, or a Grep or a placed
-//     recursive shell search from sources/. ADR 0003 lists what still gets
-//     past these two.
+//     sources/_ballot/, downloads (in a command or a Grep's path, with or
+//     without its slash) and unfetchable.md, or a Grep or a placed recursive
+//     shell search from sources/. ADR 0003 lists what still gets past these
+//     two.
 //   - agent-type-denied: any call from a subagent that is not a Rule 7 agent,
 //     however it started (a skill's fork, a workflow).
 // Quotes and backslashes are dropped before matching, so `--bal''lot` reads
@@ -80,8 +81,14 @@ const namedIn = (tool, input) => {
 // <election>/<ballot-id>/, so a search any deeper reaches neither.
 const PRIVATE_FILE_DEPTH = 2;
 // What the main session has no use for: text that can name or locate the
-// voter, and the log of attacker-chosen URLs.
+// voter, and the raw log of attacker-chosen URLs. Any case, so ~/Downloads
+// counts too: a personalized ballot may well be saved there. review-list still
+// copies the log's URLs into a file the session can read (ADR 0006).
 const SESSION_FILE = /(^|[^\w-])_ballot([^\w-]|$)|unfetchable\.md|(^|[^\w.-])downloads\//i;
+// downloads with no slash after it, in a call whose words are paths. In a file
+// the model writes it is mostly prose. Main session only: a source's URL may
+// end in it, so it stays out of SCRIPT_ONLY, which binds the agents too.
+const DOWNLOADS_NAME = /(^|[^\w.-])downloads([^\w.-]|$)/i;
 // Commands that search a whole tree unasked, and the greps that do when told to.
 const TREE_SEARCHES = new Set(["rg", "ugrep", "ug", "ag", "ack"]);
 const GREPS = new Set(["grep", "egrep", "fgrep"]);
@@ -237,7 +244,8 @@ const reachesBallotSources = (given, root, cwd) => {
   const start = startPath(given, cwd);
   if (!fs.statSync(start, { throwIfNoEntry: false })?.isDirectory()) return false;
   const parts = partsUnderRoot(start, root);
-  return parts.length === 3 && parts[2] === "sources";
+  // A hidden directory is no election, and neither is one beside the root.
+  return !parts[0].startsWith(".") && parts.length === 3 && parts[2] === "sources";
 };
 
 // True unless every recursive search in a command is placed: none of its
@@ -276,9 +284,7 @@ const searchReaches = (reaches, input, root, cwd) => {
   const tool = input.tool_name;
   const toolInput = input.tool_input;
   if (tool === "Grep") return reaches(toolInput.path ?? ".", root, cwd);
-  return (
-    SHELL_TOOLS.has(tool) && shellSearchReaches(reaches, toolInput.command, root, cwd)
-  );
+  return SHELL_TOOLS.has(tool) && shellSearchReaches(reaches, toolInput.command, root, cwd);
 };
 
 // The text of a call that can name a file, as the shell would mostly read it.
@@ -297,7 +303,11 @@ const privateFileRefusal = (input, root, cwd) => {
 // or a Rule 7 agent reads. The compile agent reads _ballot companions, and
 // refusal() has already let the Rule 7 agents through.
 const sessionFileRefusal = (input, root, cwd) => {
-  if (SESSION_FILE.test(namedText(input))) return "session-file-denied";
+  const named = namedText(input);
+  if (SESSION_FILE.test(named)) return "session-file-denied";
+  if (!FILE_TOOLS.has(input.tool_name) && DOWNLOADS_NAME.test(named)) {
+    return "session-file-denied";
+  }
   return searchReaches(reachesBallotSources, input, root, cwd) ? "session-file-denied" : null;
 };
 
