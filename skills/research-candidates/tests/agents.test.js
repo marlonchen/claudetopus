@@ -778,7 +778,6 @@ describe("session-guard: the main session and the private files", () => {
         bash("cat x | grep Elm"),
         bash("find . -name '*.md'"),
         bash("rg --files"),
-        bash("grep -rn Elm no/such/dir"),
         bash("git log --oneline | grep Elm"),
       ],
     );
@@ -790,6 +789,134 @@ describe("session-guard: the main session and the private files", () => {
     assert.strictEqual(
       runHook(hook, root, { ...bash("rg Elm"), cwd: path.join(root, BALLOT) }).status,
       2,
+    );
+  });
+
+  // Value: protects=Rule 5 in the searches a session really types: a search is let through only when a start is placed, so a form the check cannot read costs a retry, not a leak; fails_when=a search with no start it can place runs, or a listed tool that is not the command's first word goes unseen; why_new=review of #52 printed both files with rg Elm 2>/dev/null and a for loop of grep -rn, since an operand with a slash switched the check off and only first words counted; seam=hook; no_claim=a shell glob given to a plain cat or grep, or a value flag not listed
+  it("refuses a search unless a start is placed, wherever the search sits", () => {
+    const root = project();
+    const election = BALLOT.split("/")[0];
+    fs.writeFileSync(path.join(root, "pats.txt"), "Elm\n");
+    expect(
+      hook,
+      root,
+      [
+        // A redirect or a flag's value is no start.
+        [bash("rg Elm 2>/dev/null"), code],
+        [bash("grep -rn Elm 2>/dev/null"), code],
+        [bash("rg Elm 2>&1"), code],
+        [bash("rg Elm > out.txt"), code],
+        [bash("rg Elm -g '**/*.yaml'"), code],
+        [bash("rg -g 'a/*' -g 'b/*' Elm"), code],
+        [bash("rg -e a/b -e Elm"), code],
+        [bash("rg -f pats.txt"), code],
+        [bash(`rg -e ${BALLOT}/articles`), code],
+        // A start the shell expands, or one that is not there, is not placed.
+        [bash("grep -r Elm */"), code],
+        [bash("rg Elm ./*"), code],
+        [bash(`rg Elm $PWD/${election}`), code],
+        [bash(`rg Elm $(pwd)/${election}`), code],
+        [bash(`rg Elm ${BALLOT}/articles \`pwd\``), code],
+        [bash(`rg Elm ~someone/${election}`), code],
+        [bash(`rg Elm {${election},x}`), code],
+        [bash("rg Elm no/such/dir"), code],
+        [bash("grep -rn Elm no/such/dir"), code],
+        // A listed tool, wherever it sits.
+        [bash('for x in Elm Oak; do grep -rn "$x" .; done'), code],
+        [bash("if grep -rq Elm .; then echo y; fi"), code],
+        [bash("{ rg Elm; }"), code],
+        [bash("! grep -r Elm ."), code],
+        [bash("timeout 5 rg Elm"), code],
+        [bash("nice -n 5 rg Elm"), code],
+        [bash("/opt/homebrew/bin/rg Elm"), code],
+        [bash("bash -c 'rg Elm .'"), code],
+        [bash('sh -c "cd x; rg Elm"'), code],
+        [bash('echo "$(rg Elm)"'), code],
+        [bash("cat <(rg Elm)"), code],
+        [bash("echo `rg Elm`"), code],
+        [bash("$'rg' Elm"), code],
+        // Each spelling of a recursive grep.
+        [bash("grep -rnA3 Elm ."), code],
+        [bash("grep -rC2 Elm ."), code],
+        [bash("grep -2r Elm ."), code],
+        [bash("grep -d recurse Elm ."), code],
+        [bash("grep --directories recurse Elm ."), code],
+        [bash("grep --directories=recurse Elm ."), code],
+        [bash("grep --dir=recurse Elm ."), code],
+        [bash("grep --rec Elm ."), code],
+        [bash("grep --dereference-rec Elm ."), code],
+        // grep -r reads the tree even when a pipe feeds it.
+        [bash("cat x | grep -r Elm"), code],
+        [bash("cat x | ugrep -r Elm"), code],
+        // find's own flags come before its starts.
+        [bash("find -L . -exec cat {} +"), code],
+        [bash(`find -H ${BALLOT} -name '*.yaml' -exec cat {} +`), code],
+        // A file list hands a tool paths the hook never sees.
+        [bash("git ls-files | xargs grep -n Elm"), code],
+        [bash("rg --files | xargs grep Elm"), code],
+        [bash(`ls ${BALLOT} | xargs cat`), code],
+      ],
+      [
+        bash(`rg 'Elm|Oak' ${BALLOT}/articles`),
+        bash(`grep -rnE 'Elm|Oak' ${BALLOT}/articles`),
+        bash(`rg 'Elm; Oak' ${BALLOT}/articles`),
+        bash(`rg "Elm & Oak" ${BALLOT}/articles`),
+        bash(`rg Elm ${BALLOT}/articles 2>/dev/null`),
+        bash(`rg -g '*.md' Elm ${BALLOT}/articles`),
+        bash(`rg -t md Elm ${BALLOT}/articles`),
+        bash(`grep -rn -A3 Elm ${BALLOT}/articles`),
+        bash(`grep -rn --include='*.md' Elm ${BALLOT}/articles`),
+        bash(`rg -f pats.txt ${BALLOT}/articles`),
+        bash(`timeout 5 rg Elm ${BALLOT}/articles`),
+        bash(`find ${BALLOT}/articles -type f -exec rg Elm {} +`),
+        // A tree search a pipe feeds reads the pipe, not the tree.
+        bash("git log --oneline | rg Elm"),
+        bash(`ls ${election} | rg xx`),
+        bash("git log | rg -i Elm 2>/dev/null | head -5"),
+      ],
+    );
+  });
+
+  // Value: protects=Rule 5 once ADR 0003 sends a session deeper: a command's own cd moves a search off the cwd the hook reads, and cwd then stays deep so cd .. climbs back; fails_when=a search in a command that changes directory runs, or a plain cd stops working; why_new=cd .. && rg Elm from <ballot>/articles printed private.yaml, while rg Elm .. was refused; seam=hook; no_claim=a directory changed by a script the command runs
+  it("refuses a search in a command that changes directory", () => {
+    const root = project();
+    const election = BALLOT.split("/")[0];
+    const articles = path.join(root, BALLOT, "articles");
+    const from = (command, cwd) => runHook(hook, root, { ...bash(command), cwd });
+    assert.strictEqual(from("cd .. && rg Elm", articles).status, 2);
+    assert.strictEqual(from("pushd .. && rg Elm .", articles).status, 2);
+    assert.strictEqual(from("(cd ..; rg Elm)", articles).status, 2);
+    assert.strictEqual(from("find -L .. -exec cat {} +", articles).status, 2);
+    assert.strictEqual(from(`cd ${election} && rg Elm ./xx-exampleton-1`, root).status, 2);
+    // A retry in two calls is placed, since the hook's cwd follows the cd.
+    assert.strictEqual(from(`cd ${BALLOT}/articles`, root).status, 0);
+    assert.strictEqual(from("rg Elm", articles).status, 0);
+    assert.strictEqual(from("cd .. && ls", articles).status, 0);
+  });
+
+  // Value: protects=the setup Rule 5 stands on: a session told to fix a ballot-check failure must not replace the researcher's merged settings or the attributes; fails_when=a command naming the settings or attributes runs, a file tool can edit them, or the skill's own copies stop being readable; why_new=step 3 said fix every failure and cp over .claude/settings.json was allowed; seam=hook; no_claim=a name built at run time
+  it("keeps the data repo's settings and attributes from the model", () => {
+    const root = project();
+    const skill = ".claude/skills/research-candidates";
+    const denied = "script-only-file";
+    for (const rule of [
+      "Edit(/.claude/settings.json)",
+      "Edit(/.claude/settings.local.json)",
+      "Edit(/.gitattributes)",
+    ]) {
+      assert.ok(settings.permissions.deny.includes(rule), `${rule} is not denied`);
+    }
+    expect(
+      hook,
+      root,
+      [
+        [bash(`cp ${skill}/data-repo-settings.json .claude/settings.json`), denied],
+        [bash(`cp ${skill}/data-repo-gitattributes .gitattributes`), denied],
+        [bash("rm .gitattributes"), denied],
+        [bash("sed -i '' s/Grep// .claude/settings.json"), denied],
+        [bash("echo x >> .claude/settings.local.json"), denied],
+      ],
+      [bash(`cat ${skill}/data-repo-settings.json`), bash(`cat ${skill}/data-repo-gitattributes`)],
     );
   });
 
