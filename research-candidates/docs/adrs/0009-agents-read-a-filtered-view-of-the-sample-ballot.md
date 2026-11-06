@@ -16,6 +16,7 @@ Private text also lives apart from the contest list: `private.yaml` holds it, so
 - **Companions.** The candidate list, pamphlet, write-in list and withdrawal notice can be read whole, so they must be county-wide or state-wide. `ballot-check` fails one whose fetch URL had a query string, or whose body holds an address, street line or label.
 - **Staleness.** `session-guard` opens a companion only on a `read:` line of a regular-file view whose `sha256:` lines still agree with `ballot.yaml`, the sample ballot and that companion. A companion edited since its check is refused.
 - **Retirement.** A companion listed under `retired_companions` leaves the `read:` lines, and it vouches for nothing.
+- **Main session.** `session-guard` refuses a call naming `sources/_ballot/` or `downloads/`, and a `Grep` or recursive shell search from a `sources/` directory (`session-file-denied`). It checks only calls with no `agent_id`, so the compile agent keeps its companions, and `data-repo-settings.json` has no `Read` deny on `_ballot` for the same reason. A `Read` deny does cover `downloads/`.
 - **Discovery.** It never reads `ballot.yaml`, the view or `sources/_ballot/`, because a printed title can locate the voter. `--brief` prints only checked values.
 
 ## Consequences
@@ -24,4 +25,5 @@ Private text also lives apart from the contest list: `private.yaml` holds it, so
 - A `--file` companion's query is `unknown`, because its download URL was never seen, so it passes on the body check alone.
 - The companion body check matches only addresses, street lines and labels. It skips the ZIP, title, place-name and link checks, which county-wide documents fail by nature, so a precinct name in a companion is not caught here. The publish scan still reads anything quoted from it.
 - `ballot-view.md` has an `Edit` deny, but no Bash refusal in `session-guard`.
-- The allow lists bind agents only. The main session has no hook on reading the sample ballot ([ADR 0003](0003-the-model-never-sees-an-address.md)).
+- The main-session refusal has the limits in [ADR 0003](0003-the-model-never-sees-an-address.md): a glob such as `cat */*/sources/*/*` reads the sample ballot without naming it.
+- It also relies on Claude Code sending `agent_id` to the settings hook on an agent's calls. If it did not, the compile agent would be refused its companions, which fails closed.

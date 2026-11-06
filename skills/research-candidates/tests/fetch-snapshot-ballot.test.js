@@ -880,7 +880,6 @@ describe("the data repo's Claude Code settings", () => {
           tool_name: "Write",
           tool_input: { file_path: "/r/articles/a.md", content: "Jane Example said…" },
         },
-        { tool_name: "Read", tool_input: { file_path: "/r/downloads/b.pdf" } },
       ]) {
         const result = runHook(project, call);
         assert.equal(result.status, 0, `${JSON.stringify(call)}: ${result.stderr}`);

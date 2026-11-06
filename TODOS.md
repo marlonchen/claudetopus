@@ -6,7 +6,7 @@
 
 **What:** Replace every model-read signal from the discovery agent with script output that carries no free text:
 
-- [ ] The main session must not read `unfetchable.md` lines. A script (`review-list --refused-hosts <contest>` or a `fetch-snapshot` summary) prints only distinct, IDNA-normalized, valid LDH hosts of the contest's `domain not in tiers.yaml` entries, or a count for anything else (SKILL.md:23, the CRITICAL from cycle 3).
+- [ ] The main session must not read `unfetchable.md` lines (**built:** `session-guard` refuses a main-session call naming the file; a glob still gets past it). A script (`review-list --refused-hosts <contest>` or a `fetch-snapshot` summary) prints only distinct, IDNA-normalized, valid LDH hosts of the contest's `domain not in tiers.yaml` entries, or a count for anything else (SKILL.md:23, the CRITICAL from cycle 3).
 - [ ] Limit the refused-host stop to refusals from the current discovery run, or skip URL+subject pairs a later snapshot saved, so the append-only log cannot block a contest forever. Also say how the researcher continues without adding the domain.
 - [ ] Say what happens to privacy refusals during discovery: they are never logged, and the agent replies only `done`, so today they reach no one. Fix the "every other source ... reaches the researcher through `review-list`" sentence.
 - [ ] Bind the fetch tool given to each discovery agent to its own contest, the way it already rejects `--ballot` and `--file`; its `--searched` mode is bound the same way (snapshot-format.md, Search log).

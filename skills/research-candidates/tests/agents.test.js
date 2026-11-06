@@ -770,7 +770,7 @@ describe("session-guard: the main session and the private files", () => {
       ],
       [
         bash(`grep -rn Elm ${BALLOT}/articles`),
-        bash(`rg Elm ${BALLOT}/sources`),
+        bash(`rg Elm ${BALLOT}/sources/us-house-07`),
         bash(`rg -e Elm ${BALLOT}/articles`),
         bash(`rg Elm ${BALLOT}/ballot.yaml`),
         bash(`find ${BALLOT}/articles -name '*.md' -exec wc -l {} +`),
@@ -897,6 +897,72 @@ describe("session-guard: the main session and the private files", () => {
         ],
       ],
       [],
+    );
+  });
+});
+
+describe("session-guard: the main session and the ballot files", () => {
+  const hook = settings.hooks.PreToolUse[0].hooks[0].command;
+  const bash = (command) => ({ tool_name: "Bash", tool_input: { command } });
+  const read = (file_path) => ({ tool_name: "Read", tool_input: { file_path } });
+  const grep = (input) => ({ tool_name: "Grep", tool_input: { pattern: "Elm", ...input } });
+
+  // Value: protects=Rule 5 and Rule 7: the sample ballot and downloads can name or locate the voter, and unfetchable.md holds attacker-chosen URLs, so the main session reads none of them while the compile agent still reads its companions; fails_when=a main-session call names or reaches one and runs, or the settings hook refuses a Rule 7 agent's own read; why_new=the hook covered only addresses.yaml and private.yaml; seam=hook; no_claim=a glob, which names none of them (README.md, Data-repo settings)
+  it("refuses the main session, and leaves the compile agent's reads alone", () => {
+    const root = project();
+    const deny = settings.permissions.deny;
+    for (const rule of ["Read(/downloads/**)", "Read(/**/unfetchable.md)"]) {
+      assert.ok(deny.includes(rule), `${rule} is not denied`);
+    }
+    assert.ok(
+      !deny.some((rule) => rule.startsWith("Read(") && rule.includes("_ballot")),
+      "a Read deny on _ballot also stops the compile agent",
+    );
+    const code = "session-file-denied";
+    const ballotDir = path.join(root, BALLOT);
+    expect(
+      hook,
+      root,
+      [
+        [read(path.join(ballotDir, "sources", "_ballot", "sample-ballot.md")), code],
+        [read(path.join(ballotDir, "sources", "_ballot", "pamphlet.md")), code],
+        [read(path.join(ballotDir, "unfetchable.md")), code],
+        [read(path.join(root, "downloads", "ballot.pdf")), code],
+        [bash(`cat ${BALLOT}/sources/_ballot/sample-ballot.md`), code],
+        [bash(`cd ${BALLOT}/sources && cat _ballot/sample-ballot.md`), code],
+        [bash(`cat ${BALLOT}/unfetch''able.md`), code],
+        // A case-insensitive filesystem opens the file under this name too.
+        [bash(`cat ${BALLOT}/UNFETCHABLE.MD`), code],
+        // A script the model could run later.
+        [
+          {
+            tool_name: "Write",
+            tool_input: { file_path: "/r/x.sh", content: "cat sources/_ballot/*\n" },
+          },
+          code,
+        ],
+        // A search from sources/ reaches _ballot/ without naming it.
+        [grep({ path: `${BALLOT}/sources` }), code],
+        [grep({ path: `${BALLOT}/sources/_ballot` }), code],
+        [bash(`rg Elm ${BALLOT}/sources`), code],
+        [bash(`grep -rn Elm ${BALLOT}/sources`), code],
+      ],
+      [
+        read(path.join(ballotDir, "ballot-view.md")),
+        read(path.join(ballotDir, "sources", "us-house-07", "jane-example", "bio.md")),
+        grep({ path: `${BALLOT}/sources/us-house-07` }),
+        bash(`rg Elm ${BALLOT}/sources/us-house-07`),
+        // A pattern or a description reads no file.
+        grep({ pattern: "_ballot", path: `${BALLOT}/sources/us-house-07` }),
+        { tool_name: "Bash", tool_input: { command: "ls", description: "unfetchable.md" } },
+        bash(
+          `node .claude/skills/research-candidates/scripts/review-list --refused-hosts ${BALLOT} us-house-07`,
+        ),
+        // The settings hook runs on an agent's calls too.
+        as("compile")("Read", {
+          file_path: path.join(ballotDir, "sources", "_ballot", "pamphlet.md"),
+        }),
+      ],
     );
   });
 });

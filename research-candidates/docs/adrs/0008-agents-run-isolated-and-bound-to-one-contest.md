@@ -32,6 +32,6 @@ Compile and neutrality may also read the skill's references. None may read `addr
 
 ## Consequences
 
-- The main session is held only to the refusals in [ADR 0003](0003-the-model-never-sees-an-address.md) and [ADR 0007](0007-researcher-only-modes-need-their-own-terminal.md). Its web tools have no hook, and its reads are refused only for the two private files, so its other limits are instructions.
+- The main session is held only to the refusals in [ADR 0003](0003-the-model-never-sees-an-address.md) and [ADR 0007](0007-researcher-only-modes-need-their-own-terminal.md). Its web tools have no hook, and its reads are refused only for the private files, `sources/_ballot/`, `downloads/` and `unfetchable.md`, so its other limits are instructions.
 - `Glob` and `Grep` are checked by their starting path only, relying on Claude Code running them through ripgrep without following links.
 - Agent definitions must be copied into the data repo after each upgrade, and `.bindings/` must be gitignored there.

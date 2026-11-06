@@ -22,7 +22,10 @@
 //     addresses.yaml or private.yaml, which only scripts read, or a Grep or a
 //     recursive shell search from a directory that holds either (Rule 5). A
 //     shell glob or git's output names neither, so each still gets past this:
-//     data-repo-gitattributes keeps both files out of git's output.
+//     data-repo-gitattributes keeps both files out of git's output;
+//   - session-file-denied: the same calls from the main session alone, for
+//     sources/_ballot/, downloads/ and unfetchable.md, or a Grep or a
+//     recursive shell search from sources/;
 //   - agent-type-denied: any call from a subagent that is not a Rule 7 agent,
 //     however it started (a skill's fork, a workflow).
 // Quotes and backslashes are dropped before matching, so `--bal''lot` reads
@@ -74,6 +77,9 @@ const namedIn = (tool, input) => {
 // addresses.yaml is at the root and private.yaml two levels under it, in
 // <election>/<ballot-id>/, so a search any deeper reaches neither.
 const PRIVATE_FILE_DEPTH = 2;
+// What the main session has no use for: text that can name or locate the
+// voter, and the log of attacker-chosen URLs.
+const SESSION_FILE = /(^|[^\w-])_ballot([^\w-]|$)|unfetchable\.md|(^|[^\w.-])downloads\//i;
 // Commands that search a whole tree unasked, and the greps that do when told to.
 const TREE_SEARCHES = new Set(["rg", "ugrep", "ug", "ag", "ack"]);
 const GREPS = new Set(["grep", "egrep", "fgrep"]);
@@ -123,17 +129,20 @@ const startPath = (given, cwd) =>
     given === "~" || given.startsWith("~/") ? os.homedir() + given.slice(1) : given,
   );
 
+// A directory's path parts under the root; native realpath, since the plain
+// one keeps a path's case.
+const partsUnderRoot = (directory, root) =>
+  path.relative(fs.realpathSync.native(root), fs.realpathSync.native(directory)).split(path.sep);
+
 // True when a search from `given` would read a directory that holds a private
 // file. Anything it cannot place is refused, as a search from it would find
-// nothing anyway; native realpath, since the plain one keeps a path's case.
+// nothing anyway.
 const reachesPrivateFile = (given, root, cwd) => {
   const start = startPath(given, cwd);
   const found = fs.statSync(start, { throwIfNoEntry: false });
   if (!found) return true;
   if (!found.isDirectory()) return false;
-  const parts = path
-    .relative(fs.realpathSync.native(root), fs.realpathSync.native(start))
-    .split(path.sep);
+  const parts = partsUnderRoot(start, root);
   // Above the root, or beside it: only a start that holds the root reaches it.
   if (parts[0] === "..") return parts.every((part) => part === "..");
   // A hidden directory (.claude, .bindings) is no election.
@@ -154,32 +163,57 @@ const treeSearchOperands = ([word, ...args], command) => {
   return operands;
 };
 
-// True when a command runs a recursive search from a directory holding a
-// private file. Its operands that exist are its starts. With none it searches
-// where it runs, since a bare word may be a flag's value (rg -t yaml Elm),
-// unless it was given a path, which reads nothing if it is not there.
-const shellSearchReachesPrivateFile = (command, root, cwd) =>
+// True when a search from `given` is a ballot's sources/ directory, which holds
+// sources/_ballot/ two levels below any private file.
+const reachesBallotSources = (given, root, cwd) => {
+  const start = startPath(given, cwd);
+  if (!fs.statSync(start, { throwIfNoEntry: false })?.isDirectory()) return false;
+  const parts = partsUnderRoot(start, root);
+  return parts.length === 3 && parts[2] === "sources";
+};
+
+// True when a command runs a recursive search from a start `reaches` accepts.
+// Its operands that exist are its starts. With none it searches where it runs,
+// since a bare word may be a flag's value (rg -t yaml Elm), unless it was given
+// a path, which reads nothing if it is not there.
+const shellSearchReaches = (reaches, command, root, cwd) =>
   simpleCommands(command).some((words) => {
     const operands = treeSearchOperands(words, command);
     if (!operands) return false;
     const starts = operands.filter((operand) => fs.existsSync(startPath(operand, cwd)));
     if (starts.length === 0 && operands.some((operand) => operand.includes("/"))) return false;
-    return (starts.length ? starts : ["."]).some((s) => reachesPrivateFile(s, root, cwd));
+    return (starts.length ? starts : ["."]).some((s) => reaches(s, root, cwd));
   });
+
+// True when a Grep, or a recursive search in a shell command, starts where
+// `reaches` accepts.
+const searchReaches = (reaches, input, root, cwd) => {
+  const tool = input.tool_name;
+  const toolInput = input.tool_input;
+  if (tool === "Grep") return reaches(toolInput.path ?? ".", root, cwd);
+  return (
+    SHELL_TOOLS.has(tool) && shellSearchReaches(reaches, unquote(toolInput.command), root, cwd)
+  );
+};
+
+// The text of a call that can name a file, as the shell would mostly read it.
+const namedText = (input) =>
+  unquote(strings(namedIn(input.tool_name, input.tool_input)).join("\n"));
 
 // The main session's refusal for a call that could read or write a private
 // file. refusal() has already refused every subagent but the Rule 7 agents,
 // whose own hook holds each to its allow list (agent-guard.js).
 const privateFileRefusal = (input, root, cwd) => {
-  const tool = input.tool_name;
-  const toolInput = input.tool_input;
-  if (PRIVATE_FILE.test(unquote(strings(namedIn(tool, toolInput)).join("\n")))) {
-    return "private-file-denied";
-  }
-  const reaches =
-    (tool === "Grep" && reachesPrivateFile(toolInput.path ?? ".", root, cwd)) ||
-    (SHELL_TOOLS.has(tool) && shellSearchReachesPrivateFile(unquote(toolInput.command), root, cwd));
-  return reaches ? "private-file-denied" : null;
+  if (PRIVATE_FILE.test(namedText(input))) return "private-file-denied";
+  return searchReaches(reachesPrivateFile, input, root, cwd) ? "private-file-denied" : null;
+};
+
+// The main session's refusal for a call that could read a file only a script
+// or a Rule 7 agent reads. The compile agent reads _ballot companions, and
+// refusal() has already let the Rule 7 agents through.
+const sessionFileRefusal = (input, root, cwd) => {
+  if (SESSION_FILE.test(namedText(input))) return "session-file-denied";
+  return searchReaches(reachesBallotSources, input, root, cwd) ? "session-file-denied" : null;
 };
 
 // The refusal code for one tool call, or null to let it run. `agent` is the
@@ -196,8 +230,8 @@ const refusal = (input, agent) => {
   // The settings hook runs inside every subagent too. One that no launch below
   // saw (a skill's fork, a workflow) holds no token and no allow list.
   if (input.agent_id !== undefined) return isAgent(input.agent_type) ? null : "agent-type-denied";
-  const privateFile = privateFileRefusal(input, root, cwd);
-  if (privateFile) return privateFile;
+  const fileCode = privateFileRefusal(input, root, cwd) ?? sessionFileRefusal(input, root, cwd);
+  if (fileCode) return fileCode;
   if (input.tool_name === "Agent" || input.tool_name === "Task") {
     return launchRefusal(input.tool_input, root);
   }
