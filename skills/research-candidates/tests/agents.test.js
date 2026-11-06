@@ -526,7 +526,7 @@ describe("session-guard: the main session's launch of each agent", () => {
   });
 
   // Value: protects=Rule 7: discovery's whole prompt is a bound token and compile's and neutrality's first line is one, so nothing the main session holds (snapshot text, a full URL, an instruction) reaches discovery, and every agent starts bound to a contest; fails_when=a prompt without a bound token, an isolated launch or a launch of another agent's token form gets through; why_new=new; seam=hook; no_claim=a main session that skips the agents and does their work itself (prompt-level)
-  it("starts each agent only on a bound token, and leaves other agents and reads alone", () => {
+  it("starts each agent only on a bound token, and refuses every other agent", () => {
     const root = project();
     assert.ok(
       settings.hooks.PreToolUse[0].matcher.split("|").includes("Agent"),
@@ -553,12 +553,18 @@ describe("session-guard: the main session's launch of each agent", () => {
           "agent-isolation-denied",
         ],
         [launch(agentName("compile"), TOKEN, { isolation: "remote" }), "agent-isolation-denied"],
+        [launch("Explore", "Find the tests."), "agent-type-denied"],
+        [launch("general-purpose", "Read addresses.yaml."), "agent-type-denied"],
+        [{ tool_name: "Agent", tool_input: { prompt: "No type named." } }, "agent-type-denied"],
+        [
+          { tool_name: "Task", tool_input: { subagent_type: "fork", prompt: "Carry on." } },
+          "agent-type-denied",
+        ],
       ],
       [
         launch(agentName("discovery"), `${TOKEN}\n`),
         launch(agentName("compile"), `${TOKEN}\n${BALLOT} us-house-07`),
         launch(agentName("neutrality"), `${OTHER_TOKEN}\n${BALLOT} question-1\n...`),
-        launch("Explore", "Find the tests."),
         { tool_name: "Read", tool_input: { file_path: path.join(root, BALLOT, "ballot.yaml") } },
       ],
     );
@@ -626,6 +632,85 @@ describe("session-guard: the main session's launch of each agent", () => {
         bash("ls .claude/skills"),
         bash(`node .claude/skills/research-candidates/scripts/agent-bind ${BALLOT} us-house-07`),
         bash("git log --oneline -1"),
+      ],
+    );
+  });
+});
+
+describe("session-guard: the main session and the private files", () => {
+  const hook = settings.hooks.PreToolUse[0].hooks[0].command;
+  const bash = (command) => ({ tool_name: "Bash", tool_input: { command } });
+  const read = (file_path) => ({ tool_name: "Read", tool_input: { file_path } });
+  const grep = (input) => ({ tool_name: "Grep", tool_input: { pattern: "Elm", ...input } });
+
+  // Value: protects=Rule 5: the model never reads or writes addresses.yaml, and only scripts read private.yaml; fails_when=a Bash call, a file tool or a Grep names or reaches either file and runs, or Read or Grep leaves the matcher; why_new=only the Rule 7 agents' allow lists covered these files, and the main session could read and write both; seam=hook; no_claim=a glob or a recursive shell search, which names neither file (README.md, Data-repo settings)
+  it("refuses a read or write of either file, and leaves other files alone", () => {
+    const root = project();
+    const matcher = settings.hooks.PreToolUse[0].matcher.split("|");
+    assert.ok(matcher.includes("Read"), "the settings hook never sees a Read");
+    assert.ok(matcher.includes("Grep"), "the settings hook never sees a Grep");
+    const deny = settings.permissions.deny;
+    for (const rule of [
+      "Read(/addresses.yaml)",
+      "Read(/**/private.yaml)",
+      "Edit(/addresses.yaml)",
+      "Edit(/**/private.yaml)",
+    ]) {
+      assert.ok(deny.includes(rule), `${rule} is not denied`);
+    }
+    const code = "private-file-denied";
+    expect(
+      hook,
+      root,
+      [
+        [bash("cat addresses.yaml"), code],
+        [bash(`cat ${BALLOT}/private.yaml`), code],
+        [bash("echo x >> addresses.yaml"), code],
+        [bash("cat addr''esses.yaml"), code],
+        // A case-insensitive filesystem opens the file under this name too.
+        [bash("cat ./ADDRESSES.YAML"), code],
+        [read(path.join(root, "addresses.yaml")), code],
+        [read(path.join(root, BALLOT, "private.yaml")), code],
+        [{ tool_name: "Write", tool_input: { file_path: "addresses.yaml", content: "x" } }, code],
+        [
+          {
+            tool_name: "Edit",
+            tool_input: { file_path: `${BALLOT}/private.yaml`, old_string: "a", new_string: "b" },
+          },
+          code,
+        ],
+        [
+          {
+            tool_name: "MultiEdit",
+            tool_input: { file_path: "addresses.yaml", edits: [{ old_string: "a" }] },
+          },
+          code,
+        ],
+        // A script the model could run later.
+        [
+          {
+            tool_name: "Write",
+            tool_input: { file_path: "/r/x.sh", content: "cat addresses.yaml\n" },
+          },
+          code,
+        ],
+        // A search from the root, an election or a ballot reaches the files
+        // without naming them.
+        [grep({}), code],
+        [grep({ path: "." }), code],
+        [grep({ path: root }), code],
+        [grep({ path: path.dirname(root) }), code],
+        [grep({ path: BALLOT.split("/")[0] }), code],
+        [grep({ path: BALLOT }), code],
+        [grep({ path: `${BALLOT}/private.yaml` }), code],
+      ],
+      [
+        read(path.join(root, BALLOT, "ballot.yaml")),
+        grep({ path: `${BALLOT}/articles` }),
+        grep({ path: `${BALLOT}/ballot.yaml` }),
+        bash("git status"),
+        bash("node .claude/skills/research-candidates/scripts/ballot-check x"),
+        { tool_name: "Write", tool_input: { file_path: "notes.md", content: "x" } },
       ],
     );
   });

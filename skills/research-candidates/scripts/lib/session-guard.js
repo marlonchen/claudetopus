@@ -16,7 +16,11 @@
 //   - claude-cli-denied: a command running the claude CLI, which could start
 //     an agent (claude --agent) past the launch check below;
 //   - agent-message-denied: any SendMessage, which would reach a Rule 7 agent
-//     with text other than its token.
+//     with text other than its token;
+//   - private-file-denied: a command, file write, Read or Grep naming
+//     addresses.yaml or private.yaml, which only scripts read, or a Grep from
+//     a directory that holds either (Rule 5). A glob or a recursive shell
+//     search names neither, so it still gets past this.
 // Quotes and backslashes are dropped before matching, so `--bal''lot` reads
 // as --ballot. A command that builds the flag at run time, from a variable or
 // an encoding, still gets past it: this narrows what a hostile session can do
@@ -29,6 +33,7 @@
 // main session's launch of each agent, and on SubagentStart hands the launch's
 // token to the agent that started (agent-guard.js, bindings.js).
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { agentRefusal, isAgent, launchRefusal } = require("./agent-guard");
 const { startAgent } = require("./bindings");
@@ -48,6 +53,12 @@ const SCRIPT_ONLY =
 // The claude CLI, by any path (claude, ~/.local/bin/claude, npx @anthropic-ai/claude-code).
 const CLAUDE_CLI = new Set(["claude", "claude-code"]);
 const FILE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+// Any case, since a case-insensitive filesystem opens the file under any.
+const PRIVATE_FILE = /addresses\.yaml|private\.yaml/i;
+const PRIVATE_FILE_TOOLS = new Set(["Bash", "Read", "Grep", ...FILE_TOOLS]);
+// addresses.yaml is at the root and private.yaml two levels under it, in
+// <election>/<ballot-id>/, so a Grep any deeper reaches neither.
+const PRIVATE_FILE_DEPTH = 2;
 
 // The text as the shell would mostly read it: $'...' and "..." quoting,
 // quotes and backslashes removed.
@@ -80,6 +91,31 @@ const strings = (value) => {
   return [];
 };
 
+// True when a Grep from `given` would read a directory that holds a private file.
+const grepReachesPrivateFile = (given, root, cwd) => {
+  const start = path.resolve(cwd, given ?? ".");
+  if (!fs.statSync(start, { throwIfNoEntry: false })?.isDirectory()) return false;
+  const relative = path.relative(fs.realpathSync(root), fs.realpathSync(start));
+  const up = relative.split(path.sep)[0] === "..";
+  // Above the root, or beside it: only a start that holds the root reaches it.
+  if (up) return !relative.split(path.sep).some((part) => part !== "..");
+  return relative === "" || relative.split(path.sep).length <= PRIVATE_FILE_DEPTH;
+};
+
+// The main session's refusal for a call that could read or write a private
+// file. A Rule 7 agent's allow list already covers these (agent-guard.js).
+const privateFileRefusal = (input, root, cwd) => {
+  const tool = input.tool_name;
+  if (!PRIVATE_FILE_TOOLS.has(tool)) return null;
+  if (PRIVATE_FILE.test(unquote(strings(input.tool_input).join("\n")))) {
+    return "private-file-denied";
+  }
+  if (tool === "Grep" && grepReachesPrivateFile(input.tool_input.path, root, cwd)) {
+    return "private-file-denied";
+  }
+  return null;
+};
+
 // The refusal code for one tool call, or null to let it run. `agent` is the
 // agent whose definition ran the hook, or undefined for the settings hook.
 const refusal = (input, agent) => {
@@ -91,6 +127,8 @@ const refusal = (input, agent) => {
   if (agent !== undefined) {
     return isAgent(agent) ? agentRefusal(agent, input, root, cwd) : "hook-input-invalid";
   }
+  const privateFile = privateFileRefusal(input, root, cwd);
+  if (privateFile) return privateFile;
   if (input.tool_name === "Agent" || input.tool_name === "Task") {
     return launchRefusal(input.tool_input, root);
   }

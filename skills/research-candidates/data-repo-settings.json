@@ -9,6 +9,10 @@
       "Edit(/downloads/**)",
       "Edit(/.bindings/**)",
       "Edit(/**/ballot-view.md)",
+      "Edit(/addresses.yaml)",
+      "Edit(/**/private.yaml)",
+      "Read(/addresses.yaml)",
+      "Read(/**/private.yaml)",
       "Bash(*fetch-snapshot*--ballot*)",
       "Bash(*fetch-snapshot*--keep-short*)",
       "Bash(*ballot-check*--show*)",
@@ -20,7 +24,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|Agent|Task|SendMessage",
+        "matcher": "Bash|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|Task|SendMessage",
         "hooks": [
           {
             "type": "command",
