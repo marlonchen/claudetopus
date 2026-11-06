@@ -3,7 +3,8 @@
 // What Rule 5 relies on outside the skill, which upgrading the skill cannot
 // change: the data repo's Claude Code settings and its git attributes
 // (README.md, Data-repo settings). ballot-check fails while either falls
-// short, so the session-guard the skill ships never runs half installed.
+// short, so research never starts on settings older than the session-guard
+// the skill ships. It does not check the agents copied into .claude/agents/.
 
 const fs = require("node:fs");
 const path = require("node:path");

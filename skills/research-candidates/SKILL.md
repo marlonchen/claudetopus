@@ -91,7 +91,7 @@ Never look up the address. Give the researcher links instead: the state's offici
 
 ### 3. Confirm the ballot
 
-The researcher types every contest and candidate into `ballot.yaml` from the saved sample ballot (format: [references/ballot-format.md](references/ballot-format.md)), including the counts they make by eye. Any precinct text or voter name printed on the ballot goes under `private_strings` in `private.yaml`. If `ballot.yaml` has no `slug` yet, set it from `LC_ALL=C tr -dc a-z0-9 </dev/urandom | head -c6`, never a value the model makes up. Run `ballot-check` and fix every failure.
+The researcher types every contest and candidate into `ballot.yaml` from the saved sample ballot (format: [references/ballot-format.md](references/ballot-format.md)), including the counts they make by eye. Any precinct text or voter name printed on the ballot goes under `private_strings` in `private.yaml`. If `ballot.yaml` has no `slug` yet, set it from `LC_ALL=C tr -dc a-z0-9 </dev/urandom | head -c6`, never a value the model makes up. Run `ballot-check` and fix every failure, except `settings-outdated` and `private-diff-shown`: only the researcher can fix those ([README.md](README.md#data-repo-settings)), so show them the code and stop until they have.
 
 ### 4. Research a contest
 
