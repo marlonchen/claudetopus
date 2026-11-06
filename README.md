@@ -179,6 +179,8 @@ fix: handle missing raw.config
     tasks/           # init, lint/, format/, test/, hooks/
 .github/
   workflows/ci.yml   # runs lint + test on pull requests and pushes to main
+research-candidates/
+  docs/adrs/         # its privacy decisions, one per policy; not installed with the skill
 skills/
   mywiki/            # the skill: SKILL.md, references, scripts, tests
   research-candidates/  # the skill, mostly built: SKILL.md, references, agents, scripts, tests

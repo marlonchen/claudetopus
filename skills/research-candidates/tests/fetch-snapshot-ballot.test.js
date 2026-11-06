@@ -802,6 +802,7 @@ describe("the data repo's Claude Code settings", () => {
       "Bash",
       "Edit",
       "Grep",
+      "Monitor",
       "MultiEdit",
       "NotebookEdit",
       "Read",

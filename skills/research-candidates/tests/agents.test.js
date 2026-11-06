@@ -102,10 +102,10 @@ const project = () => {
 };
 
 // Run a hook command as Claude Code does: through the shell, the call on stdin.
-const runHook = (command, root, call) =>
+const runHook = (command, root, call, env = {}) =>
   spawnSync("sh", ["-c", command], {
     input: JSON.stringify({ cwd: root, ...call }),
-    env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: root, ...env },
     encoding: "utf8",
   });
 
@@ -642,13 +642,16 @@ describe("session-guard: the main session and the private files", () => {
   const bash = (command) => ({ tool_name: "Bash", tool_input: { command } });
   const read = (file_path) => ({ tool_name: "Read", tool_input: { file_path } });
   const grep = (input) => ({ tool_name: "Grep", tool_input: { pattern: "Elm", ...input } });
+  const monitor = (command) => ({ tool_name: "Monitor", tool_input: { command } });
+  const code = "private-file-denied";
 
-  // Value: protects=Rule 5: the model never reads or writes addresses.yaml, and only scripts read private.yaml; fails_when=a Bash call, a file tool or a Grep names or reaches either file and runs, or Read or Grep leaves the matcher; why_new=only the Rule 7 agents' allow lists covered these files, and the main session could read and write both; seam=hook; no_claim=a glob or a recursive shell search, which names neither file (README.md, Data-repo settings)
+  // Value: protects=Rule 5: the model never reads or writes addresses.yaml, and only scripts read private.yaml; fails_when=a Bash call, a file tool or a Grep names or reaches either file and runs, or Read or Grep leaves the matcher; why_new=only the Rule 7 agents' allow lists covered these files, and the main session could read and write both; seam=hook; no_claim=a shell glob, which names neither file (README.md, Data-repo settings)
   it("refuses a read or write of either file, and leaves other files alone", () => {
     const root = project();
     const matcher = settings.hooks.PreToolUse[0].matcher.split("|");
     assert.ok(matcher.includes("Read"), "the settings hook never sees a Read");
     assert.ok(matcher.includes("Grep"), "the settings hook never sees a Grep");
+    assert.ok(matcher.includes("Monitor"), "the settings hook never sees a Monitor command");
     const deny = settings.permissions.deny;
     for (const rule of [
       "Read(/addresses.yaml)",
@@ -658,7 +661,6 @@ describe("session-guard: the main session and the private files", () => {
     ]) {
       assert.ok(deny.includes(rule), `${rule} is not denied`);
     }
-    const code = "private-file-denied";
     expect(
       hook,
       root,
@@ -712,6 +714,189 @@ describe("session-guard: the main session and the private files", () => {
         bash("node .claude/skills/research-candidates/scripts/ballot-check x"),
         { tool_name: "Write", tool_input: { file_path: "notes.md", content: "x" } },
       ],
+    );
+  });
+
+  // Value: protects=Rule 5 past the Bash tool's own name: a Monitor command is a shell command, and every Bash refusal holds for it; fails_when=Monitor leaves the matcher or session-guard lets it through because of its tool_name; why_new=Claude Code before 2.1.314 does not run a Bash matcher on Monitor commands, so cat addresses.yaml ran unchecked; seam=hook; no_claim=a WebSocket watch's frames, which no file read produces
+  it("holds a Monitor command to every Bash refusal", () => {
+    const root = project();
+    expect(
+      hook,
+      root,
+      [
+        [monitor("cat addresses.yaml"), code],
+        [monitor(`tail -f ${BALLOT}/private.yaml`), code],
+        [monitor("rg Elm"), code],
+        [monitor("ballot-check --show x"), "researcher-only-mode"],
+        [monitor("cat .bindings/x"), "script-only-file"],
+        [{ tool_name: "Monitor", tool_input: { ws: { url: "wss://x" } } }, "hook-input-invalid"],
+      ],
+      [monitor("tail -f build.log")],
+    );
+  });
+
+  // Value: protects=Rule 5 in a default session: Claude Code has no Grep tool on macOS, Linux or WSL, so the search a session really runs goes through Bash; fails_when=a recursive search from the root, an election or a ballot runs, or a search that stays below a ballot directory is refused; why_new=grep -rn Elm . read both files with the Grep check never called; seam=hook; no_claim=a shell glob, a search tool not listed, or a directory given only in a variable
+  it("refuses a recursive shell search that reaches either file, and leaves deeper ones alone", () => {
+    const root = project();
+    const election = BALLOT.split("/")[0];
+    expect(
+      hook,
+      root,
+      [
+        [bash("grep -rn Elm ."), code],
+        [bash("grep -R Elm"), code],
+        [bash("grep --recursive Elm ."), code],
+        [bash("egrep -nr Elm ."), code],
+        [bash("rg Elm"), code],
+        [bash("rg -e Elm"), code],
+        [bash("ugrep Elm ."), code],
+        [bash("ag Elm"), code],
+        // A flag's value is no path, so this searches where it runs.
+        [bash("rg -t yaml Elm"), code],
+        [bash("rg -g '*.yaml' Elm"), code],
+        [bash(`rg Elm ${election}`), code],
+        [bash(`grep -r Elm ${BALLOT}`), code],
+        [bash(`grep -r Elm ${root}`), code],
+        [bash(`rg Elm ${path.dirname(root)}`), code],
+        [bash("sudo rg Elm"), code],
+        [bash("cat x; rg Elm"), code],
+        [bash("find . -name '*.yaml' -exec cat {} +"), code],
+        [bash("find . -type f -exec grep Elm {} ;"), code],
+        [bash("find . ( -name a -o -name b ) -exec cat {} +"), code],
+        [bash("find . -name '*.yaml' | xargs cat"), code],
+        [bash(`find ${BALLOT} -name '*.yaml' -okdir cat {} ;`), code],
+        // Only the search's own path counts, wherever it is spelled.
+        [bash(`rg -e Elm ${BALLOT} ${BALLOT}/articles`), code],
+      ],
+      [
+        bash(`grep -rn Elm ${BALLOT}/articles`),
+        bash(`rg Elm ${BALLOT}/sources`),
+        bash(`rg -e Elm ${BALLOT}/articles`),
+        bash(`rg Elm ${BALLOT}/ballot.yaml`),
+        bash(`find ${BALLOT}/articles -name '*.md' -exec wc -l {} +`),
+        bash(`grep Elm ${BALLOT}/ballot.yaml`),
+        bash("cat x | grep Elm"),
+        bash("find . -name '*.md'"),
+        bash("rg --files"),
+        bash("grep -rn Elm no/such/dir"),
+        bash("git log --oneline | grep Elm"),
+      ],
+    );
+    // A shell's own cwd counts as the Grep tool's does.
+    assert.strictEqual(
+      runHook(hook, root, { ...bash("rg Elm"), cwd: path.join(root, BALLOT, "articles") }).status,
+      0,
+    );
+    assert.strictEqual(
+      runHook(hook, root, { ...bash("rg Elm"), cwd: path.join(root, BALLOT) }).status,
+      2,
+    );
+  });
+
+  // Value: protects=the header's "anything it cannot read is refused" for a search's start; fails_when=a ~ path, a differently cased root, a link to the root or a path that does not exist reads as somewhere safe, or a directory beside the root or a hidden one is refused; why_new=the check resolved ~ under cwd, kept a path's case and allowed what it could not stat; seam=hook; no_claim=a directory given only in a variable
+  it("places a search's start however it is spelled, and refuses one it cannot", () => {
+    const root = project();
+    const beside = fs.mkdtempSync(path.join(os.tmpdir(), "rc-beside-"));
+    projects.push(beside);
+    fs.symlinkSync(root, path.join(beside, "link"));
+    const home = { HOME: path.dirname(root) };
+    assert.strictEqual(runHook(hook, root, grep({ path: "~" }), home).status, 2);
+    assert.strictEqual(runHook(hook, root, bash("rg Elm ~"), home).status, 2);
+    assert.strictEqual(
+      runHook(hook, root, grep({ path: `~/${path.basename(root)}` }), home).status,
+      2,
+    );
+    assert.strictEqual(
+      runHook(hook, root, grep({ path: `~/${path.basename(beside)}` }), home).status,
+      0,
+    );
+    const refused = [
+      [grep({ path: "no-such-dir" }), code],
+      [grep({ path: "~/no-such-dir" }), code],
+      [grep({ path: "~someone-else/x" }), code],
+      [grep({ path: path.join(beside, "link") }), code],
+    ];
+    // On a case-insensitive filesystem the root opens under this name too.
+    const upper = root.toUpperCase();
+    if (fs.existsSync(upper)) refused.push([grep({ path: upper }), code]);
+    expect(hook, root, refused, [
+      grep({ path: beside }),
+      bash(`rg Elm ${beside}`),
+      grep({ path: ".claude" }),
+      grep({ path: ".claude/skills" }),
+      grep({ path: ".bindings" }),
+    ]);
+  });
+
+  // Value: protects=the model's ordinary work around these files; fails_when=text that reads nothing (a Bash description, a Grep pattern) is refused, or a body the model writes stops being read; why_new=every string in tool_input was matched, so a description naming a file refused a plain git status with a code that explained nothing; seam=hook; no_claim=an Edit that names a file in its text, which stays refused so a script cannot be planted
+  it("reads only the input that can name a file", () => {
+    const root = project();
+    const described = (description) => ({
+      tool_name: "Bash",
+      tool_input: { command: "git status", description },
+    });
+    expect(
+      hook,
+      root,
+      [
+        [
+          {
+            tool_name: "Grep",
+            tool_input: { pattern: "x", path: `${BALLOT}/articles`, glob: "private.yaml" },
+          },
+          code,
+        ],
+        [
+          {
+            tool_name: "Edit",
+            tool_input: { file_path: "a", old_string: "a", new_string: "cat addresses.yaml" },
+          },
+          code,
+        ],
+      ],
+      [
+        described("Check no private.yaml edits are staged"),
+        grep({ pattern: "private\\.yaml", path: ".claude/skills/research-candidates/references" }),
+      ],
+    );
+  });
+
+  // Value: protects=Rule 7: only the three agents run in the data repo, however a subagent started, and each stays held by its own hook; fails_when=a subagent no launch saw (a skill's fork, a workflow) makes a hooked call, or the settings hook refuses a Rule 7 agent's legitimate text; why_new=launchRefusal sees only Agent and Task, and the settings hook matched file names in agents' article text and URLs; seam=hook; no_claim=a subagent that calls only tools outside the matcher (README.md, Data-repo settings)
+  it("refuses every subagent but the Rule 7 agents, and leaves those to their own hooks", () => {
+    const root = project();
+    const fork = (call) => ({ ...call, agent_id: "id-fork", agent_type: "general-purpose" });
+    const denied = "agent-type-denied";
+    expect(
+      hook,
+      root,
+      [
+        [fork(read(path.join(root, BALLOT, "ballot.yaml"))), denied],
+        [fork(read(path.join(root, BALLOT, "sources/_ballot/sample-ballot.md"))), denied],
+        [fork(grep({ path: `${BALLOT}/articles` })), denied],
+        [fork(bash("git status")), denied],
+        [{ ...bash("git status"), agent_id: "id-fork" }, denied],
+      ],
+      [
+        as("compile")("Write", {
+          file_path: `${BALLOT}/articles/us-house-07.md`,
+          content: "The county posted private.yaml.\n",
+        }),
+        as("discovery")("Bash", {
+          command: `${FETCH} ${TOKEN} jane-example a 'https://x.gov/private.yaml'`,
+        }),
+      ],
+    );
+    // The agent's own hook still holds it to its allow list.
+    expect(
+      agentHook("compile"),
+      root,
+      [
+        [
+          as("compile")("Read", { file_path: path.join(root, BALLOT, "private.yaml") }),
+          "agent-path-denied",
+        ],
+      ],
+      [],
     );
   });
 });

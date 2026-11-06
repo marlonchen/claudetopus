@@ -14,10 +14,11 @@ Ids are still treated as private. In public, a ballot is known only by a random 
 - It fails an id whose number equals a digit run of any `private_strings` entry (`ballot-id-private`), so `Precinct 12` rules out `12`.
 - It fails a private string in `state` or `county`, and tells the researcher to list a township's full name, not a word it shares with the county (`list-full-place-name`).
 - `fetch-snapshot` refuses a URL holding an id, and the publish scan refuses a page holding any ballot's id, in all three forms, so `xx_exampleton_1` and `xx/exampleton/1` match too.
-- The slug must match `^[a-z0-9]{6}$` and be unique across the data repo. It comes from `/dev/urandom`, never from a value the model makes up.
+- The slug must match `^[a-z0-9]{6}$` and be unique across the data repo.
 
 ## Consequences
 
 - Ending in a number stops the id matching ordinary page text in the scan's spaced form, where it would otherwise read as words.
 - Keeping the id private while agents can see it looks inconsistent. It is deliberate: agents and scripts live inside the private repo, and the rule is about what reaches the public.
+- That the slug comes from `/dev/urandom`, never from a value the model makes up, is an instruction. `ballot-check` checks only its shape and uniqueness.
 - A slug has 36^6 values, about 2.2 billion. It prevents guessing a URL, but the `ballots` repo lists every slug anyway ([ADR 0001](0001-three-repos-for-public-and-private-data.md)).

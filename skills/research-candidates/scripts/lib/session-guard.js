@@ -1,8 +1,9 @@
 "use strict";
 
 // The data repo's PreToolUse hook (README.md, Data-repo settings). Claude Code
-// pipes it each Bash call, file write and edit the model is about to make, as
-// JSON; it exits 2 to refuse one, printing only `<tool> <code>` (Rule 5). It
+// pipes it each Bash or Monitor command, Read, Grep, file write, edit, agent
+// launch and message the model is about to make, as JSON; it exits 2 to refuse
+// one, printing only `<tool> <code>` (Rule 5). It
 // backs the terminal guard (terminal.js), which a child process can get past
 // on its own: it refuses
 //   - researcher-only-mode: --ballot, --show, --keep-short, --push or
@@ -18,9 +19,12 @@
 //   - agent-message-denied: any SendMessage, which would reach a Rule 7 agent
 //     with text other than its token;
 //   - private-file-denied: a command, file write, Read or Grep naming
-//     addresses.yaml or private.yaml, which only scripts read, or a Grep from
-//     a directory that holds either (Rule 5). A glob or a recursive shell
-//     search names neither, so it still gets past this.
+//     addresses.yaml or private.yaml, which only scripts read, or a Grep or a
+//     recursive shell search from a directory that holds either (Rule 5). A
+//     shell glob or git's output names neither, so each still gets past this:
+//     data-repo-gitattributes keeps both files out of git's output.
+//   - agent-type-denied: any call from a subagent that is not a Rule 7 agent,
+//     however it started (a skill's fork, a workflow).
 // Quotes and backslashes are dropped before matching, so `--bal''lot` reads
 // as --ballot. A command that builds the flag at run time, from a variable or
 // an encoding, still gets past it: this narrows what a hostile session can do
@@ -34,11 +38,14 @@
 // token to the agent that started (agent-guard.js, bindings.js).
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { agentRefusal, isAgent, launchRefusal } = require("./agent-guard");
 const { startAgent } = require("./bindings");
 
 const RESEARCHER_MODE = /(^|[^\w-])--(ballot|show|keep-short|push|device-check)(?![\w-])/;
+// Each runs a shell command, and hands the hook its own tool_name.
+const SHELL_TOOLS = new Set(["Bash", "Monitor"]);
 const GUARD_VARIABLE = /CLAUDECODE/i;
 // env -i, env --ignore-environment, env - (an empty environment drops CLAUDECODE).
 const ENV_WIPE = /(^|[^\w-])env\s+(-\w*i\b|--ignore-environment\b|-(\s|$))/;
@@ -55,18 +62,35 @@ const CLAUDE_CLI = new Set(["claude", "claude-code"]);
 const FILE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 // Any case, since a case-insensitive filesystem opens the file under any.
 const PRIVATE_FILE = /addresses\.yaml|private\.yaml/i;
-const PRIVATE_FILE_TOOLS = new Set(["Bash", "Read", "Grep", ...FILE_TOOLS]);
+// The input a call can name a file in. A Bash description or a Grep pattern
+// reads nothing, so neither counts; everything a file tool writes does, since
+// it could be a script to run later.
+const namedIn = (tool, input) => {
+  if (SHELL_TOOLS.has(tool)) return [input.command];
+  if (tool === "Read") return [input.file_path];
+  if (tool === "Grep") return [input.path, input.glob];
+  return FILE_TOOLS.has(tool) ? [input] : [];
+};
 // addresses.yaml is at the root and private.yaml two levels under it, in
-// <election>/<ballot-id>/, so a Grep any deeper reaches neither.
+// <election>/<ballot-id>/, so a search any deeper reaches neither.
 const PRIVATE_FILE_DEPTH = 2;
+// Commands that search a whole tree unasked, and the greps that do when told to.
+const TREE_SEARCHES = new Set(["rg", "ugrep", "ug", "ag", "ack"]);
+const GREPS = new Set(["grep", "egrep", "fgrep"]);
+const GREP_RECURSIVE = /^(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive|--dereference-recursive)$/;
+// A pattern given by flag, so that a grep's first operand is a path.
+const GREP_PATTERN_FLAG = /^(-[a-zA-Z]*[ef]|--regexp(=|$)|--file(=|$))/;
+// A find that hands what it finds to a command, anywhere in the command line,
+// since find's own parentheses and ; split it into simple commands.
+const FIND_READS = /\s-(exec|execdir|ok|okdir)\s|\bxargs\b/;
 
 // The text as the shell would mostly read it: $'...' and "..." quoting,
 // quotes and backslashes removed.
 const unquote = (text) => text.replace(/\$(?=['"])/g, "").replace(/['"\\]/g, "");
 
-// The command word of each simple command, after assignments, wrappers and
-// their flags.
-const commandWords = (command) =>
+// Each simple command's words, from its command word on, after assignments,
+// wrappers and their flags.
+const simpleCommands = (command) =>
   command
     .split(/\$\(|[;&|()\n`]/)
     .map((segment) => {
@@ -80,9 +104,10 @@ const commandWords = (command) =>
       ) {
         i++;
       }
-      return words[i] ? path.basename(words[i]) : null;
+      return words.slice(i);
     })
-    .filter(Boolean);
+    .filter((words) => words.length > 0);
+const commandWords = (command) => simpleCommands(command).map(([word]) => path.basename(word));
 
 // Every string in a tool input, however nested (MultiEdit's edits).
 const strings = (value) => {
@@ -91,29 +116,70 @@ const strings = (value) => {
   return [];
 };
 
-// True when a Grep from `given` would read a directory that holds a private file.
-const grepReachesPrivateFile = (given, root, cwd) => {
-  const start = path.resolve(cwd, given ?? ".");
-  if (!fs.statSync(start, { throwIfNoEntry: false })?.isDirectory()) return false;
-  const relative = path.relative(fs.realpathSync(root), fs.realpathSync(start));
-  const up = relative.split(path.sep)[0] === "..";
+// `given` from `cwd`, a leading ~ as the shell and Claude Code's tools read it.
+const startPath = (given, cwd) =>
+  path.resolve(
+    cwd,
+    given === "~" || given.startsWith("~/") ? os.homedir() + given.slice(1) : given,
+  );
+
+// True when a search from `given` would read a directory that holds a private
+// file. Anything it cannot place is refused, as a search from it would find
+// nothing anyway; native realpath, since the plain one keeps a path's case.
+const reachesPrivateFile = (given, root, cwd) => {
+  const start = startPath(given, cwd);
+  const found = fs.statSync(start, { throwIfNoEntry: false });
+  if (!found) return true;
+  if (!found.isDirectory()) return false;
+  const parts = path
+    .relative(fs.realpathSync.native(root), fs.realpathSync.native(start))
+    .split(path.sep);
   // Above the root, or beside it: only a start that holds the root reaches it.
-  if (up) return !relative.split(path.sep).some((part) => part !== "..");
-  return relative === "" || relative.split(path.sep).length <= PRIVATE_FILE_DEPTH;
+  if (parts[0] === "..") return parts.every((part) => part === "..");
+  // A hidden directory (.claude, .bindings) is no election.
+  return !parts[0].startsWith(".") && parts.length <= PRIVATE_FILE_DEPTH;
 };
 
+// What a simple command searches a whole tree from: its operands, for the
+// caller to sort paths from the rest, or null when it is no such search.
+const treeSearchOperands = ([word, ...args], command) => {
+  const name = path.basename(word);
+  // rg --files lists names and reads no file.
+  if (args.includes("--files")) return null;
+  const find = name === "find" && FIND_READS.test(command);
+  const grep = GREPS.has(name) && args.some((arg) => GREP_RECURSIVE.test(arg));
+  if (!find && !grep && !TREE_SEARCHES.has(name)) return null;
+  const operands = args.filter((arg) => !arg.startsWith("-"));
+  if (!find && !args.some((arg) => GREP_PATTERN_FLAG.test(arg))) operands.shift();
+  return operands;
+};
+
+// True when a command runs a recursive search from a directory holding a
+// private file. Its operands that exist are its starts. With none it searches
+// where it runs, since a bare word may be a flag's value (rg -t yaml Elm),
+// unless it was given a path, which reads nothing if it is not there.
+const shellSearchReachesPrivateFile = (command, root, cwd) =>
+  simpleCommands(command).some((words) => {
+    const operands = treeSearchOperands(words, command);
+    if (!operands) return false;
+    const starts = operands.filter((operand) => fs.existsSync(startPath(operand, cwd)));
+    if (starts.length === 0 && operands.some((operand) => operand.includes("/"))) return false;
+    return (starts.length ? starts : ["."]).some((s) => reachesPrivateFile(s, root, cwd));
+  });
+
 // The main session's refusal for a call that could read or write a private
-// file. A Rule 7 agent's allow list already covers these (agent-guard.js).
+// file. refusal() has already refused every subagent but the Rule 7 agents,
+// whose own hook holds each to its allow list (agent-guard.js).
 const privateFileRefusal = (input, root, cwd) => {
   const tool = input.tool_name;
-  if (!PRIVATE_FILE_TOOLS.has(tool)) return null;
-  if (PRIVATE_FILE.test(unquote(strings(input.tool_input).join("\n")))) {
+  const toolInput = input.tool_input;
+  if (PRIVATE_FILE.test(unquote(strings(namedIn(tool, toolInput)).join("\n")))) {
     return "private-file-denied";
   }
-  if (tool === "Grep" && grepReachesPrivateFile(input.tool_input.path, root, cwd)) {
-    return "private-file-denied";
-  }
-  return null;
+  const reaches =
+    (tool === "Grep" && reachesPrivateFile(toolInput.path ?? ".", root, cwd)) ||
+    (SHELL_TOOLS.has(tool) && shellSearchReachesPrivateFile(unquote(toolInput.command), root, cwd));
+  return reaches ? "private-file-denied" : null;
 };
 
 // The refusal code for one tool call, or null to let it run. `agent` is the
@@ -127,6 +193,9 @@ const refusal = (input, agent) => {
   if (agent !== undefined) {
     return isAgent(agent) ? agentRefusal(agent, input, root, cwd) : "hook-input-invalid";
   }
+  // The settings hook runs inside every subagent too. One that no launch below
+  // saw (a skill's fork, a workflow) holds no token and no allow list.
+  if (input.agent_id !== undefined) return isAgent(input.agent_type) ? null : "agent-type-denied";
   const privateFile = privateFileRefusal(input, root, cwd);
   if (privateFile) return privateFile;
   if (input.tool_name === "Agent" || input.tool_name === "Task") {
@@ -154,7 +223,7 @@ const sessionRefusal = (input) => {
   if (typeof tool !== "string" || !toolInput || typeof toolInput !== "object") {
     return "hook-input-invalid";
   }
-  if (tool === "Bash") {
+  if (SHELL_TOOLS.has(tool)) {
     if (typeof toolInput.command !== "string") return "hook-input-invalid";
     const command = unquote(toolInput.command);
     if (RESEARCHER_MODE.test(command)) return "researcher-only-mode";

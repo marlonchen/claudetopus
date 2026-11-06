@@ -23,5 +23,5 @@ The researcher's opinions are private too, and a guide for family members must n
 
 - Nothing detects an opinion in text. Rule 4 holds through the page's structure, the verbatim excerpt check and the neutrality review, not through a scanner.
 - The manifest and ledger are checks against mistakes, not proof against a hostile session, which the README states. `session-guard` does not name `sources/` or `search-log/`, so a Bash write there is not refused. For `sources/`, the hash check catches it at `check` and `publish`.
-- Only the researcher retires a snapshot, and only the researcher commits the data repo.
+- Only the researcher retires a snapshot, and only the researcher commits the data repo. The second is an instruction, since `session-guard` does not refuse `git commit` ([ADR 0014](0014-only-the-researcher-can-say-yes-to-publish.md)).
 - A corrected sample ballot cannot yet be saved as a correction that `ballot-check` accepts, because `fetch-snapshot`'s `supersedes` field is not built and adding it by hand changes the snapshot's hash.

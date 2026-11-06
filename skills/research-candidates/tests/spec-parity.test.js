@@ -1237,9 +1237,10 @@ describe("LayoutComplete", () => {
     // .git/ are in the Pages repo, and scripts/ is in this skill.
     const data = [...named].filter(
       // Hosts in tiers.yaml examples, the `official.name` field path, paths in the skill's
-      // source repo (skills/...) and the OS leftover the ballot gate skips are not data files.
+      // source repo (skills/...), the OS leftover the ballot gate skips and the data repo's
+      // setup files, which hold no research data, are not data files.
       (t) =>
-        !/<name>|<subject>|<slug>|^\.git\/|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$/.test(
+        !/<name>|<subject>|<slug>|^\.git\/|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$|^\.claude\/settings\.json$|^\.gitattributes$|^data-repo-settings\.json$/.test(
           t,
         ),
     );

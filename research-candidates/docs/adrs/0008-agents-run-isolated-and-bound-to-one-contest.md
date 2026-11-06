@@ -20,7 +20,7 @@ Compile and neutrality may also read the skill's references. None may read `addr
 - A hook on an agent's calls cannot see its prompt. The settings hook therefore records each launch's token, and SubagentStart hands it to the agent's `agent_id` ([`bindings.js`](../../../skills/research-candidates/scripts/lib/bindings.js)).
 - [`agent-guard.js`](../../../skills/research-candidates/scripts/lib/agent-guard.js) then checks every call. It refuses a mismatched `agent_type`, a tool outside the list, an unbound agent, and any path outside the contest's list, with links resolved and `..` and brace patterns refused.
 - Discovery's Bash must be exactly one `discovery-fetch` command with its own token and a single-quoted URL.
-- Any other agent type is refused at launch (`agent-type-denied`), including a launch that names no type, because it holds no token and no allow list.
+- Any other agent type is refused at launch (`agent-type-denied`), including a launch that names no type, because it holds no token and no allow list. One started with no launch to check, by a skill's fork or a workflow, is refused with the same code at its first hooked call.
 - Launches are refused in a worktree or on another machine, where the hooks may not run. A second launch of an agent is refused until the first starts, within a 2-minute window, so two launches cannot trade tokens.
 - Every `SendMessage` and every Bash call running the `claude` CLI is refused, so nothing reaches an agent after its prompt.
 

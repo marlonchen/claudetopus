@@ -18,7 +18,8 @@
 //     checked against, each companion included (companionReadable).
 // The main session's launch of each agent is checked too:
 //   - agent-type-denied: a launch of any other agent, which holds no token
-//     and no allow list, and whose isolation these checks never see;
+//     and no allow list, and whose isolation these checks never see; one
+//     started another way is refused at its first hooked call (session-guard.js);
 //   - agent-prompt-invalid: a prompt that is not a token agent-bind bound
 //     (discovery's whole prompt; the first line of the others'), so nothing
 //     else the session holds reaches discovery;

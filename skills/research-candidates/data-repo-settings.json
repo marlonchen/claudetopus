@@ -24,7 +24,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|Task|SendMessage",
+        "matcher": "Bash|Monitor|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|Task|SendMessage",
         "hooks": [
           {
             "type": "command",

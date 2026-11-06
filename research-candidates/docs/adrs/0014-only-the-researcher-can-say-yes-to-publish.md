@@ -27,6 +27,7 @@ A push makes a page public, and it stays in the Pages repo's history after any l
 
 ## Consequences
 
+- That the model never commits is an instruction, and so is the rule that nothing else pushes. `session-guard` refuses `publish --push` but not a plain `git commit` or `git push`, so a session could push to the Pages repo directly. TODOS.md tracks enforcing both.
 - The researcher is warned that the contest list and candidate order become public and can narrow down where a voter lives, because some states rotate candidate order by precinct. The scan cannot catch this ([ADR 0012](0012-scan-the-page-before-and-after-rendering.md)), so it is the researcher's call.
 - `display_name` and the commit author's name are public too.
 - A rejected push leaves the local commit for the researcher. They push it or reset `pages_dir`, and step 6.4 refuses until they do.

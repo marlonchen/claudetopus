@@ -137,8 +137,8 @@ const DEFAULT_ADDRESSES = `addr-mom:
 `;
 
 // A private data repo that passes Rule 8: publish.yaml, one private GitHub
-// remote, tiers.yaml, addresses.yaml and one ballot with its private.yaml.
-// Options override each part.
+// remote, tiers.yaml, addresses.yaml, one ballot with its private.yaml, and the
+// settings and git attributes the README installs. Options override each part.
 const makeDataRepo = (options = {}) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rc-data-"));
   git(root, "init", "-q");
@@ -153,6 +153,14 @@ const makeDataRepo = (options = {}) => {
   if (options.addresses !== false) {
     write(path.join(root, "addresses.yaml"), options.addresses ?? DEFAULT_ADDRESSES);
   }
+  write(
+    path.join(root, ".claude", "settings.json"),
+    fs.readFileSync(path.join(SKILL_DIR, "data-repo-settings.json"), "utf8"),
+  );
+  write(
+    path.join(root, ".gitattributes"),
+    fs.readFileSync(path.join(SKILL_DIR, "data-repo-gitattributes"), "utf8"),
+  );
   const remotes = options.remotes ?? { origin: ["https://github.com/me/elections.git"] };
   for (const [name, urls] of Object.entries(remotes)) {
     git(root, "remote", "add", name, urls[0]);

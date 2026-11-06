@@ -1,0 +1,4 @@
+# Keeps the private files out of git's own output: `git diff`, `git log -p`,
+# `git show` and `git grep` print no line of them (README.md, Data-repo settings).
+addresses.yaml -diff
+**/private.yaml -diff
