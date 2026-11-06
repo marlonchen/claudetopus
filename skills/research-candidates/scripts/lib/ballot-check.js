@@ -25,6 +25,7 @@ const {
 } = require("./constants");
 const { checkCompanions, checkPeople } = require("./ballot-companions");
 const { checkPrivacy } = require("./ballot-privacy");
+const { dataRepoSetupFailures } = require("./data-repo-setup");
 const {
   ballotEntries,
   isDir,
@@ -516,7 +517,7 @@ const check = (root, ballot, ballotDir, show) => {
     if (name.startsWith(`${VIEW}.tmp-`)) fs.rmSync(path.join(ballotDir, name), { force: true });
 
   // A file that cannot be read at all is one failure; the others still run.
-  const failures = [];
+  const failures = dataRepoSetupFailures(root, ballot);
   const orElse = (read, fallback) => {
     try {
       return read();

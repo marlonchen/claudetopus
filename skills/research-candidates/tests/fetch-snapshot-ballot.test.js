@@ -801,13 +801,18 @@ describe("the data repo's Claude Code settings", () => {
       "Agent",
       "Bash",
       "Edit",
+      "Grep",
+      "Monitor",
       "MultiEdit",
       "NotebookEdit",
+      "Read",
       "SendMessage",
       "Task",
       "Write",
     ]);
     const project = projectWithSkill();
+    const sources = `${BALLOT}/sources/us-house-07`;
+    fs.mkdirSync(path.join(project, sources), { recursive: true });
     try {
       for (const [call, code] of [
         [
@@ -872,7 +877,7 @@ describe("the data repo's Claude Code settings", () => {
         bash(`node scripts/publish ${BALLOT}`),
         bash("git push --push-option=x origin main"),
         bash("git status --short && git log --shortstat -1"),
-        bash("grep -rn 'empty' sources/us-house-07"),
+        bash(`grep -rn 'empty' ${sources}`),
         {
           tool_name: "Write",
           tool_input: { file_path: "/r/articles/a.md", content: "Jane Example said…" },

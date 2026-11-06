@@ -388,6 +388,7 @@ describe("each command's output codes are the ones its reference lists", () => {
     "ballot-companions.js",
     "ballot-match.js",
     "ballot-privacy.js",
+    "data-repo-setup.js",
   ];
   // check's own modules (article-format.md, Command line).
   const CHECK = ["check.js", "article.js", "figures.js", "snapshot-hash.js"];
