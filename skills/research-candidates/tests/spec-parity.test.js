@@ -1219,6 +1219,18 @@ describe("FailureCodes", () => {
 // Value: protects=every data-repo file the spec names appears in the SKILL.md Layout tree;
 //   fails_when=a reference adds a data file (a log, a ledger) the Layout and its gitignore
 //   check never see; why_new=PrivateDataIgnored checks only paths the Layout lists; seam=none
+describe("SetupHandOff", () => {
+  // Value: protects=Rule 5's setup: only the researcher merges the settings and attributes, so a session following step 3 must stop on these codes; fails_when=step 3 stops naming a setup code or goes back to "fix every failure" alone; why_new=review of #52: step 3 told the session to fix failures the hook's own setup raises, and cp over the settings was the obvious fix; seam=spec text; no_claim=the session obeying it, which the hook's refusals back
+  it("step 3 hands each data-repo setup failure to the researcher", () => {
+    const step = between(SKILL, "### 3. Confirm the ballot", "\n### ");
+    for (const code of ["settings-outdated", "private-diff-shown"]) {
+      assert.ok(step.includes(`\`${code}\``), `step 3 does not name ${code}`);
+      assert.ok(BALLOT.includes(`\`${code}\``), `ballot-format.md does not list ${code}`);
+    }
+    assert.match(step, /researcher/);
+  });
+});
+
 // Extended by /ship test coverage audit.
 // Value: protects=data files with any extension (archives.tsv) are held to the same Layout rule;
 //   fails_when=a data file with an unlisted extension is named in the spec but missing from the
@@ -1237,9 +1249,10 @@ describe("LayoutComplete", () => {
     // .git/ are in the Pages repo, and scripts/ is in this skill.
     const data = [...named].filter(
       // Hosts in tiers.yaml examples, the `official.name` field path, paths in the skill's
-      // source repo (skills/...) and the OS leftover the ballot gate skips are not data files.
+      // source repo (skills/...), the OS leftover the ballot gate skips and the data repo's
+      // setup files, which hold no research data, are not data files.
       (t) =>
-        !/<name>|<subject>|<slug>|^\.git\/|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$/.test(
+        !/<name>|<subject>|<slug>|^\.git\/|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$|^\.claude\/settings\.json$|^\.gitattributes$|^data-repo-settings\.json$/.test(
           t,
         ),
     );

@@ -2,6 +2,7 @@
 
 const assert = require("node:assert");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
 const { afterEach, describe, it } = require("node:test");
 const { BALLOT, DEFAULT_BALLOT, makeDataRepo, runCli, runInTty } = require("./harness");
 
@@ -775,6 +776,31 @@ describe("ballot-check: arguments and Rule 8", () => {
   it("refuses outside a private data repo", async () => {
     const data = setup({ publish: false });
     assert.deepEqual(lines(await ballotCheck(data)), ["publish.yaml guard-no-publish-yaml"]);
+  });
+
+  // Value: protects=Rule 5's enforcement after an upgrade, which replaces session-guard but neither of these data-repo files; fails_when=a repo missing a deny rule, a matcher tool or the attributes file passes; why_new=nothing read either file, so Read and Grep went unhooked with no signal; seam=subprocess; no_claim=a hook command the researcher repointed at another script
+  it("fails until the data repo holds the current settings and attributes", async () => {
+    const SETTINGS = ".claude/settings.json";
+    const failed = (result) => lines(result).filter((line) => /^\.(claude|gitattr)/.test(line));
+    const data = setup();
+    const current = data.read(SETTINGS);
+    assert.deepEqual(failed(await ballotCheck(data)), []);
+
+    const outdated = [`${SETTINGS} settings-outdated`];
+    data.write(SETTINGS, current.replace("Bash|Monitor|Read|Grep|", "Bash|"));
+    assert.deepEqual(failed(await ballotCheck(data)), outdated);
+    data.write(SETTINGS, current.replace('      "Read(/addresses.yaml)",\n', ""));
+    assert.deepEqual(failed(await ballotCheck(data)), outdated);
+    data.write(SETTINGS, "{");
+    assert.deepEqual(failed(await ballotCheck(data)), outdated);
+    data.write(SETTINGS, "{}");
+    assert.deepEqual(failed(await ballotCheck(data)), outdated);
+
+    data.write(SETTINGS, current);
+    data.write(".gitattributes", "addresses.yaml -diff\n");
+    assert.deepEqual(failed(await ballotCheck(data)), [".gitattributes private-diff-shown"]);
+    fs.rmSync(data.file(".gitattributes"));
+    assert.deepEqual(failed(await ballotCheck(data)), [".gitattributes private-diff-shown"]);
   });
 });
 

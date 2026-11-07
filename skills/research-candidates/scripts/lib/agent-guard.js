@@ -17,6 +17,9 @@
 //     `read:` lines only while that view still agrees with what it was
 //     checked against, each companion included (companionReadable).
 // The main session's launch of each agent is checked too:
+//   - agent-type-denied: a launch of any other agent, which holds no token
+//     and no allow list, and whose isolation these checks never see; one
+//     started another way is refused at its first hooked call (session-guard.js);
 //   - agent-prompt-invalid: a prompt that is not a token agent-bind bound
 //     (discovery's whole prompt; the first line of the others'), so nothing
 //     else the session holds reaches discovery;
@@ -213,10 +216,11 @@ const agentRefusal = (agent, input, root, cwd) => {
 const isAgent = (name) => typeof name === "string" && Object.hasOwn(AGENT_TOOLS, name);
 
 // The main session may start a Rule 7 agent only with a token agent-bind
-// bound, which it records for SubagentStart to hand to the agent.
+// bound, which it records for SubagentStart to hand to the agent, and may
+// start no other agent.
 const launchRefusal = (toolInput, root, now = Date.now()) => {
   const agent = toolInput.subagent_type;
-  if (!isAgent(agent)) return null;
+  if (!isAgent(agent)) return "agent-type-denied";
   if (toolInput.isolation !== undefined) return "agent-isolation-denied";
   const prompt = typeof toolInput.prompt === "string" ? toolInput.prompt : "";
   const token = (agent === DISCOVERY ? prompt : prompt.split("\n")[0]).trim();
