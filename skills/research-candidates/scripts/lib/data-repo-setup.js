@@ -41,10 +41,17 @@ const settingsCurrent = (root) => {
   }
 };
 
-// Does git treat both private files as binary, so that its output holds no
-// line of either?
+// Does git treat the private files, and those session-guard keeps from the main
+// session, as binary, so that its output holds no line of any? check-attr reads
+// only a path, so one name stands for a directory's files.
 const privateDiffHidden = (root, ballot) => {
-  const files = ["addresses.yaml", `${ballot}/private.yaml`];
+  const files = [
+    "addresses.yaml",
+    `${ballot}/private.yaml`,
+    `${ballot}/sources/_ballot/sample-ballot.md`,
+    `${ballot}/unfetchable.md`,
+    "downloads/ballot.pdf",
+  ];
   const result = spawnSync("git", ["check-attr", "diff", "--", ...files], {
     cwd: root,
     encoding: "utf8",

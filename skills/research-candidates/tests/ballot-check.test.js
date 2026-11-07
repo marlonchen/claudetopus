@@ -3,8 +3,11 @@
 const assert = require("node:assert");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
-const { BALLOT, DEFAULT_BALLOT, makeDataRepo, runCli, runInTty } = require("./harness");
+const { BALLOT, DEFAULT_BALLOT, git, makeDataRepo, runCli, runInTty } = require("./harness");
+
+const SKILL_DIR = path.join(__dirname, "..");
 
 // ballot-check (ballot-format.md, Ballot check and Command line), run as a
 // subprocess against a temp data repo (seam 1).
@@ -801,6 +804,41 @@ describe("ballot-check: arguments and Rule 8", () => {
     assert.deepEqual(failed(await ballotCheck(data)), [".gitattributes private-diff-shown"]);
     fs.rmSync(data.file(".gitattributes"));
     assert.deepEqual(failed(await ballotCheck(data)), [".gitattributes private-diff-shown"]);
+    const attributes = fs.readFileSync(path.join(SKILL_DIR, "data-repo-gitattributes"), "utf8");
+    for (const rule of attributes.split("\n").filter((line) => line.endsWith(" -diff"))) {
+      data.write(".gitattributes", attributes.replace(`${rule}\n`, ""));
+      assert.deepEqual(
+        failed(await ballotCheck(data)),
+        [".gitattributes private-diff-shown"],
+        rule,
+      );
+    }
+  });
+
+  // Value: protects=Rule 5 and ADR 0009: session-guard refuses these files by name, and git's output is the plain way to print them without one; fails_when=plain git grep, git diff, git show or git log -p prints a line of the sample ballot, downloads/ or unfetchable.md; why_new=the attributes held only the two private files, so git grep Elm printed all three; seam=subprocess; no_claim=git told to print binary files (ADR 0003, Limits)
+  it("keeps the files the main session stays out of from git's plain output", () => {
+    const data = setup({ body: null });
+    const files = [
+      `${BALLOT}/sources/_ballot/sample-ballot.md`,
+      `${BALLOT}/unfetchable.md`,
+      "downloads/ballot.html",
+    ];
+    for (const file of files) data.write(file, "Elm first\n");
+    git(data.root, "add", "-A");
+    git(data.root, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "-qm", "x");
+    for (const file of files) data.write(file, "Elm first\nElm second\n");
+    for (const args of [["grep", "Elm"], ["diff"], ["show"], ["log", "-p"]]) {
+      const printed = git(data.root, ...args).split("\n");
+      assert.ok(
+        printed.some((line) => /^Binary|^diff --git/.test(line)),
+        args.join(" "),
+      );
+      assert.deepEqual(
+        printed.filter((line) => /Elm (first|second)/.test(line)),
+        [],
+        args.join(" "),
+      );
+    }
   });
 });
 

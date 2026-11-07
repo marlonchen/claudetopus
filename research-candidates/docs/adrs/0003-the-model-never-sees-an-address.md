@@ -41,9 +41,10 @@ Scripts are unaffected, because they read these files as child processes and no 
 
 ## Limits
 
-This stops mistakes, not a hostile session ([ADR 0007](0007-researcher-only-modes-need-their-own-terminal.md)). The hook reads a command's text and each call's tool name, so these still get past it. This is the one list; the skill's README and the hook's header link here.
+This stops mistakes, not a hostile session ([ADR 0007](0007-researcher-only-modes-need-their-own-terminal.md)). The hook reads a command's text and each call's tool name, so these still get past it. This is the one list, and it covers the files [ADR 0009](0009-agents-read-a-filtered-view-of-the-sample-ballot.md) keeps from the main session too; the skill's README and the hook's header link here.
 
 - A shell glob given to anything but a recursive search: `cat *.yaml`, `grep Elm *`.
+- A working directory already inside `sources/_ballot/` or `downloads/`, since nothing a call names says so. Getting there takes a glob `cd`, which is the case above.
 - A name built at run time, from a variable or an encoding.
 - A file list in a shell loop or substitution: `find . -type f | while read f; do cat "$f"; done`, `cat $(find . -type f)`.
 - Git told to print binary files, or writing them out: `git diff --text`, `git log -p --text`, `git show --text`, `git grep -a`, `git archive HEAD | tar -xO`.
