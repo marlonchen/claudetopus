@@ -2,7 +2,13 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_PRIVATE, ZIPLESS_ADDRESSES, ZIP_PRIVATE } = require("./harness");
+const {
+  BALLOT,
+  DEFAULT_PRIVATE,
+  ZIPLESS_ADDRESSES,
+  ZIP_PRIVATE,
+  leaveUnreadableAddresses,
+} = require("./harness");
 const { COUNTY_PAGE, fetchVia, frontMatter, repo } = require("./fetch-snapshot-fixture");
 
 // Rule 7's privacy refusals as the discovery agent sees them: a URL holding a
@@ -29,10 +35,6 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
   it("refuses each class with its code, before any request", async () => {
     const cases = [
       ["https://county.example.gov/xx_exampleton_1/", "private-ballot-id"],
-      ["https://county.example.gov/?a=123%20Elm%20Street%20Apt%204", "private-address"],
-      ["https://county.example.gov/lookup?addr=123+Elm+Street", "private-address"],
-      ["https://county.example.gov/lookup?zip=99999-0001", "private-zip"],
-      ["https://county.example.gov/addr-mom", "private-label"],
       ["https://county.example.gov/springfield-township/", "private-string"],
       ["https://county.example.gov/lookup?precinct=12", "private-string"],
       ["https://county.example.gov/style/bs0412", "private-string"],
@@ -71,8 +73,8 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
   it("checks every redirect hop before requesting, tier-matching or logging it", async () => {
     for (const [location, code] of [
       ["https://county.example.gov/xx-exampleton-1/ballot", "private-ballot-id"],
-      ["https://elsewhere.example.net/?zip=99999", "private-zip"],
-      ["ftp://county.example.gov/addr-mom", "private-label"],
+      ["https://elsewhere.example.net/?precinct=12", "private-string"],
+      ["ftp://county.example.gov/bs-0412", "private-string"],
       ["https://[bad/springfield township", "private-string"],
     ]) {
       const data = repo();
@@ -144,20 +146,13 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
     assertRefused(data, result, "private-string", ["https://county.example.gov/go"]);
   });
 
-  // Value: protects=private values are read from private.yaml and addresses.yaml, which must parse; fails_when=a missing or malformed file is read as no values; why_new=new; seam=cli; no_claim=ballot-check's own checks of these files
-  it("refuses to fetch without readable private.yaml and addresses.yaml", async () => {
+  // Value: protects=private values are read from private.yaml, which must parse; fails_when=a missing or malformed file is read as no values; why_new=new; seam=cli; no_claim=ballot-check's own checks of the file
+  it("refuses to fetch without a readable private.yaml", async () => {
     const url = "https://county.example.gov/";
     const routes = { [url]: { body: COUNTY_PAGE } };
     for (const [options, line] of [
       [{ private: false }, `${BALLOT}/private.yaml file-missing`],
-      [{ addresses: false }, "addresses.yaml file-missing"],
       [{ private: "private_strings: Precinct 12\n" }, `${BALLOT}/private.yaml private-invalid`],
-      [{ addresses: "addr-mom:\n  ballot: x\n" }, "addresses.yaml:1 addresses-invalid"],
-      [
-        { addresses: "addr-mom:\n  address: 123 Elm Street, Springfield, XX 99999\n" },
-        "addresses.yaml:1 addresses-invalid",
-      ],
-      [{ addresses: "- 123 Elm Street\n" }, "addresses.yaml addresses-invalid"],
     ]) {
       const data = repo(options);
       const result = await fetchVia(data, routes, args(url));
@@ -200,6 +195,53 @@ describe("fetch-snapshot refuses a ZIP listed in private_strings", () => {
       const data = zipRepo();
       const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, args(url));
       assert.equal(result.stdout, "sources/us-house-07/_race/page.md saved\n", url);
+      assert.equal(result.status, 0);
+    }
+  });
+});
+
+describe("fetch-snapshot refuses every ballot's private strings", () => {
+  // Ballot 2 of the family lists its ZIP; ballot 1 does not.
+  const familyRepo = () => {
+    const data = repo({ addresses: false });
+    data.write("2026-general/xx-exampleton-2/private.yaml", 'private_strings:\n  - "88888"\n');
+    return data;
+  };
+
+  // Value: protects=a URL holding another ballot's ZIP is refused, as any address's ZIP was while addresses.yaml was one file for the family; fails_when=loadPrivateValues reads this ballot's private_strings only; why_new=ticket 26's scope decision (PR #54 review D1); seam=cli; no_claim=--ballot and --file (fetch-snapshot-ballot.test.js)
+  it("refuses another ballot's ZIP in the URL and in a redirect hop", async () => {
+    const url = "https://county.example.gov/lookup?zip=88888";
+    const plain = familyRepo();
+    assertRefused(
+      plain,
+      await fetchVia(plain, { [url]: { body: COUNTY_PAGE } }, args(url)),
+      "private-string",
+    );
+    const hop = familyRepo();
+    const result = await fetchVia(hop, redirectTo(url), args("https://county.example.gov/go"));
+    assertRefused(hop, result, "private-string", ["https://county.example.gov/go"]);
+  });
+
+  // Value: protects=an unreadable private.yaml of another ballot stops the fetch, since its strings are unknown, and is never named; fails_when=a broken private.yaml elsewhere is read as no strings; why_new=ticket 26; seam=cli; no_claim=none
+  it("refuses to fetch when another ballot's private.yaml cannot be read", async () => {
+    const data = repo({ addresses: false });
+    data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: Precinct 3\n");
+    const url = "https://county.example.gov/";
+    const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, args(url));
+    assert.equal(result.stdout, "- private-invalid\n- check-each-ballot\n");
+    assert.deepEqual(result.seen, []);
+  });
+});
+
+describe("fetch-snapshot without addresses.yaml", () => {
+  // Value: protects=a plain fetch needs no addresses.yaml and never opens a leftover one; fails_when=loadPrivateValues still reads addresses.yaml; why_new=ticket 26; seam=cli; no_claim=--ballot and --keep-short (their own files)
+  it("saves a page with no addresses.yaml, and beside one it cannot read", async () => {
+    const url = "https://county.example.gov/";
+    for (const leftover of [false, true]) {
+      const data = repo({ addresses: false });
+      if (leftover) leaveUnreadableAddresses(data);
+      const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, args(url));
+      assert.equal(result.stdout, "sources/us-house-07/_race/page.md saved\n");
       assert.equal(result.status, 0);
     }
   });

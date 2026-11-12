@@ -1019,6 +1019,15 @@ describe("ballot-check: private text", () => {
     assert.doesNotMatch(result.stdout, /exampleton-2|Lakeside/i);
   });
 
+  // Value: protects=the Tiers rule reports private-string only, so what addresses.yaml lists no longer fails tiers.yaml; fails_when=TIERS_CLASSES keeps the address, ZIP or label class; why_new=ticket 26; seam=cli; no_claim=ballot.yaml and ignored_lines (ticket 27)
+  it("passes a tiers.yaml entry holding only what addresses.yaml lists", async () => {
+    const data = setup({
+      tiers: `- match: county.example.gov\n  tier: T1\n  owner: third-party\n  source: County\n- match: addr-mom.example.org/123-elm-street\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
+    });
+    const result = await ballotCheck(data);
+    assert.deepEqual(lines(result), ["ballot-view.md written"]);
+  });
+
   for (const [name, value] of [
     ["a \\u escape", '"XX Pre\\u0063inct 12 court"'],
     ["a \\x escape", '"XX Precinct\\x2012 court"'],

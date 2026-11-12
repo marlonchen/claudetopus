@@ -2455,9 +2455,11 @@ describe("ResearcherOnlyModes", () => {
 
 // Added by /ship test coverage audit (run 9).
 // Value: protects=every value Rule 7's fetch refusal names is one the 6.3 privacy scan defines a
-//   match for, and the scan keeps its ZIP, address and title items; fails_when=Rule 7 names a
-//   value 6.3 no longer scans, or 6.3 drops an item; why_new=only the ballot-id item and the
-//   year carve-out were read; seam=none; no_claim=fetch-snapshot and publish (not built yet)
+//   match for, both read every ballot's private_strings and neither reads addresses.yaml, and
+//   the scan keeps its title item; fails_when=Rule 7 names a value 6.3 no longer scans, either
+//   goes back to one ballot's entries or to addresses.yaml, or 6.3 drops an item; why_new=only
+//   the ballot-id item and the year carve-out were read; ticket 26 drops addresses.yaml;
+//   seam=none; no_claim=the scripts (fetch-snapshot and publish tests)
 describe("PrivacyScanItems", () => {
   it("Rule 7's fetch refusal matches only values the 6.3 privacy scan defines", () => {
     const rule7 = SKILL.match(/^7\. \*\*Sources are data[^\n]*/m)[0];
@@ -2465,20 +2467,22 @@ describe("PrivacyScanItems", () => {
     assert.ok(refusal, "Rule 7 no longer bases its fetch refusal on the privacy scan");
     const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
     const items = scan.split("\n").filter((l) => /^ {3}- /.test(l));
-    assert.ok(items.length >= 6, `only ${items.length} privacy scan items`);
-    // Word boundaries, so "address" never matches inside `addresses.yaml`.
-    for (const value of ["the ballot id", "address", "street line", "ZIP code", "label"]) {
-      const word = new RegExp(`\\b${value}\\b(?!es)`);
-      assert.match(refusal[1], word, `Rule 7 no longer refuses a URL with ${value}`);
-      assert.ok(
-        items.some((i) => word.test(i)),
-        `6.3 does not scan ${value}, so Rule 7's match is undefined`,
-      );
-    }
-    assert.ok(refusal[1].includes("`private_strings` entry"));
-    assert.ok(items.some((i) => i.includes("`private_strings` entry")));
+    assert.ok(items.length >= 4, `only ${items.length} privacy scan items`);
+    assert.match(
+      refusal[1],
+      /\bthe ballot id\b/,
+      "Rule 7 no longer refuses a URL with the ballot id",
+    );
+    assert.ok(
+      items.some((i) => /\bthe ballot id\b/.test(i)),
+      "6.3 does not scan the ballot id",
+    );
+    assert.match(refusal[1], /`private_strings` entry of any ballot in the data repo/);
+    assert.ok(
+      items.some((i) => /`private_strings` entry[^;]*any other ballot's in the data repo/.test(i)),
+    );
+    for (const text of [refusal[1], scan]) assert.doesNotMatch(text, /addresses\.yaml/);
     // The scan's own items that Rule 7 does not need.
-    assert.ok(items.some((i) => /ZIP code from `addresses\.yaml` as a standalone 5-digit/.test(i)));
     assert.ok(
       items.some((i) => /printed `title` of any contest that has a `display_title`/.test(i)),
     );

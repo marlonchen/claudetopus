@@ -12,6 +12,7 @@ const {
   ZIPLESS_ADDRESSES,
   ZIP_PRIVATE,
   articlePage,
+  leaveUnreadableAddresses,
   runInTty,
 } = require("./harness");
 const {
@@ -349,6 +350,32 @@ describe("fetch-snapshot --ballot saves a _ballot snapshot", () => {
   });
 });
 
+describe("fetch-snapshot --ballot without addresses.yaml", () => {
+  // Value: protects=--ballot and --ballot --file need no addresses.yaml and never open a leftover one; fails_when=ballot-import reads addresses.yaml; why_new=ticket 26; seam=cli; no_claim=the plain fetch (fetch-snapshot-privacy.test.js)
+  it("saves from a URL and from a file, with no addresses.yaml and beside one it cannot read", async () => {
+    const url = "https://county.example.gov/ballot";
+    for (const leftover of [false, true]) {
+      const data = ballotRepo({ addresses: false });
+      if (leftover) leaveUnreadableAddresses(data);
+      const fetched = await ballotVia(data, { [url]: { body: SAMPLE } }, [
+        BALLOT,
+        "sample_ballot",
+        url,
+      ]);
+      assert.deepEqual(lines(fetched), ["sources/_ballot/sample-ballot.md saved"]);
+      data.write("downloads/b.pdf", pdfBytes("Jane Example\n"));
+      const filed = await ballotVia(data, {}, [
+        "--file",
+        BALLOT,
+        "pamphlet",
+        "downloads/b.pdf",
+        "https://county.example.gov/elections/",
+      ]);
+      assert.deepEqual(lines(filed), ["sources/_ballot/pamphlet.md saved"]);
+    }
+  });
+});
+
 describe("fetch-snapshot --ballot refusals", () => {
   // Value: protects=the address in a query goes only to a T1 host, on every hop, and no refusal is logged; fails_when=the T1 check runs only on the first or last hop, or a refusal reaches unfetchable.md; why_new=new; seam=cli; no_claim=none
   it("requires a T1 host before the prompt and on every hop", async () => {
@@ -383,10 +410,9 @@ describe("fetch-snapshot --ballot refusals", () => {
         "https://county.example.gov/springfield-township/ballot?x=1",
         ["_ballot private-string", "- use-ballot-file"],
       ],
-      ["https://county.example.gov/99999/ballot", ["_ballot private-zip", "- use-ballot-file"]],
       [
-        "https://county.example.gov/123-elm-street",
-        ["_ballot private-address", "- use-ballot-file"],
+        "https://county.example.gov/xx-exampleton-1/ballot",
+        ["_ballot private-ballot-id", "- use-ballot-file"],
       ],
       ["https://county.example.gov/ballot?k=s3cr3t-fec-key", ["_ballot private-key"]],
     ]) {
@@ -418,6 +444,33 @@ describe("fetch-snapshot --ballot refusals", () => {
     assert.deepEqual(lines(result), ["_ballot private-string", "- use-ballot-file"]);
     assert.deepEqual(result.seen, []);
     assertNothingWritten(data);
+  });
+
+  // Value: protects=another ballot's private string in the path refuses with the --file hint, and in the query passes, as this ballot's do; fails_when=the --ballot check reads this ballot's private_strings only, or checks the query; why_new=ticket 26's scope decision; seam=cli; no_claim=none
+  it("refuses another ballot's ZIP in the path, not in the query, and points to --file", async () => {
+    const other = (data) =>
+      data.write("2026-general/xx-exampleton-2/private.yaml", 'private_strings:\n  - "88888"\n');
+    const refusedRepo = ballotRepo({ addresses: false });
+    other(refusedRepo);
+    const url = "https://county.example.gov/88888/ballot";
+    const refused = await ballotVia(refusedRepo, { [url]: { body: SAMPLE } }, [
+      BALLOT,
+      "sample_ballot",
+      url,
+    ]);
+    assert.deepEqual(lines(refused), ["_ballot private-string", "- use-ballot-file"]);
+    assert.deepEqual(refused.seen, []);
+    assertNothingWritten(refusedRepo);
+
+    const savedRepo = ballotRepo({ addresses: false });
+    other(savedRepo);
+    const query = "https://county.example.gov/ballot?zip=88888";
+    const saved = await ballotVia(savedRepo, { [query]: { body: SAMPLE } }, [
+      BALLOT,
+      "sample_ballot",
+      query,
+    ]);
+    assert.deepEqual(lines(saved), ["sources/_ballot/sample-ballot.md saved"]);
   });
 
   // Value: protects=a redirect's path is checked like the first URL's, before it is requested; fails_when=the ballot check callback is not passed to fetchPage; why_new=new; seam=cli; no_claim=none
@@ -634,6 +687,26 @@ describe("fetch-snapshot --ballot --file", () => {
       "sample_ballot",
       "downloads/b.pdf",
       "https://springfield-township.example.gov/ballot",
+    ]);
+    assert.deepEqual(lines(result), ["_ballot private-string"]);
+    assert.ok(!result.stdout.includes("[y/N]"));
+    assertNothingWritten(data);
+  });
+
+  // Value: protects=another ballot's private string in the origin is refused too; fails_when=--file's origin check reads this ballot's private_strings only; why_new=ticket 26's scope decision; seam=cli; no_claim=none
+  it("refuses another ballot's private string in the origin", async () => {
+    const data = ballotRepo({ addresses: false });
+    data.write(
+      "2026-general/xx-exampleton-2/private.yaml",
+      "private_strings:\n  - Lakeside Village\n",
+    );
+    data.write("downloads/b.pdf", pdfBytes("x"));
+    const result = await ballotVia(data, {}, [
+      "--file",
+      BALLOT,
+      "sample_ballot",
+      "downloads/b.pdf",
+      "https://lakeside-village.example.gov/ballot",
     ]);
     assert.deepEqual(lines(result), ["_ballot private-string"]);
     assert.ok(!result.stdout.includes("[y/N]"));

@@ -351,11 +351,6 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     `${COUNTY}- match: springfield-township.example.org\n  tier: T2\n  owner: third-party\n  source: X\n`,
     "tiers.yaml:5 private-string match\n",
   );
-  refusesTiers(
-    "a source holding a ZIP code from addresses.yaml",
-    `${COUNTY}- match: x.example.com\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
-    "tiers.yaml:8 private-zip source\n",
-  );
   // Value: protects=a ZIP kept only in private_strings fails a match or source as the ZIP class did, and only as a standalone token; fails_when=the Tiers rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=none
   const ZIP_ONLY = { private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES };
   refusesTiers(
@@ -374,6 +369,30 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     const data = repo({
       tiers: `${COUNTY}- match: example.org/zip/1999990\n  tier: T2\n  owner: third-party\n  source: X 999991\n`,
       ...ZIP_ONLY,
+    });
+    const result = await fetchVia(
+      data,
+      { "https://county.example.gov/": { body: COUNTY_PAGE } },
+      PLAIN,
+    );
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+  });
+  // Value: protects=the Tiers rule reads every ballot's private_strings and only them, so a leftover addresses.yaml no longer fails a match or source; fails_when=the check reads one ballot's entries, or still reports an address, label or ZIP class; why_new=ticket 26; seam=cli; no_claim=ballot-check's Tiers rule (ballot-check.test.js)
+  it("fails a match holding another ballot's private string, and no address, label or ZIP", async () => {
+    const leak = repo({
+      tiers: `${COUNTY}- match: lakeside-village.example.org\n  tier: T2\n  owner: third-party\n  source: X\n`,
+    });
+    leak.write(
+      "2026-general/xx-exampleton-2/private.yaml",
+      "private_strings:\n  - Lakeside Village\n",
+    );
+    const refused = await fetchVia(leak, {}, PLAIN);
+    assert.equal(refused.stdout, "tiers.yaml:5 private-string match\n");
+    assert.deepEqual(refused.seen, []);
+
+    // The fixture's addresses.yaml lists addr-mom, 123 Elm Street and 99999.
+    const data = repo({
+      tiers: `${COUNTY}- match: addr-mom.example.org/123-elm-street\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
     });
     const result = await fetchVia(
       data,
