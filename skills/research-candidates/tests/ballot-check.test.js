@@ -738,6 +738,7 @@ describe("ballot-check: ballot.yaml fields", () => {
     ]) {
       const result = await ballotCheck(setup({ priv }));
       assert.equal(lines(result)[0], "private.yaml private-invalid", priv);
+      assert.doesNotMatch(result.stdout + result.stderr, /02134|2134/, priv);
     }
   });
 
@@ -1068,7 +1069,7 @@ describe("ballot-check: private text", () => {
     assert.doesNotMatch(result.stdout, /99999/);
   });
 
-  // Value: protects=a ZIP kept only in private_strings fails ballot.yaml and ignored_lines as the ZIP class did, and only as a standalone token; fails_when=the Private text rule skips a private_strings digit run or drops its digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ticket 27)
+  // Value: protects=a ZIP kept only in private_strings fails ballot.yaml and ignored_lines as the ZIP class did, and only as a standalone token; fails_when=the Private text rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ticket 27)
   it("fails a ZIP listed in private_strings, never one inside a longer digit run", async () => {
     const priv = (ignored) =>
       `${PRIVATE.replace("private_strings:\n", '$&  - "99999"\n')}  - ${ignored}\n`;

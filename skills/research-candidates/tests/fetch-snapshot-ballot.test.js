@@ -406,7 +406,7 @@ describe("fetch-snapshot --ballot refusals", () => {
     }
   });
 
-  // Value: protects=a ZIP kept only in private_strings refuses the path as the ZIP class did, hint and all; fails_when=the --ballot path check skips a private_strings digit run; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=the query, which may hold the address
+  // Value: protects=a ZIP kept only in private_strings refuses the path as the ZIP class did, hint and all; fails_when=the --ballot path check skips a digits-only private_strings entry; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=the query, which may hold the address
   it("refuses a ZIP listed in private_strings in the path and points to --file", async () => {
     const data = ballotRepo({ private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES });
     const url = "https://county.example.gov/99999/ballot";

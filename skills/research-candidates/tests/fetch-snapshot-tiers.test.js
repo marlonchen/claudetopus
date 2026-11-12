@@ -356,7 +356,7 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     `${COUNTY}- match: x.example.com\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
     "tiers.yaml:8 private-zip source\n",
   );
-  // Value: protects=a ZIP kept only in private_strings fails a match or source as the ZIP class did, and only as a standalone token; fails_when=the Tiers rule skips a private_strings digit run or drops its digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=none
+  // Value: protects=a ZIP kept only in private_strings fails a match or source as the ZIP class did, and only as a standalone token; fails_when=the Tiers rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=none
   const ZIP_ONLY = { private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES };
   refusesTiers(
     "a match holding a ZIP listed in private_strings",

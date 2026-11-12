@@ -170,12 +170,13 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
 describe("fetch-snapshot refuses a ZIP listed in private_strings", () => {
   const zipRepo = () => repo({ private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES });
 
-  // Value: protects=a ZIP kept only in private_strings refuses a URL wherever the ZIP class did; fails_when=a private_strings digit run is not searched alone, or loses its digit edge at a separator; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ticket 26)
+  // Value: protects=a ZIP kept only in private_strings refuses a URL wherever the ZIP class did; fails_when=a private_strings digit run is not searched alone, or is searched with a word edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ticket 26)
   it("refuses it in the path, the query and ZIP+4 form, and in a redirect hop", async () => {
     for (const url of [
       "https://county.example.gov/99999/polling-places",
       "https://county.example.gov/lookup?zip=99999",
       "https://county.example.gov/lookup?zip=99999-0001",
+      "https://county.example.gov/zip99999",
     ]) {
       const data = zipRepo();
       const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, args(url));

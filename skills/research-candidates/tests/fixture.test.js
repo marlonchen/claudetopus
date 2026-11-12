@@ -323,7 +323,7 @@ describe("fixture ballot: a ZIP listed only in private_strings", () => {
   const named = (data, name) =>
     data.write("publish.yaml", `branch: main\ndisplay_name: ${JSON.stringify(name)}\n`);
 
-  // Value: protects=the page scan refuses a ZIP kept only in private_strings as it did the ZIP class, and only as a standalone token, while the page's generated dates pass; fails_when=the scan skips a private_strings digit run, drops its digit edge, or stops skipping generated dates for it; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP, which familyPrivateValues already reads
+  // Value: protects=the page scan refuses a ZIP kept only in private_strings as it did the ZIP class, and only as a standalone token; fails_when=the scan skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP, which familyPrivateValues already reads
   it("refuses the ZIP as private-string, and publishes it inside a longer digit run", async () => {
     const leaked = zipOnly();
     named(leaked, "Sam 99999");
