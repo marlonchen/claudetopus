@@ -2,7 +2,7 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_BALLOT } = require("./harness");
+const { BALLOT, DEFAULT_BALLOT, ZIPLESS_ADDRESSES, ZIP_PRIVATE } = require("./harness");
 const {
   COUNTY_PAGE,
   PLAIN,
@@ -282,9 +282,9 @@ describe("ballot-format.md, Ids: a path under sources/ is built only from safe i
 });
 
 describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
-  const refusesTiers = (name, tiers, code) =>
+  const refusesTiers = (name, tiers, code, options = {}) =>
     it(name, async () => {
-      const data = repo({ tiers });
+      const data = repo({ tiers, ...options });
       const result = await fetchVia(
         data,
         { "https://county.example.gov/": { body: COUNTY_PAGE } },
@@ -356,6 +356,32 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     `${COUNTY}- match: x.example.com\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
     "tiers.yaml:8 private-zip source\n",
   );
+  // Value: protects=a ZIP kept only in private_strings fails a match or source as the ZIP class did, and only as a standalone token; fails_when=the Tiers rule skips a private_strings digit run or drops its digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=none
+  const ZIP_ONLY = { private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES };
+  refusesTiers(
+    "a match holding a ZIP listed in private_strings",
+    `${COUNTY}- match: example.org/zip/99999\n  tier: T2\n  owner: third-party\n  source: X\n`,
+    "tiers.yaml:5 private-string match\n",
+    ZIP_ONLY,
+  );
+  refusesTiers(
+    "a source holding a ZIP listed in private_strings",
+    `${COUNTY}- match: x.example.com\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
+    "tiers.yaml:8 private-string source\n",
+    ZIP_ONLY,
+  );
+  it("passes a match and source holding the ZIP only inside a longer digit run", async () => {
+    const data = repo({
+      tiers: `${COUNTY}- match: example.org/zip/1999990\n  tier: T2\n  owner: third-party\n  source: X 999991\n`,
+      ...ZIP_ONLY,
+    });
+    const result = await fetchVia(
+      data,
+      { "https://county.example.gov/": { body: COUNTY_PAGE } },
+      PLAIN,
+    );
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+  });
   it("ends another ballot's private.yaml failure, read for the Tiers rule, with check-each-ballot", async () => {
     const data = repo({ tiers: COUNTY });
     data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: [unclosed\n");

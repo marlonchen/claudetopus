@@ -54,9 +54,12 @@ private_strings:
   - Springfield Township   # place names that narrow down the voter's location beyond the contest list
   - BS-0412             # ballot style or split codes, voter ids
   - Lincoln Elementary Gym   # polling place name and address
+  - "99999"             # the voter's ZIP code, as its own entry and in quotes
 ignored_lines:          # sample-ballot lines that are not contests (instructions, headers, footers)
   - To vote, fill in the oval completely
 ```
+
+List the voter's ZIP code as its own entry, and each ZIP on its own when the ballot covers more than one address, so the scripts refuse it wherever it appears alone, never only beside the words of a longer entry. Quote it: YAML reads an unquoted `02134` as the number 2134, and `ballot-check` fails `private-invalid`. As a digit run of 4 or more digits that is not a year, the entry is matched as a standalone token (SKILL.md step 6.3): `99999` is refused in `?zip=99999`, `99999-0001` and `/99999/`, never inside a longer number such as `1999990`, and a refusal reports `private-string`. While `addresses.yaml` still holds the address, its ZIP is matched as well and reported as `private-zip` too.
 
 `addresses.yaml`, at the project root, holds each address the researcher adds under its label (SKILL.md step 1); the model never reads or writes it (Rule 5). Scripts read it only to refuse or scan for its values:
 

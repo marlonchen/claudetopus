@@ -5,7 +5,15 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
-const { BALLOT, DEFAULT_BALLOT, git, makeDataRepo, runCli, runInTty } = require("./harness");
+const {
+  BALLOT,
+  DEFAULT_BALLOT,
+  ZIPLESS_ADDRESSES,
+  git,
+  makeDataRepo,
+  runCli,
+  runInTty,
+} = require("./harness");
 
 const SKILL_DIR = path.join(__dirname, "..");
 
@@ -722,6 +730,8 @@ describe("ballot-check: ballot.yaml fields", () => {
   it("fails a private.yaml with another key, a non-string entry or nothing, never naming a key", async () => {
     for (const priv of [
       "private_strings: [12]\n",
+      // An unquoted ZIP is a number to YAML, and would lose a leading zero.
+      "private_strings:\n  - 02134\n",
       "private_strings: []\nignore_lines: []\n",
       "Lincoln Elementary Gym: 1\n",
       "",
@@ -1056,6 +1066,29 @@ describe("ballot-check: private text", () => {
       "private.yaml private-zip ignored_lines",
     ]);
     assert.doesNotMatch(result.stdout, /99999/);
+  });
+
+  // Value: protects=a ZIP kept only in private_strings fails ballot.yaml and ignored_lines as the ZIP class did, and only as a standalone token; fails_when=the Private text rule skips a private_strings digit run or drops its digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ticket 27)
+  it("fails a ZIP listed in private_strings, never one inside a longer digit run", async () => {
+    const priv = (ignored) =>
+      `${PRIVATE.replace("private_strings:\n", '$&  - "99999"\n')}  - ${ignored}\n`;
+    const leaked = setup({
+      ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 99999 court"),
+      priv: priv("Return to 99999"),
+      addresses: ZIPLESS_ADDRESSES,
+    });
+    const result = await failsWith(leaked, [
+      `ballot.yaml:${yamlLine(leaked, "99999")} private-string jurisdiction`,
+      "private.yaml private-string ignored_lines",
+    ]);
+    assert.doesNotMatch(result.stdout, /99999/);
+
+    const longer = setup({
+      ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 1999990 court"),
+      priv: priv("Return to 999991"),
+      addresses: ZIPLESS_ADDRESSES,
+    });
+    assert.deepEqual(lines(await ballotCheck(longer)), ["ballot-view.md written"]);
   });
 });
 

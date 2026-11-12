@@ -2,7 +2,7 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_PRIVATE } = require("./harness");
+const { BALLOT, DEFAULT_PRIVATE, ZIPLESS_ADDRESSES, ZIP_PRIVATE } = require("./harness");
 const { COUNTY_PAGE, fetchVia, frontMatter, repo } = require("./fetch-snapshot-fixture");
 
 // Rule 7's privacy refusals as the discovery agent sees them: a URL holding a
@@ -163,6 +163,43 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
       const result = await fetchVia(data, routes, args(url));
       assert.equal(result.stdout, `${line}\n`);
       assert.deepEqual(result.seen, []);
+    }
+  });
+});
+
+describe("fetch-snapshot refuses a ZIP listed in private_strings", () => {
+  const zipRepo = () => repo({ private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES });
+
+  // Value: protects=a ZIP kept only in private_strings refuses a URL wherever the ZIP class did; fails_when=a private_strings digit run is not searched alone, or loses its digit edge at a separator; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ticket 26)
+  it("refuses it in the path, the query and ZIP+4 form, and in a redirect hop", async () => {
+    for (const url of [
+      "https://county.example.gov/99999/polling-places",
+      "https://county.example.gov/lookup?zip=99999",
+      "https://county.example.gov/lookup?zip=99999-0001",
+    ]) {
+      const data = zipRepo();
+      const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, args(url));
+      assertRefused(data, result, "private-string");
+    }
+    const data = zipRepo();
+    const result = await fetchVia(
+      data,
+      redirectTo("https://elsewhere.example.net/?zip=99999"),
+      args("https://county.example.gov/go"),
+    );
+    assertRefused(data, result, "private-string", ["https://county.example.gov/go"]);
+  });
+
+  // Value: protects=the ZIP matches only as a standalone token; fails_when=the digit-run search drops its digit edge, so any longer number holding the ZIP refuses; why_new=ticket 25; seam=cli; no_claim=letters beside the ZIP, which still match (privacy.test.js)
+  it("fetches a URL holding the ZIP only inside a longer digit run", async () => {
+    for (const url of [
+      "https://county.example.gov/results/1999990",
+      "https://county.example.gov/results?id=999991",
+    ]) {
+      const data = zipRepo();
+      const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, args(url));
+      assert.equal(result.stdout, "sources/us-house-07/_race/page.md saved\n", url);
+      assert.equal(result.status, 0);
     }
   });
 });
