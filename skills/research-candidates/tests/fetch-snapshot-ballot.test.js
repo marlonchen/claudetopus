@@ -6,7 +6,14 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
-const { BALLOT, PDFTOTEXT_STUB, articlePage, runInTty } = require("./harness");
+const {
+  BALLOT,
+  PDFTOTEXT_STUB,
+  ZIPLESS_ADDRESSES,
+  ZIP_PRIVATE,
+  articlePage,
+  runInTty,
+} = require("./harness");
 const {
   body,
   fetchSnapshot,
@@ -397,6 +404,20 @@ describe("fetch-snapshot --ballot refusals", () => {
       assert.deepEqual(result.seen, []);
       assertNothingWritten(data);
     }
+  });
+
+  // Value: protects=a ZIP kept only in private_strings refuses the path as the ZIP class did, hint and all; fails_when=the --ballot path check skips a digits-only private_strings entry; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=the query, which may hold the address
+  it("refuses a ZIP listed in private_strings in the path and points to --file", async () => {
+    const data = ballotRepo({ private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES });
+    const url = "https://county.example.gov/99999/ballot";
+    const result = await ballotVia(data, { [url]: { body: SAMPLE } }, [
+      BALLOT,
+      "sample_ballot",
+      url,
+    ]);
+    assert.deepEqual(lines(result), ["_ballot private-string", "- use-ballot-file"]);
+    assert.deepEqual(result.seen, []);
+    assertNothingWritten(data);
   });
 
   // Value: protects=a redirect's path is checked like the first URL's, before it is requested; fails_when=the ballot check callback is not passed to fetchPage; why_new=new; seam=cli; no_claim=none

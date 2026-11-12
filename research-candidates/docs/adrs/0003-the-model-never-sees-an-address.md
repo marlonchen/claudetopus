@@ -8,6 +8,8 @@ The model reads untrusted web text, so an address it holds could be repeated in 
 
 `addresses.yaml` still exists because the privacy checks need the values to match against. Scripts read it only to refuse or to scan.
 
+**Amended by [ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md) (2026-11-11):** the file is being dropped. No address, street line or label is stored. The researcher lists the voter's ZIP in that ballot's `private.yaml` as a `private_strings` entry, and the session names a ballot by its id instead of a label. The rule that the model never sees an address is unchanged. The `addresses.yaml` enforcement below stays until tickets 26 to 28 remove it, and every guard on `private.yaml` stays.
+
 ## Enforcement
 
 - **The three Rule 7 agents** are held by `session-guard` to allow lists that exclude `addresses.yaml` and `private.yaml` ([ADR 0008](0008-agents-run-isolated-and-bound-to-one-contest.md)).
@@ -24,9 +26,9 @@ Scripts are unaffected, because they read these files as child processes and no 
 ## Considered Options
 
 - **Look addresses up with a script.** Rejected on 2026-10-23. `fetch-snapshot --geocode` and its Census Geocoder call were removed ([ADR 0004](0004-addresses-leave-only-through-the-researcher.md)).
-- **Harden the file.** Still open in TODOS.md: a sandbox read deny on both files, with the scripts that must read them listed in `sandbox.excludedCommands`. The operating system would then stop a read by any command, a glob or `git --text` included. An excluded command runs with full access, the list matches a call's text, every command in a call must match, and `fetch-snapshot` also needs a network decision, so this needs a live test first.
+- **Harden the file.** Not chosen ([ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md)): a sandbox read deny on both files, with the scripts that must read them listed in `sandbox.excludedCommands`. The operating system would then stop a read by any command, a glob or `git --text` included. An excluded command runs with full access, the list matches a call's text, every command in a call must match, and `fetch-snapshot` also needs a network decision, so this needs a live test first.
 - **Gitignore both files.** Rejected: the private repo is their only backup, and committed versions would stay in its history.
-- **Drop the file.** Still open in TODOS.md: the researcher lists any street or ZIP printed on the ballot under `private_strings`. This removes the file to protect, but loses the checks against an address the ballot does not print, and `private.yaml` still needs guarding.
+- **Drop the file.** Chosen on 2026-11-11, narrower than first sketched ([ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md)): the researcher lists only the ZIP under `private_strings`, and no street or address is stored. This removes the file to protect, but loses the checks against an address or street line, and `private.yaml` still needs guarding.
 - **Patch each search form as it is found.** Rejected: the next unseen form would leak. Placing every search means the next one is refused instead.
 - **Parse the shell with a dependency.** Rejected: it adds a dependency to a hook that runs on every call, and run-time expansion still cannot be resolved. The hook has a small quote-aware tokenizer.
 - **Run the hook on every tool.** Rejected for now: scanning an unknown tool's strings would refuse an `AskUserQuestion` or `TodoWrite` that names `addresses.yaml`, which SKILL.md step 1 needs, and exempting those tools leaves the same default open. TODOS.md tracks this.

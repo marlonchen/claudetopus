@@ -171,6 +171,17 @@ describe("privacy matcher: digit runs, ZIPs and the ballot id", () => {
     }
   });
 
+  // Value: protects=a ZIP kept only in private_strings matches beside a letter, as the ZIP class does; fails_when=a private_strings digit run is not searched alone, or is searched with a word edge; why_new=ticket 28 deletes the ZIP-class test above, the only one naming zip99999; seam=lib; no_claim=the encoded and split spellings of a ZIP
+  it("matches a digits-only private string as it matches the ZIP class", () => {
+    const values = { "private-string": ["99999"] };
+    for (const text of ["?zip=99999", "XX 99999-1234", "zip99999", "99999th", "９９９９９"]) {
+      assert.deepEqual(classes(text, values), ["private-string"], text);
+    }
+    for (const text of ["1999990", "999990", "9999"]) {
+      assert.deepEqual(classes(text, values), [], text);
+    }
+  });
+
   it("matches the ballot id in its hyphen, underscore and slash forms", () => {
     for (const text of [
       "/xx-exampleton-1/",
