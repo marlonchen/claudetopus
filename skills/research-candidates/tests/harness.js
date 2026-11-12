@@ -136,6 +136,11 @@ const DEFAULT_ADDRESSES = `addr-mom:
   ballot: ${BALLOT}
 `;
 
+// The ZIP held only as a private string (ballot-format.md, Private text):
+// listed in private.yaml, with no ZIP left in addresses.yaml to match it.
+const ZIP_PRIVATE = DEFAULT_PRIVATE.replace("private_strings:\n", '$&  - "99999"\n');
+const ZIPLESS_ADDRESSES = DEFAULT_ADDRESSES.replace(", XX 99999", ", XX");
+
 // A private data repo that passes Rule 8: publish.yaml, one private GitHub
 // remote, tiers.yaml, addresses.yaml, one ballot with its private.yaml, and the
 // settings and git attributes the README installs. Options override each part.
@@ -378,6 +383,8 @@ module.exports = {
   DEFAULT_TIERS,
   PDFTOTEXT_STUB,
   SCRIPTS_DIR,
+  ZIPLESS_ADDRESSES,
+  ZIP_PRIVATE,
   articlePage,
   git,
   makeDataRepo,

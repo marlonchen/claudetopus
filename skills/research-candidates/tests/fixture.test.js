@@ -276,7 +276,8 @@ const LEAKS = [
     ["private-string"],
     "private-match",
   ],
-  ["ZIP", "99999", ["private-zip"], "figure-missing"],
+  // Listed in both addresses.yaml and private.yaml until ticket 28.
+  ["ZIP", "99999", ["private-zip", "private-string"], "figure-missing"],
   ["address label", "addr-mom", ["private-label"], "private-match"],
   [
     "printed title",
@@ -310,6 +311,37 @@ describe("fixture ballot: a leak on the page refuses all of it", () => {
       assert.ok(!data.exists(SITE));
     });
   }
+});
+
+describe("fixture ballot: a ZIP listed only in private_strings", () => {
+  // The fixture with addresses.yaml holding no ZIP, so only private.yaml lists it.
+  const zipOnly = () => {
+    const data = copy();
+    data.write("addresses.yaml", data.read("addresses.yaml").replace(", XX 99999", ", XX"));
+    return data;
+  };
+  const named = (data, name) =>
+    data.write("publish.yaml", `branch: main\ndisplay_name: ${JSON.stringify(name)}\n`);
+
+  // Value: protects=the page scan refuses a ZIP kept only in private_strings as it did the ZIP class, and only as a standalone token; fails_when=the scan skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP, which familyPrivateValues already reads
+  it("refuses the ZIP as private-string, and publishes it inside a longer digit run", async () => {
+    const leaked = zipOnly();
+    named(leaked, "Sam 99999");
+    const refused = await run(leaked, "publish", [BALLOT]);
+    assert.deepStrictEqual(lines(refused), [
+      ...PUBLISHED,
+      `site/index.html:${TRUST_LINE} private-string`,
+    ]);
+    assert.strictEqual(refused.status, 1);
+    assert.ok(!leaked.exists(SITE));
+
+    const longer = zipOnly();
+    named(longer, "Sam 1999990");
+    const published = await run(longer, "publish", [BALLOT]);
+    passes(published);
+    assert.deepStrictEqual(lines(published), [...PUBLISHED, "site/index.html written"]);
+    assert.ok(longer.read(SITE).includes("Made by Sam 1999990 "));
+  });
 });
 
 // The measure's claim a leak is planted in: its excerpt holds the figure 1,
