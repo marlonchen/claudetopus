@@ -398,9 +398,9 @@ describe("each command's output codes are the ones its reference lists", () => {
   const REVIEW_LIST = ["review-list.js"];
   // publish's own modules (page.md, Command line).
   const PUBLISH = ["publish.js", "ballot-gate.js", "page.js", "page-scan.js", "pages.js"];
-  // The codes only addresses.yaml's values and loader give, which fetch-snapshot and publish no
-  // longer read (ticket 26); the shared matcher and data-files.js keep them for ballot-check
-  // until ticket 28 removes them.
+  // The codes only addresses.yaml's values and loader give, which no script reads any longer
+  // (tickets 26, 27); the shared matcher and data-files.js keep them until ticket 28 removes
+  // them.
   const ADDRESS_ONLY = ["addresses-invalid", "private-address", "private-zip", "private-label"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {

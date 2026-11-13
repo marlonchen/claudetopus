@@ -2,7 +2,13 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_BALLOT, ZIPLESS_ADDRESSES, ZIP_PRIVATE } = require("./harness");
+const {
+  BALLOT,
+  DEFAULT_ADDRESSES,
+  DEFAULT_BALLOT,
+  ZIPLESS_ADDRESSES,
+  ZIP_PRIVATE,
+} = require("./harness");
 const {
   COUNTY_PAGE,
   PLAIN,
@@ -390,8 +396,9 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     assert.equal(refused.stdout, "tiers.yaml:5 private-string match\n");
     assert.deepEqual(refused.seen, []);
 
-    // The fixture's addresses.yaml lists addr-mom, 123 Elm Street and 99999.
+    // A leftover addresses.yaml listing addr-mom, 123 Elm Street and 99999.
     const data = repo({
+      addresses: DEFAULT_ADDRESSES,
       tiers: `${COUNTY}- match: addr-mom.example.org/123-elm-street\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
     });
     const result = await fetchVia(
