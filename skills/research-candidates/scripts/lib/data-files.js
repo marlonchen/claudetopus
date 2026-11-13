@@ -80,21 +80,14 @@ const hiddenTitles = (data) =>
     .map((c) => c.title);
 
 // The classes a tiers.yaml match or source may not hold (ballot-format.md, Tiers).
-const TIERS_CLASSES = ["address", "zip", "label", "private-string"];
+const TIERS_CLASSES = ["private-string"];
 
-// Every tiers.yaml match or source that holds a private value, as Failures
-// located by the entry's line and keyed by the field: `values` are this
-// ballot's (loadPrivateValues), and every other ballot's private_strings are
-// added. A failure in another ballot's private.yaml is located `-`. `tiers` is
-// tiers.yaml's readYamlDocument result, when the caller has already read it.
-const tiersPrivacy = (
-  root,
-  ballot,
-  values,
-  tiers = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml"),
-) => {
+// Every other ballot's private_strings, as { strings, failures }: a
+// private.yaml that cannot be read is a Failure located `-`, so no other
+// ballot's id reaches the output.
+const otherPrivateStrings = (root, ballot) => {
+  const strings = [];
   const failures = [];
-  const strings = [...(values["private-string"] ?? [])];
   for (const other of ballotDirs(root)) {
     if (other === ballot || !fs.existsSync(path.join(root, other, "private.yaml"))) continue;
     try {
@@ -104,7 +97,24 @@ const tiersPrivacy = (
       failures.push(error);
     }
   }
-  const all = { ...values, "private-string": strings };
+  return { strings, failures };
+};
+
+// Every tiers.yaml match or source that holds a private value, as Failures
+// located by the entry's line and keyed by the field: `values` are this
+// ballot's, and every other ballot's private_strings are added. A failure in
+// another ballot's private.yaml is located `-`. `tiers` is tiers.yaml's
+// readYamlDocument result, when the caller has already read it.
+const tiersPrivacy = (
+  root,
+  ballot,
+  values,
+  tiers = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml"),
+) => {
+  const others = otherPrivateStrings(root, ballot);
+  const failures = [...others.failures];
+  const strings = new Set([...(values["private-string"] ?? []), ...others.strings]);
+  const all = { ...values, "private-string": [...strings] };
   const { doc, lineCounter } = tiers;
   const YAML = load("yaml");
   for (const item of YAML.isSeq(doc.contents) ? doc.contents.items : []) {
@@ -178,7 +188,6 @@ const loadTiers = (root, ballot, values) => {
     }
   }
   const [leak] = tiersPrivacy(root, ballot, values, { doc, lineCounter });
-  if (leak?.location === "-") leak.hint = "check-each-ballot";
   if (leak) throw leak;
   return entries.map(({ at, ...entry }) => entry);
 };
@@ -243,27 +252,35 @@ const loadPrivate = (root, ballot, location) => {
 };
 
 // The values the privacy matcher checks for one ballot (SKILL.md step 6.3),
-// by class: the ballot id and its private_strings, every address, street
-// line, label and ZIP in addresses.yaml, and the API key values set in the
-// environment. No script prints any of them (Rule 5).
-const loadPrivateValues = (root, ballot) => ({
-  "ballot-id": [ballot.split("/")[1]],
-  "private-string": loadPrivate(root, ballot, `${ballot}/private.yaml`).private_strings,
-  ...addressValues(loadAddresses(root)),
-  key: KEY_ENV.map((name) => process.env[name]).filter(Boolean),
-});
+// by class: the ballot id, the private_strings of every ballot in the data
+// repo, and the API key values set in the environment. A URL is refused for
+// any ballot's private string, since privacy is the family's against the
+// public, not one ballot's against another's. Another ballot's private.yaml
+// that cannot be read fails, followed by check-each-ballot. No script prints
+// any of them (Rule 5).
+const loadPrivateValues = (root, ballot) => {
+  const own = loadPrivate(root, ballot, `${ballot}/private.yaml`).private_strings;
+  const others = otherPrivateStrings(root, ballot);
+  const [failure] = others.failures;
+  if (failure) {
+    failure.hint = "check-each-ballot";
+    throw failure;
+  }
+  return {
+    "ballot-id": [ballot.split("/")[1]],
+    "private-string": [...own, ...others.strings],
+    key: KEY_ENV.map((name) => process.env[name]).filter(Boolean),
+  };
+};
 
-// loadPrivateValues plus every other ballot's id and private_strings: what
-// publish keeps off a page (SKILL.md step 6.3). The page is public, and
-// privacy is the family's against the public, not one ballot's against
-// another's. ballot-check has already read each private.yaml (Tiers rule).
+// loadPrivateValues plus every other ballot's id: what publish keeps off a
+// page (SKILL.md step 6.3). The page is public, so another ballot's id is
+// private there too. ballot-check has already read each private.yaml (Tiers
+// rule).
 const familyPrivateValues = (root, ballot) => {
   const values = loadPrivateValues(root, ballot);
   for (const other of ballotDirs(root)) {
-    if (other === ballot) continue;
-    values["ballot-id"].push(other.split("/")[1]);
-    if (!fs.existsSync(path.join(root, other, "private.yaml"))) continue;
-    values["private-string"].push(...loadPrivate(root, other, "-").private_strings);
+    if (other !== ballot) values["ballot-id"].push(other.split("/")[1]);
   }
   return values;
 };

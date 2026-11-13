@@ -398,6 +398,10 @@ describe("each command's output codes are the ones its reference lists", () => {
   const REVIEW_LIST = ["review-list.js"];
   // publish's own modules (page.md, Command line).
   const PUBLISH = ["publish.js", "ballot-gate.js", "page.js", "page-scan.js", "pages.js"];
+  // The codes only addresses.yaml's values and loader give, which fetch-snapshot and publish no
+  // longer read (ticket 26); the shared matcher and data-files.js keep them for ballot-check
+  // until ticket 28 removes them.
+  const ADDRESS_ONLY = ["addresses-invalid", "private-address", "private-zip", "private-label"];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");
@@ -410,7 +414,9 @@ describe("each command's output codes are the ones its reference lists", () => {
       );
     const emitted = new Set(files.flatMap((f) => [...emittedBy(f)]));
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
-    for (const code of emitted) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+    for (const code of emitted) {
+      if (!ADDRESS_ONLY.includes(code)) assert.ok(listed.has(code), `\`${code}\` is not listed`);
+    }
   });
 
   it("coverage: every code is in article-format.md's Command line section", () => {
@@ -455,8 +461,8 @@ describe("each command's output codes are the ones its reference lists", () => {
     const scanCodes = [
       ...Object.values(CLASSES),
       ...[...scan.matchAll(/"((?:page|private)-[a-z]+)"/g)].map((m) => m[1]),
-    ];
-    assert.ok(scanCodes.length >= 12, `only ${scanCodes.length} scan codes found`);
+    ].filter((code) => !ADDRESS_ONLY.includes(code));
+    assert.ok(scanCodes.length >= 9, `only ${scanCodes.length} scan codes found`);
     for (const code of scanCodes) assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
 

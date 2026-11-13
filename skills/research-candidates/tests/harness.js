@@ -141,6 +141,13 @@ const DEFAULT_ADDRESSES = `addr-mom:
 const ZIP_PRIVATE = DEFAULT_PRIVATE.replace("private_strings:\n", '$&  - "99999"\n');
 const ZIPLESS_ADDRESSES = DEFAULT_ADDRESSES.replace(", XX 99999", ", XX");
 
+// Leave an addresses.yaml in `data` that no script can open or parse, so a
+// command that passes beside it never read it (ticket 26).
+const leaveUnreadableAddresses = (data) => {
+  data.write("addresses.yaml", "addr-mom: [unclosed\n");
+  fs.chmodSync(data.file("addresses.yaml"), 0o000);
+};
+
 // A private data repo that passes Rule 8: publish.yaml, one private GitHub
 // remote, tiers.yaml, addresses.yaml, one ballot with its private.yaml, and the
 // settings and git attributes the README installs. Options override each part.
@@ -387,6 +394,7 @@ module.exports = {
   ZIP_PRIVATE,
   articlePage,
   git,
+  leaveUnreadableAddresses,
   makeDataRepo,
   runCli,
   runInTty,
