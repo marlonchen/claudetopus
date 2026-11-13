@@ -515,7 +515,9 @@ const check = (root, ballot, ballotDir, show) => {
   // No address is stored (ADR 0017), and the guards on a leftover file go, so
   // it fails until it is deleted. Only its name is looked at, never its text.
   if (fs.lstatSync(path.join(root, "addresses.yaml"), { throwIfNoEntry: false })) {
-    failures.push(new Failure("addresses.yaml", "addresses-leftover"));
+    failures.push(
+      new Failure("addresses.yaml", "addresses-leftover", undefined, "list-zips-then-delete"),
+    );
   }
   const orElse = (read, fallback) => {
     try {

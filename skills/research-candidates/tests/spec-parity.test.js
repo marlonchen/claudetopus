@@ -756,6 +756,17 @@ describe("BallotIds", () => {
     assert.match(rule, /under every `<election>` directory/, "ballot-check's walk is undefined");
   });
 
+  // Value: protects=the Codes list names addresses-leftover's hint, which says the ZIPs go into
+  //   private.yaml before the file is deleted; fails_when=the hint is dropped from the Codes list
+  //   or renamed there only; why_new=PR #56 review, D2; seam=none; no_claim=ballot-check's output
+  //   (ballot-check.test.js)
+  it("the Codes list gives addresses-leftover its list-zips-then-delete hint", () => {
+    const files = between(BALLOT, "## Command line")
+      .split("\n")
+      .find((l) => l.startsWith("- Data files:"));
+    assert.match(files, /`addresses-leftover` \([^)]*\), followed by `- list-zips-then-delete`/);
+  });
+
   it("the Layout and README use the same example ballot id, and no opaque one is left", () => {
     const layout = between(SKILL, "## Layout")
       .split("\n")
@@ -772,7 +783,11 @@ describe("BallotIds", () => {
     // A part, not the whole entry: "Precinct 12" must stop the number 12. The county words are
     // public through the contest list, and the Private text rule checks the county field.
     assert.match(rule, /whose number equals any digit run of any `private_strings` entry/);
-    assert.match(rule, /To rename a ballot id[^.]*`addresses\.yaml`/);
+    assert.match(
+      rule,
+      /To rename a ballot id, the researcher renames its directory, then reruns `ballot-check`\./,
+    );
+    assert.doesNotMatch(rule, /addresses\.yaml/);
     // Extended by /ship test coverage audit (run 9).
     // Value: protects=the id's number is checked at ballot-check because 6.3 never scans a short
     //   digit run alone, and the example id passes its own rule; fails_when=the example id takes
