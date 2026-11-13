@@ -2,13 +2,7 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const {
-  BALLOT,
-  DEFAULT_PRIVATE,
-  ZIPLESS_ADDRESSES,
-  ZIP_PRIVATE,
-  leaveUnreadableAddresses,
-} = require("./harness");
+const { BALLOT, DEFAULT_PRIVATE, ZIP_PRIVATE } = require("./harness");
 const { COUNTY_PAGE, fetchVia, frontMatter, repo } = require("./fetch-snapshot-fixture");
 
 // Rule 7's privacy refusals as the discovery agent sees them: a URL holding a
@@ -163,9 +157,9 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
 });
 
 describe("fetch-snapshot refuses a ZIP listed in private_strings", () => {
-  const zipRepo = () => repo({ private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES });
+  const zipRepo = () => repo({ private: ZIP_PRIVATE });
 
-  // Value: protects=a ZIP kept only in private_strings refuses a URL wherever the ZIP class did; fails_when=a private_strings digit run is not searched alone, or is searched with a word edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ticket 26)
+  // Value: protects=a ZIP kept only in private_strings refuses a URL wherever the ZIP class did; fails_when=a private_strings digit run is not searched alone, or is searched with a word edge; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=another ballot's ZIP (ticket 26)
   it("refuses it in the path, the query and ZIP+4 form, and in a redirect hop", async () => {
     for (const url of [
       "https://county.example.gov/99999/polling-places",
@@ -203,12 +197,12 @@ describe("fetch-snapshot refuses a ZIP listed in private_strings", () => {
 describe("fetch-snapshot refuses every ballot's private strings", () => {
   // Ballot 2 of the family lists its ZIP; ballot 1 does not.
   const familyRepo = () => {
-    const data = repo({ addresses: false });
+    const data = repo();
     data.write("2026-general/xx-exampleton-2/private.yaml", 'private_strings:\n  - "88888"\n');
     return data;
   };
 
-  // Value: protects=a URL holding another ballot's ZIP is refused, as any address's ZIP was while addresses.yaml was one file for the family; fails_when=loadPrivateValues reads this ballot's private_strings only; why_new=ticket 26's scope decision (PR #54 review D1); seam=cli; no_claim=--ballot and --file (fetch-snapshot-ballot.test.js)
+  // Value: protects=a URL holding another ballot's ZIP is refused, as any address's ZIP was while one file held every address; fails_when=loadPrivateValues reads this ballot's private_strings only; why_new=ticket 26's scope decision (PR #54 review D1); seam=cli; no_claim=--ballot and --file (fetch-snapshot-ballot.test.js)
   it("refuses another ballot's ZIP in the URL and in a redirect hop", async () => {
     const url = "https://county.example.gov/lookup?zip=88888";
     const plain = familyRepo();
@@ -224,26 +218,12 @@ describe("fetch-snapshot refuses every ballot's private strings", () => {
 
   // Value: protects=an unreadable private.yaml of another ballot stops the fetch, since its strings are unknown, and is never named; fails_when=a broken private.yaml elsewhere is read as no strings; why_new=ticket 26; seam=cli; no_claim=none
   it("refuses to fetch when another ballot's private.yaml cannot be read", async () => {
-    const data = repo({ addresses: false });
+    const data = repo();
     data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: Precinct 3\n");
     const url = "https://county.example.gov/";
     const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, args(url));
     assert.equal(result.stdout, "- private-invalid\n- check-each-ballot\n");
     assert.deepEqual(result.seen, []);
-  });
-});
-
-describe("fetch-snapshot without addresses.yaml", () => {
-  // Value: protects=a plain fetch needs no addresses.yaml and never opens a leftover one; fails_when=loadPrivateValues still reads addresses.yaml; why_new=ticket 26; seam=cli; no_claim=--ballot and --keep-short (their own files)
-  it("saves a page with no addresses.yaml, and beside one it cannot read", async () => {
-    const url = "https://county.example.gov/";
-    for (const leftover of [false, true]) {
-      const data = repo({ addresses: false });
-      if (leftover) leaveUnreadableAddresses(data);
-      const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, args(url));
-      assert.equal(result.stdout, "sources/us-house-07/_race/page.md saved\n");
-      assert.equal(result.status, 0);
-    }
   });
 });
 

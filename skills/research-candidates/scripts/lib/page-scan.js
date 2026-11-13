@@ -100,7 +100,7 @@ const dropContests = (ids, answers, values) => {
 };
 
 // Step 6.3: every { line, code, spans } where the page `html` holds a value
-// or markup it may not, sorted by line and code. The digit-run and ZIP checks
+// or markup it may not, sorted by line and code. The digit-run checks
 // skip only the page's generated dates. `links` are the receipt links the
 // page may hold.
 const scanPage = (html, values, { links }) => {

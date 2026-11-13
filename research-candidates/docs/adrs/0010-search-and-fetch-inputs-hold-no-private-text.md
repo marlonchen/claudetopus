@@ -10,13 +10,13 @@ Web searches and fetched URLs leave the machine, so they are the likeliest place
 
 **Before searching.** `agent-bind` and `--brief` each run `ballot-check` first, and SKILL.md forbids starting discovery until it passes. [`ballot-privacy.js`](../../../skills/research-candidates/scripts/lib/ballot-privacy.js) fails:
 
-- any private string, address, label or ZIP in `ballot.yaml`, read both as text and as YAML parses each value, so a quoted escape cannot hide one;
+- any private string in `ballot.yaml` (the address, label and ZIP classes were removed, and a ZIP is a private string: [ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md)), read both as text and as YAML parses each value, so a quoted escape cannot hide one;
 - a hidden printed title in a contest's `id`, `jurisdiction` or `search_terms`;
 - any private value of any ballot in a `tiers.yaml` `match` or `source`, since discovery sees every host and a `source` name can reach the page. `fetch-snapshot` repeats this each time it loads the file.
 
 `--brief` gives the agent only the contest id, type, office type, `jurisdiction`, a measure's `search_terms`, the checklist items, candidate ids and names, and the `tiers.yaml` hosts.
 
-**Before fetching.** [`fetch-snapshot`](../../../skills/research-candidates/scripts/lib/fetch-snapshot.js) refuses a URL holding a ballot id, address, street line, ZIP, label, private string or key value. It matches the URL as given before it reads `tiers.yaml`. [`fetch-page.js`](../../../skills/research-candidates/scripts/lib/fetch-page.js) then matches each redirect's `Location` in every spelling (as sent, as UTF-8, parsed, and with a Unicode host), before that hop is tier-matched, requested or logged.
+**Before fetching.** [`fetch-snapshot`](../../../skills/research-candidates/scripts/lib/fetch-snapshot.js) refuses a URL holding a ballot id, private string (a ZIP among them, [ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md)) or key value. It matches the URL as given before it reads `tiers.yaml`. [`fetch-page.js`](../../../skills/research-candidates/scripts/lib/fetch-page.js) then matches each redirect's `Location` in every spelling (as sent, as UTF-8, parsed, and with a Unicode host), before that hop is tier-matched, requested or logged.
 
 Privacy refusals are never written to `unfetchable.md`, since the URL is the private text.
 

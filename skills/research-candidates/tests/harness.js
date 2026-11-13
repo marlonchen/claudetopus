@@ -130,19 +130,11 @@ ignored_lines:
   - Vote for one
 `;
 
-const DEFAULT_ADDRESSES = `addr-mom:
-  address: 123 Elm Street Apt 4, Springfield, XX 99999
-  street: 123 Elm Street
-  ballot: ${BALLOT}
-`;
-
-// The ZIP held only as a private string (ballot-format.md, Private text):
-// listed in private.yaml, with no ZIP left in addresses.yaml to match it.
+// The ZIP held as a private string (ballot-format.md, Private text).
 const ZIP_PRIVATE = DEFAULT_PRIVATE.replace("private_strings:\n", '$&  - "99999"\n');
-const ZIPLESS_ADDRESSES = DEFAULT_ADDRESSES.replace(", XX 99999", ", XX");
 
 // Leave an addresses.yaml in `data` that no script can open or parse, so a
-// command that passes beside it never read it (ticket 26).
+// command that refuses beside it never read it (ticket 27).
 const leaveUnreadableAddresses = (data) => {
   data.write("addresses.yaml", "addr-mom: [unclosed\n");
   fs.chmodSync(data.file("addresses.yaml"), 0o000);
@@ -161,10 +153,6 @@ const makeDataRepo = (options = {}) => {
   }
   if (options.ballot !== false && options.private !== false) {
     write(path.join(root, BALLOT, "private.yaml"), options.private ?? DEFAULT_PRIVATE);
-  }
-  // No address is stored (ADR 0017): only a test of a leftover file writes one.
-  if (typeof options.addresses === "string") {
-    write(path.join(root, "addresses.yaml"), options.addresses);
   }
   write(
     path.join(root, ".claude", "settings.json"),
@@ -385,13 +373,11 @@ ${[...paragraphs, ARTICLE_FILLER].map((p) => `<p>${p}</p>`).join("\n")}
 module.exports = {
   ARTICLE_FILLER,
   BALLOT,
-  DEFAULT_ADDRESSES,
   DEFAULT_BALLOT,
   DEFAULT_PRIVATE,
   DEFAULT_TIERS,
   PDFTOTEXT_STUB,
   SCRIPTS_DIR,
-  ZIPLESS_ADDRESSES,
   ZIP_PRIVATE,
   articlePage,
   git,

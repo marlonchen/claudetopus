@@ -2,8 +2,13 @@
 # from git's plain output: `git diff`, `git log -p`, `git show` and `git grep`
 # print no line of them, unless told to with --text or -a (README.md, Data-repo
 # settings).
-addresses.yaml -diff
 **/private.yaml -diff
 **/sources/_ballot/** -diff
 **/unfetchable.md -diff
 /downloads/** -diff
+
+# For history only: no data repo stores this file now, but its history may
+# still hold a deleted one, and this keeps a plain `git log -p`, `git show
+# <commit>` and `git grep` from printing it (ADR 0017). The setup check does
+# not require it.
+addresses.yaml -diff
