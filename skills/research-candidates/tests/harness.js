@@ -149,7 +149,7 @@ const leaveUnreadableAddresses = (data) => {
 };
 
 // A private data repo that passes Rule 8: publish.yaml, one private GitHub
-// remote, tiers.yaml, addresses.yaml, one ballot with its private.yaml, and the
+// remote, tiers.yaml, one ballot with its private.yaml, and the
 // settings and git attributes the README installs. Options override each part.
 const makeDataRepo = (options = {}) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rc-data-"));
@@ -162,8 +162,9 @@ const makeDataRepo = (options = {}) => {
   if (options.ballot !== false && options.private !== false) {
     write(path.join(root, BALLOT, "private.yaml"), options.private ?? DEFAULT_PRIVATE);
   }
-  if (options.addresses !== false) {
-    write(path.join(root, "addresses.yaml"), options.addresses ?? DEFAULT_ADDRESSES);
+  // No address is stored (ADR 0017): only a test of a leftover file writes one.
+  if (typeof options.addresses === "string") {
+    write(path.join(root, "addresses.yaml"), options.addresses);
   }
   write(
     path.join(root, ".claude", "settings.json"),

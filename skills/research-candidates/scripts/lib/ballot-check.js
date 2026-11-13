@@ -26,13 +26,7 @@ const {
 const { checkCompanions, checkPeople } = require("./ballot-companions");
 const { checkPrivacy } = require("./ballot-privacy");
 const { dataRepoSetupFailures } = require("./data-repo-setup");
-const {
-  ballotEntries,
-  isDir,
-  loadAddresses,
-  loadPrivate,
-  readYamlDocument,
-} = require("./data-files");
+const { ballotEntries, isDir, loadPrivate, readYamlDocument } = require("./data-files");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { matchBallot } = require("./ballot-match");
@@ -518,6 +512,13 @@ const check = (root, ballot, ballotDir, show) => {
 
   // A file that cannot be read at all is one failure; the others still run.
   const failures = dataRepoSetupFailures(root, ballot);
+  // No address is stored (ADR 0017), and the guards on a leftover file go, so
+  // it fails until it is deleted. Only its name is looked at, never its text.
+  if (fs.lstatSync(path.join(root, "addresses.yaml"), { throwIfNoEntry: false })) {
+    failures.push(
+      new Failure("addresses.yaml", "addresses-leftover", undefined, "list-zips-then-delete"),
+    );
+  }
   const orElse = (read, fallback) => {
     try {
       return read();
@@ -529,15 +530,7 @@ const check = (root, ballot, ballotDir, show) => {
   };
   const yaml = orElse(() => checkBallotYaml(root, ballot), null);
   const privateLists = orElse(() => loadPrivate(root, ballot, "private.yaml"), null);
-  const addresses = orElse(() => loadAddresses(root), null);
-  const privacy = checkPrivacy({
-    root,
-    ballot,
-    yaml,
-    lists: privateLists,
-    addresses,
-    keys: ALLOWED_KEYS,
-  });
+  const privacy = checkPrivacy({ root, ballot, yaml, lists: privateLists, keys: ALLOWED_KEYS });
   const cross = otherBallots(root, ballot);
   failures.push(...(yaml?.failures ?? []), ...privacy.failures, ...cross.failures);
   if (typeof yaml?.slug === "string" && cross.others.some((other) => other.slug === yaml.slug)) {
@@ -560,7 +553,7 @@ const check = (root, ballot, ballotDir, show) => {
     ballotDir,
     yaml?.lists ?? { confirmed_supersedes: [], retired_companions: [] },
   );
-  failures.push(...found.failures, ...checkCompanions(found.companions, addresses));
+  failures.push(...found.failures, ...checkCompanions(found.companions));
   if (yaml) {
     failures.push(
       ...checkPeople({

@@ -7,11 +7,11 @@
 // never the matched text (Rule 5).
 
 const { load } = require("./deps");
-const { addressValues, hiddenTitles, tiersPrivacy } = require("./data-files");
+const { hiddenTitles, otherPrivateStrings, tiersPrivacy } = require("./data-files");
 const { Failure } = require("./output");
 const { CLASSES, YEAR, digitRuns, isEmptyValue, scan } = require("./privacy");
 
-const TEXT_CLASSES = ["address", "zip", "label", "private-string"];
+const TEXT_CLASSES = ["private-string"];
 // The fields discovery searches with, or the page builds anchors from.
 const SEARCHED = ["id", "jurisdiction", "search_terms"];
 
@@ -89,15 +89,16 @@ const stringScalars = (doc, lineCounter, titles) => {
 
 // { failures: [Failure], warnings: [report line] } for one ballot.
 // `yaml` is checkBallotYaml's result (null when ballot.yaml could not be
-// read), `lists` private.yaml's (null likewise), `addresses` addresses.yaml's.
-const checkPrivacy = ({ root, ballot, yaml, lists, addresses, keys }) => {
-  const failures = [];
+// read), `lists` private.yaml's (null likewise). ballot.yaml, ignored_lines
+// and tiers.yaml are scanned for every ballot's private_strings, as
+// fetch-snapshot's URL refusals are: another ballot's private.yaml that cannot
+// be read is a Failure located `-`.
+const checkPrivacy = ({ root, ballot, yaml, lists, keys }) => {
+  const others = otherPrivateStrings(root, ballot);
+  const failures = [...others.failures];
   const warnings = [];
   const strings = lists?.private_strings ?? [];
-  const values = {
-    "private-string": strings,
-    ...addressValues(addresses ?? []),
-  };
+  const values = { "private-string": [...strings, ...others.strings] };
 
   if (yaml) {
     const { doc, lineCounter, text, data } = yaml.parsed;
@@ -148,14 +149,8 @@ const checkPrivacy = ({ root, ballot, yaml, lists, addresses, keys }) => {
     if (runs.some((run) => YEAR.test(run))) warnings.push("private.yaml private-year");
   }
 
-  for (const a of addresses ?? []) {
-    if (isEmptyValue(a.address)) failures.push(new Failure(a.at, "private-empty", "address"));
-    if (isEmptyValue(a.street)) failures.push(new Failure(a.at, "private-empty", "street"));
-    if (isEmptyValue(a.label)) failures.push(new Failure(a.at, "private-empty"));
-  }
-
   try {
-    failures.push(...tiersPrivacy(root, ballot, values));
+    failures.push(...tiersPrivacy(root, values));
   } catch (error) {
     if (!(error instanceof Failure)) throw error;
     failures.push(error);

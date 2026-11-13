@@ -13,7 +13,7 @@ Private text also lives apart from the contest list: `private.yaml` holds it, so
 - **What the view holds.** Only matched spans count. A two-column `pdftotext` line holding one listed and one unlisted candidate stays unaccounted for.
 - **Unaccounted lines.** `ballot-check` reports them by line number, never text, and the researcher reads them with `ballot-check --show`.
 - **Sample ballot.** `ballot-view.md`'s `link:` line names it only as a link target. `session-guard` refuses to open it, and refuses any `sample_ballot` snapshot, superseded or not.
-- **Companions.** The candidate list, pamphlet, write-in list and withdrawal notice can be read whole, so they must be county-wide or state-wide. `ballot-check` fails one whose fetch URL had a query string, or whose body holds an address, street line or label.
+- **Companions.** The candidate list, pamphlet, write-in list and withdrawal notice can be read whole, so they must be county-wide or state-wide. `ballot-check` fails one whose fetch URL had a query string. It does not scan the body: a personalized companion fetched without a query is the researcher's to spot and retire ([ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md)).
 - **Staleness.** `session-guard` opens a companion only on a `read:` line of a regular-file view whose `sha256:` lines still agree with `ballot.yaml`, the sample ballot and that companion. A companion edited since its check is refused.
 - **Retirement.** A companion listed under `retired_companions` leaves the `read:` lines, and it vouches for nothing.
 - **Main session.** `session-guard` refuses a call naming `sources/_ballot/` or `downloads/`, and a `Grep` or recursive shell search from a `sources/` directory (`session-file-denied`). It checks only calls with no `agent_id`, so the compile agent keeps its companions, and `data-repo-settings.json` has no `Read` deny on `_ballot` for the same reason. A `Read` deny does cover `downloads/`. A command or a `Grep` path also counts `downloads` with no slash, in any case, so the researcher's own `~/Downloads` is refused too. A file the model writes counts only the slash form, since the bare word is mostly prose.
@@ -23,8 +23,8 @@ Private text also lives apart from the contest list: `private.yaml` holds it, so
 ## Consequences
 
 - The researcher does more by hand: `ignored_lines`, `private_strings` and contest titles are all accounted for against the sample ballot.
-- A `--file` companion's query is `unknown`, because its download URL was never seen, so it passes on the body check alone.
-- The companion body check matches only addresses, street lines and labels. It skips the ZIP, title, place-name and link checks, which county-wide documents fail by nature, so a precinct name in a companion is not caught here. The publish scan still reads anything quoted from it.
+- A `--file` companion's query is `unknown`, because its download URL was never seen, so it passes.
+- No companion body is scanned. It used to be matched for addresses, street lines and labels only, which are no longer stored (ADR 0017); the ZIP, title, place-name and link checks are left out because county-wide documents fail them by nature. So a precinct name, or a personalized page fetched without a query, is not caught here. The publish scan still reads anything quoted from it.
 - `ballot-view.md` has an `Edit` deny, but no Bash refusal in `session-guard`.
 - The main-session refusal has the [limits in ADR 0003](0003-the-model-never-sees-an-address.md#limits): a glob such as `cat */*/sources/*/*` reads the sample ballot without naming it, and `git show --text` prints it.
 - The researcher reads a change to these files with `git diff --text`, since a plain diff calls them binary.

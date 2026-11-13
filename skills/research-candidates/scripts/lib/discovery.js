@@ -90,7 +90,7 @@ const brief = (root, { ballot, contest }) => {
   }
   if (entry.official) lines.push(`official: ${entry.official.id} ${entry.official.name}`);
   if (entry.type === "measure") lines.push("subject: _race");
-  const hosts = loadTiers(root, ballot, loadPrivateValues(root, ballot)).map((e) => e.parsed.host);
+  const hosts = loadTiers(root, loadPrivateValues(root, ballot)).map((e) => e.parsed.host);
   for (const host of new Set(hosts)) lines.push(`domain: ${host}`);
   return lines;
 };

@@ -2,7 +2,7 @@
 
 const assert = require("node:assert");
 const { afterEach, describe, it } = require("node:test");
-const { BALLOT, articlePage, runCli, startServer } = require("./harness");
+const { BALLOT, articlePage, leaveUnreadableAddresses, runCli, startServer } = require("./harness");
 const { checkedBallot, repos } = require("./publish-fixture");
 
 // The discovery agent's fetch tool (SKILL.md Rule 7): agent-bind binds one
@@ -60,6 +60,21 @@ describe("agent-bind and discovery-fetch --brief", () => {
       ballot,
       data.read(ballot).replace("XX congressional district 7", "XX Springfield Township"),
     );
+    const bound = await run(data, "agent-bind", [BALLOT, "us-house-07"]);
+    assert.strictEqual(bound.stdout, `${ballot} ballot-check-failed\n`);
+    assert.strictEqual(bound.status, 1);
+    assert.deepStrictEqual(data.list(".bindings"), [token]);
+    const brief = await run(data, "discovery-fetch", [token, "--brief"]);
+    assert.strictEqual(brief.stdout, `${ballot} ballot-check-failed\n`);
+    assert.strictEqual(brief.status, 1);
+  });
+
+  // Value: protects=discovery never starts beside a leftover addresses.yaml, which ticket 28 stops guarding; fails_when=bind or the brief passes while ballot-check fails addresses-leftover; why_new=ticket 27; seam=cli; no_claim=ballot-check's own output (ballot-check.test.js)
+  it("binds nothing, and briefs nothing, beside a leftover addresses.yaml", async () => {
+    const data = await checkedBallot();
+    const token = await bind(data, "us-house-07");
+    leaveUnreadableAddresses(data);
+    const ballot = `${BALLOT}/ballot.yaml`;
     const bound = await run(data, "agent-bind", [BALLOT, "us-house-07"]);
     assert.strictEqual(bound.stdout, `${ballot} ballot-check-failed\n`);
     assert.strictEqual(bound.status, 1);
