@@ -679,7 +679,7 @@ describe("PrivateDataIgnored", () => {
   });
 });
 
-// The example ballot id step 2 gives ("a `<ballot-id>`: a descriptive name such as `...`").
+// The example ballot id step 2 gives ("a `<ballot-id>`: a mechanical id ..., such as `...`").
 const exampleBallotId = () => {
   const found = SKILL.match(/a `<ballot-id>`: [^`]*`([^`]+)`/);
   assert.ok(found, "SKILL.md step 2 no longer gives an example ballot id");
@@ -1256,7 +1256,9 @@ describe("LayoutComplete", () => {
     // Any extension counts, so a data file with a new one (.json, .csv) is checked by default.
     const pattern = /`((?:<ballot-id>\/)?(?:[\w.<>-]+\/)*[\w.<>-]*(?:\.[a-z]+|\/))`/g;
     for (const text of SPEC_TEXTS) {
-      for (const [, token] of text.matchAll(pattern)) named.add(token.replace("<ballot-id>/", ""));
+      for (const [, token] of text.matchAll(pattern)) {
+        named.add(token.replace(/^(?:<election>\/)?<ballot-id>\//, ""));
+      }
     }
     // Snapshot and source names are examples or placeholders, <slug>/ and the Pages lock under
     // .git/ are in the Pages repo, and scripts/ is in this skill.
@@ -2780,6 +2782,7 @@ describe("AddABallot", () => {
   const rule = (n) => SKILL.match(new RegExp(`^${n}\\. \\*\\*[^\\n]*`, "m"))[0];
   const step1 = () => between(WORKFLOW, "### 1. ", "\n### ");
   const step2 = () => between(WORKFLOW, "### 2. ", "\n### ");
+  const step3 = () => between(WORKFLOW, "### 3. ", "\n### ");
 
   it("the description and step 1 start a ballot and ask for no address file", () => {
     const description = SKILL.match(/^description: (.+)$/m)[1];
@@ -2796,20 +2799,51 @@ describe("AddABallot", () => {
   it("an address typed into the conversation is never repeated, and only its ZIP is listed", () => {
     assert.match(
       step1(),
-      /If the researcher types an address into the conversation anyway, do not repeat it or write it anywhere; ask them to list only its ZIP/,
+      /If the researcher types an address into the conversation anyway, do not repeat it or write it anywhere; ask them to list only its ZIP themselves.*?nothing else of the address they typed \(Rule 5\)/,
     );
     assert.match(step1(), /Never ask for the address/);
+    // Rule 5 holds it at every step, and the ZIP is never said back either.
+    assert.match(
+      rule(5),
+      /If the researcher types an address at any step, never repeat any part of it, its ZIP included, and never write it anywhere; ask them to list the ZIP themselves in that ballot's `private\.yaml`\./,
+    );
   });
 
   it("step 2 has the researcher list the ZIP in private.yaml before the first --ballot", () => {
     assert.match(
       step2(),
-      /Before the first `--ballot`, the researcher creates `<ballot-id>\/private\.yaml` .*? listing the voter's ZIP[^.]*ward, precinct, township or ballot style/,
+      /Before the first `--ballot`, the researcher creates the ballot directory, then `<election>\/<ballot-id>\/private\.yaml` in it .*? listing the voter's ZIP[^.]*ward, precinct, township or ballot style/,
     );
     assert.doesNotMatch(step2(), /addresses\.yaml|\blabels?\b/i);
   });
 
-  it("Rules 5 and 7, the Layout and step 6.3 name private.yaml as the only private file", () => {
+  it("step 2 asks for no address and builds the ballot id from the state and county", () => {
+    assert.doesNotMatch(step2(), /\bask\w*\b[^.]*\baddress/i, "step 2 asks for an address");
+    assert.match(step2(), /tells the session only the county/);
+    assert.match(step2(), /a `<ballot-id>`: a mechanical id built from the state and county/);
+    assert.doesNotMatch(step2(), /descriptive name/);
+    assert.match(
+      step2(),
+      /It never names a ward, precinct, township, ballot style or polling place: those go under `private_strings` \(step 3\)/,
+    );
+  });
+
+  it("step 3 hands addresses-leftover to the researcher and stores a printed address in parts", () => {
+    assert.match(
+      step3(),
+      /except `settings-outdated`, `private-diff-shown` and `addresses-leftover`: only the researcher can fix those/,
+    );
+    assert.match(
+      step3(),
+      /On `addresses-leftover`, never open, read or delete the leftover `addresses\.yaml`: the researcher lists its ZIPs in each ballot's `private\.yaml`, then deletes it\./,
+    );
+    assert.match(
+      step3(),
+      /A voter name or address printed on a personalized sample ballot, which `ballot-check` reports as `line-unaccounted`, goes under `private_strings` in that ballot's `private\.yaml` in parts \(for example the street line, then the city\), never in `ignored_lines`: the researcher adds it, and the session never repeats it\./,
+    );
+  });
+
+  it("Rules 5 and 7, the Layout and step 6.3 name private.yaml as the only file of private values", () => {
     const layout = between(SKILL, "## Layout");
     const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
     for (const [name, text] of [
@@ -2820,14 +2854,16 @@ describe("AddABallot", () => {
     ]) {
       assert.doesNotMatch(text, /addresses\.yaml|street line|\blabels?\b/i, `${name} names it`);
     }
-    assert.match(rule(5), /`private\.yaml` is the only private file/);
+    assert.match(rule(5), /`private\.yaml` is the only file that lists private values/);
     assert.match(rule(7), /never read `private\.yaml`, `publish\.yaml` or `pages_dir`/);
     assert.ok(layoutEntries().includes("<election>/<ballot-id>/private.yaml"));
     assert.ok(!layoutEntries().some((e) => /addresses/.test(e)), "the Layout lists the file");
   });
 
-  it("SKILL.md and the agents never name the file, and README names it only for history", () => {
-    assert.doesNotMatch(SKILL, /addresses\.yaml|street line/i);
+  it("SKILL.md names the file only in step 3, the agents never, and README only for history", () => {
+    // Step 3 names a leftover file once, to keep the session out of it, and a printed street line.
+    assert.doesNotMatch(SKILL.replace(step3(), ""), /addresses\.yaml|street line/i);
+    assert.strictEqual(step3().match(/addresses\.yaml/g).length, 1, "step 3 names the file twice");
     for (const file of fs.readdirSync(path.join(SKILL_DIR, "agents"))) {
       const text = fs.readFileSync(path.join(SKILL_DIR, "agents", file), "utf8");
       assert.doesNotMatch(text, /addresses\.yaml|street line/i, file);

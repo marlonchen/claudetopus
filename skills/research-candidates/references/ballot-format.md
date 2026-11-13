@@ -45,7 +45,7 @@ confirmed_supersedes: []  # optional: each corrected sample ballot the researche
 retired_companions: []    # optional: companion snapshots kept off the read: lines (Companion documents)
 ```
 
-Text on the ballot that locates or names the voter goes in a separate file, `<ballot-id>/private.yaml`, so that `ballot.yaml` can be read next to untrusted snapshots (Rule 7). Only scripts read it, never agents: `ballot-check`, `fetch-snapshot` (for its URL and `source:` name refusals) and `publish`. `fetch-snapshot`, `publish` and `ballot-check` read every ballot's `private.yaml`: `ballot-check` for its `ballot.yaml`, `ignored_lines` and `tiers.yaml` scans (Private text, Tiers):
+Text on the ballot that locates or names the voter goes in a separate file, `<election>/<ballot-id>/private.yaml`, so that `ballot.yaml` can be read next to untrusted snapshots (Rule 7). The researcher creates the ballot directory, then this file, before the first `--ballot` (SKILL.md step 2). Only scripts read it, never agents: `ballot-check`, `fetch-snapshot` (for its URL and `source:` name refusals) and `publish`. `fetch-snapshot`, `publish` and `ballot-check` read every ballot's `private.yaml`: `ballot-check` for its `ballot.yaml`, `ignored_lines` and `tiers.yaml` scans (Private text, Tiers):
 
 ```yaml
 private_strings:
