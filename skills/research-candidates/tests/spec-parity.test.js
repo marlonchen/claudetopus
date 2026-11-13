@@ -679,7 +679,7 @@ describe("PrivateDataIgnored", () => {
   });
 });
 
-// The example ballot id step 2 gives ("a `<ballot-id>`: a descriptive label such as `...`").
+// The example ballot id step 2 gives ("a `<ballot-id>`: a descriptive name such as `...`").
 const exampleBallotId = () => {
   const found = SKILL.match(/a `<ballot-id>`: [^`]*`([^`]+)`/);
   assert.ok(found, "SKILL.md step 2 no longer gives an example ballot id");
@@ -1262,10 +1262,11 @@ describe("LayoutComplete", () => {
     // .git/ are in the Pages repo, and scripts/ is in this skill.
     const data = [...named].filter(
       // Hosts in tiers.yaml examples, the `official.name` field path, paths in the skill's
-      // source repo (skills/...), the OS leftover the ballot gate skips and the data repo's
-      // setup files, which hold no research data, are not data files.
+      // source repo (skills/...), the OS leftover the ballot gate skips, the data repo's
+      // setup files, which hold no research data, and the leftover `addresses.yaml` that
+      // ballot-check refuses (ADR 0017) are not data files.
       (t) =>
-        !/<name>|<subject>|<slug>|^\.git\/|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$|^\.claude\/settings\.json$|^\.gitattributes$|^data-repo-settings\.json$/.test(
+        !/<name>|<subject>|<slug>|^\.git\/|^fec-totals|^\.\.\/|^scripts\/$|\.(gov|com|org)$|^official\.name$|^skills\/|^Thumbs\.db$|^\.claude\/settings\.json$|^\.gitattributes$|^data-repo-settings\.json$|^addresses\.yaml$/.test(
           t,
         ),
     );
@@ -2765,6 +2766,83 @@ describe("PrivateLineParts", () => {
       scan,
       /default-ignorable characters \([^)]*\) either removed or read as spaces, and then Unicode NFKC either applied or not\. A match in any variant refuses\./,
     );
+  });
+});
+
+// Added for ticket 29 ("add a ballot" replaces "add an address").
+// Value: protects=no address is stored, so the workflow starts a ballot, the ZIP goes into
+//   private.yaml before the first --ballot, and no instruction asks for, names or labels an
+//   address file (ADR 0017); fails_when=SKILL.md, the agents or the README send the researcher
+//   back to addresses.yaml, a label returns, or the public repo stops ignoring a leftover file;
+//   why_new=tickets 26-28 removed the file's readers and guards but left the workflow naming it;
+//   seam=spec text; no_claim=the session following it (ballot-check's addresses-leftover tests)
+describe("AddABallot", () => {
+  const rule = (n) => SKILL.match(new RegExp(`^${n}\\. \\*\\*[^\\n]*`, "m"))[0];
+  const step1 = () => between(WORKFLOW, "### 1. ", "\n### ");
+  const step2 = () => between(WORKFLOW, "### 2. ", "\n### ");
+
+  it("the description and step 1 start a ballot and ask for no address file", () => {
+    const description = SKILL.match(/^description: (.+)$/m)[1];
+    assert.doesNotMatch(description, /\baddress\b/i, "the description still promises an address");
+    assert.match(description, /'research my ballot'/);
+    assert.match(description, /'add a ballot'/);
+    assert.match(WORKFLOW, /^### 1\. Start a ballot$/m);
+    assert.match(step1(), /^Trigger: "research my ballot", "add a ballot"\./m);
+    assert.match(step1(), /`publish\.yaml`/);
+    assert.match(step1(), /`tiers\.yaml`/);
+    assert.doesNotMatch(step1(), /addresses\.yaml|\blabels?\b/i);
+  });
+
+  it("an address typed into the conversation is never repeated, and only its ZIP is listed", () => {
+    assert.match(
+      step1(),
+      /If the researcher types an address into the conversation anyway, do not repeat it or write it anywhere; ask them to list only its ZIP/,
+    );
+    assert.match(step1(), /Never ask for the address/);
+  });
+
+  it("step 2 has the researcher list the ZIP in private.yaml before the first --ballot", () => {
+    assert.match(
+      step2(),
+      /Before the first `--ballot`, the researcher creates `<ballot-id>\/private\.yaml` .*? listing the voter's ZIP[^.]*ward, precinct, township or ballot style/,
+    );
+    assert.doesNotMatch(step2(), /addresses\.yaml|\blabels?\b/i);
+  });
+
+  it("Rules 5 and 7, the Layout and step 6.3 name private.yaml as the only private file", () => {
+    const layout = between(SKILL, "## Layout");
+    const scan = between(SKILL, "3. Privacy scan.", "\n4. ");
+    for (const [name, text] of [
+      ["Rule 5", rule(5)],
+      ["Rule 7", rule(7)],
+      ["the Layout", layout],
+      ["step 6.3", scan],
+    ]) {
+      assert.doesNotMatch(text, /addresses\.yaml|street line|\blabels?\b/i, `${name} names it`);
+    }
+    assert.match(rule(5), /`private\.yaml` is the only private file/);
+    assert.match(rule(7), /never read `private\.yaml`, `publish\.yaml` or `pages_dir`/);
+    assert.ok(layoutEntries().includes("<election>/<ballot-id>/private.yaml"));
+    assert.ok(!layoutEntries().some((e) => /addresses/.test(e)), "the Layout lists the file");
+  });
+
+  it("SKILL.md and the agents never name the file, and README names it only for history", () => {
+    assert.doesNotMatch(SKILL, /addresses\.yaml|street line/i);
+    for (const file of fs.readdirSync(path.join(SKILL_DIR, "agents"))) {
+      const text = fs.readFileSync(path.join(SKILL_DIR, "agents", file), "utf8");
+      assert.doesNotMatch(text, /addresses\.yaml|street line/i, file);
+    }
+    assert.doesNotMatch(README, /add an address|street line/i);
+    const named = README.split("\n").filter((line) => /addresses\.yaml/.test(line));
+    assert.strictEqual(named.length, 1, "README names addresses.yaml outside the history note");
+    assert.match(named[0], /`addresses\.yaml -diff`[^.]*history/);
+  });
+
+  it("this public repo still ignores a leftover addresses.yaml", () => {
+    // The Layout no longer lists it, so PrivateDataIgnored does not cover it.
+    const ignored = checkIgnore(["-v"], ["addresses.yaml"]);
+    assert.strictEqual(ignored.status, 0, "addresses.yaml is not ignored");
+    assert.match(ignored.stdout, /^\.gitignore:/);
   });
 });
 

@@ -12,7 +12,7 @@ Fetched pages are untrusted, and text in one can try to steer whatever reads it.
 | `research-candidates-compile` | 4.3-4.4, 5 | `Read`, `Glob`, `Grep`, `Write`, `Edit` | `ballot.yaml`, `ballot-view.md`, listed companions, its contest's sources, `articles/` | `articles/<contest>.md` |
 | `research-candidates-neutrality` | 4.5 | `Read`, `Glob`, `Grep`, `Write` | `articles/`, its flags file | `review/<contest>.neutrality.md` |
 
-Compile and neutrality may also read the skill's references. None may read `addresses.yaml`, `private.yaml`, `publish.yaml` or `pages_dir`.
+Compile and neutrality may also read the skill's references. None may read `private.yaml`, `publish.yaml` or `pages_dir`. `private.yaml` is the only private file: no address is stored ([ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md)).
 
 ## Enforcement
 
