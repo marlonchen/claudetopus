@@ -101,20 +101,16 @@ const otherPrivateStrings = (root, ballot) => {
 };
 
 // Every tiers.yaml match or source that holds a private value, as Failures
-// located by the entry's line and keyed by the field: `values` are this
-// ballot's, and every other ballot's private_strings are added. A failure in
-// another ballot's private.yaml is located `-`. `tiers` is tiers.yaml's
-// readYamlDocument result, when the caller has already read it.
+// located by the entry's line and keyed by the field. `values` hold every
+// ballot's private_strings, as loadPrivateValues and ballot-check read them.
+// `tiers` is tiers.yaml's readYamlDocument result, when the caller has
+// already read it.
 const tiersPrivacy = (
   root,
-  ballot,
   values,
   tiers = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml"),
 ) => {
-  const others = otherPrivateStrings(root, ballot);
-  const failures = [...others.failures];
-  const strings = new Set([...(values["private-string"] ?? []), ...others.strings]);
-  const all = { ...values, "private-string": [...strings] };
+  const failures = [];
   const { doc, lineCounter } = tiers;
   const YAML = load("yaml");
   for (const item of YAML.isSeq(doc.contents) ? doc.contents.items : []) {
@@ -122,7 +118,7 @@ const tiersPrivacy = (
       const node = YAML.isMap(item) ? item.get(key, true) : null;
       if (!YAML.isScalar(node) || typeof node.value !== "string") continue;
       const at = `tiers.yaml:${lineCounter.linePos(node.range[0]).line}`;
-      const classes = new Set(scan(node.value, all, TIERS_CLASSES).map((m) => m.class));
+      const classes = new Set(scan(node.value, values, TIERS_CLASSES).map((m) => m.class));
       for (const cls of TIERS_CLASSES) {
         if (classes.has(cls)) failures.push(new Failure(at, CLASSES[cls], key));
       }
@@ -133,8 +129,8 @@ const tiersPrivacy = (
 
 // tiers.yaml entries, each { match, parsed, tier, statements_only, owner, source }.
 // Refuses the whole file on any bad entry (source-tiers.md), and on a match or
-// source holding a private value of `ballot` (`values`) or any other ballot.
-const loadTiers = (root, ballot, values) => {
+// source holding a private value of any ballot (`values`, loadPrivateValues').
+const loadTiers = (root, values) => {
   const { doc, lineCounter } = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml");
   if (!load("yaml").isSeq(doc.contents)) {
     throw new Failure("tiers.yaml", "tiers-invalid");
@@ -187,7 +183,7 @@ const loadTiers = (root, ballot, values) => {
       throw new Failure(entry.at, "tiers-overlap");
     }
   }
-  const [leak] = tiersPrivacy(root, ballot, values, { doc, lineCounter });
+  const [leak] = tiersPrivacy(root, values, { doc, lineCounter });
   if (leak) throw leak;
   return entries.map(({ at, ...entry }) => entry);
 };
@@ -297,6 +293,7 @@ module.exports = {
   loadPrivate,
   loadPrivateValues,
   loadTiers,
+  otherPrivateStrings,
   readYamlDocument,
   tiersPrivacy,
 };

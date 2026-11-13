@@ -7,9 +7,10 @@ const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
 const {
   BALLOT,
+  DEFAULT_ADDRESSES,
   DEFAULT_BALLOT,
-  ZIPLESS_ADDRESSES,
   git,
+  leaveUnreadableAddresses,
   makeDataRepo,
   runCli,
   runInTty,
@@ -930,38 +931,30 @@ describe("ballot-check: private text", () => {
     ]);
   });
 
-  it("fails an address or label in a comment, unkeyed", async () => {
-    const data = setup({
-      ballot: `${DEFAULT_BALLOT}# from the ballot sent to addr-mom\n# at 123 Elm Street\n`,
-    });
+  it("fails a private string in a comment, unkeyed", async () => {
+    const data = setup({ ballot: `${DEFAULT_BALLOT}# from the ballot for Precinct 12\n` });
     const result = await failsWith(data, [
-      `ballot.yaml:${yamlLine(data, "addr-mom")} private-label`,
-      `ballot.yaml:${yamlLine(data, "Elm Street")} private-address`,
+      `ballot.yaml:${yamlLine(data, "# from")} private-string`,
     ]);
-    assert.doesNotMatch(result.stdout, /Elm|mom/);
+    assert.doesNotMatch(result.stdout, /Precinct|private-string \S/);
   });
 
   it("leaves a comment between a contest's fields unkeyed, never keyed by the list", async () => {
     const data = setup({
       ballot: edit(
         "      - id: john-sample\n",
-        "      # asked addr-mom\n      - id: john-sample\n",
+        "      # asked in Precinct 12\n      - id: john-sample\n",
       ),
     });
     const result = await failsWith(data, [
-      `ballot.yaml:${yamlLine(data, "addr-mom")} private-label`,
+      `ballot.yaml:${yamlLine(data, "# asked")} private-string`,
     ]);
-    assert.doesNotMatch(result.stdout, /private-label \S/);
+    assert.doesNotMatch(result.stdout, /private-string \S/);
   });
 
-  it("fails an ignored_lines entry holding a private string or address", async () => {
-    const data = setup({
-      priv: `${PRIVATE}  - Precinct 12 voters only\n  - Mail to 123 Elm Street\n`,
-    });
-    await failsWith(data, [
-      "private.yaml private-string ignored_lines",
-      "private.yaml private-address ignored_lines",
-    ]);
+  it("fails an ignored_lines entry holding a private string", async () => {
+    const data = setup({ priv: `${PRIVATE}  - Precinct 12 voters only\n` });
+    await failsWith(data, ["private.yaml private-string ignored_lines"]);
   });
 
   it("fails a ballot id whose number equals a private digit run", async () => {
@@ -999,12 +992,8 @@ describe("ballot-check: private text", () => {
   it("fails a private entry with no letter or digit left once normalized", async () => {
     const data = setup({
       priv: PRIVATE.replace("  - Precinct 12\n", '  - Precinct 12\n  - "&amp;"\n'),
-      addresses: `addr-mom:\n  address: 123 Elm Street Apt 4, Springfield, XX 99999\n  street: "&nbsp;-"\n`,
     });
-    await failsWith(data, [
-      "private.yaml private-empty private_strings",
-      "addresses.yaml:1 private-empty street",
-    ]);
+    await failsWith(data, ["private.yaml private-empty private_strings"]);
   });
 
   it("fails a tiers.yaml match holding another ballot's private string, unnamed", async () => {
@@ -1066,26 +1055,25 @@ describe("ballot-check: private text", () => {
     assert.equal(result.stderr, "");
   });
 
-  it("fails a ZIP code from addresses.yaml in a jurisdiction or an ignored_lines entry", async () => {
+  // Value: protects=the Private text rule reports private-string and private-title only, and a leftover addresses.yaml adds no value to it; fails_when=ballot.yaml or ignored_lines are still scanned for an address, street line, label or ZIP from the file; why_new=ticket 27; seam=cli; no_claim=the leftover file's own refusal (ballot-check without addresses.yaml)
+  it("reports nothing a leftover addresses.yaml lists, in ballot.yaml or ignored_lines", async () => {
     const data = setup({
-      ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 99999 court"),
-      priv: `${PRIVATE}  - Return to 99999\n`,
+      addresses: DEFAULT_ADDRESSES,
+      ballot: `${edit("jurisdiction: XX supreme court", "jurisdiction: XX 99999 court")}# for addr-mom at 123 Elm Street\n`,
+      priv: `${PRIVATE}  - Return to 99999\n  - Mail to 123 Elm Street\n`,
     });
-    const result = await failsWith(data, [
-      `ballot.yaml:${yamlLine(data, "99999")} private-zip jurisdiction`,
-      "private.yaml private-zip ignored_lines",
-    ]);
-    assert.doesNotMatch(result.stdout, /99999/);
+    const result = await ballotCheck(data);
+    assert.deepEqual(lines(result), ["addresses.yaml addresses-leftover"]);
+    assert.equal(result.status, 1);
   });
 
-  // Value: protects=a ZIP kept only in private_strings fails ballot.yaml and ignored_lines as the ZIP class did, and only as a standalone token; fails_when=the Private text rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ticket 27)
+  // Value: protects=a ZIP kept only in private_strings fails ballot.yaml and ignored_lines as the ZIP class did, and only as a standalone token; fails_when=the Private text rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ballot-check without addresses.yaml)
   it("fails a ZIP listed in private_strings, never one inside a longer digit run", async () => {
     const priv = (ignored) =>
       `${PRIVATE.replace("private_strings:\n", '$&  - "99999"\n')}  - ${ignored}\n`;
     const leaked = setup({
       ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 99999 court"),
       priv: priv("Return to 99999"),
-      addresses: ZIPLESS_ADDRESSES,
     });
     const result = await failsWith(leaked, [
       `ballot.yaml:${yamlLine(leaked, "99999")} private-string jurisdiction`,
@@ -1096,9 +1084,62 @@ describe("ballot-check: private text", () => {
     const longer = setup({
       ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 1999990 court"),
       priv: priv("Return to 999991"),
-      addresses: ZIPLESS_ADDRESSES,
     });
     assert.deepEqual(lines(await ballotCheck(longer)), ["ballot-view.md written"]);
+  });
+});
+
+describe("ballot-check without addresses.yaml", () => {
+  // Value: protects=ballot-check and --show run in a data repo that stores no address; fails_when=ballot-check still loads addresses.yaml, so its absence fails file-missing; why_new=ticket 27; seam=cli; no_claim=a leftover file (below)
+  it("passes, and --show passes, with no addresses.yaml", async () => {
+    const data = setup({ addresses: false });
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
+    const shown = await runInTty("ballot-check", ["--show", BALLOT], {
+      cwd: data.root,
+      env: data.env,
+    });
+    assert.equal(shown.status, 0, shown.stdout);
+    assert.match(shown.stdout, /ballot-view\.md written/);
+  });
+
+  // Value: protects=a leftover addresses.yaml, which ticket 28 stops guarding, never lingers unnoticed, and is never opened to say so; fails_when=a leftover file passes, is located by an entry's line, or is read (an unreadable one fails file-missing or yaml-invalid instead); why_new=ticket 27; seam=cli; no_claim=agent-bind and --brief (discovery.test.js), publish (fixture.test.js)
+  it("fails a leftover addresses.yaml by the file alone, never opening it, and writes no view", async () => {
+    const data = setup({ addresses: false });
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
+    leaveUnreadableAddresses(data);
+    const result = await ballotCheck(data);
+    assert.deepEqual(lines(result), ["addresses.yaml addresses-leftover"]);
+    assert.equal(result.status, 1);
+    assert.ok(!data.exists(VIEW));
+    const shown = await runInTty("ballot-check", ["--show", BALLOT], {
+      cwd: data.root,
+      env: data.env,
+    });
+    assert.match(shown.stdout, /^addresses\.yaml addresses-leftover$/m);
+    assert.doesNotMatch(shown.stdout, /ballot-view\.md written/);
+    assert.ok(!data.exists(VIEW));
+  });
+
+  // Value: protects=ballot.yaml and ignored_lines, which discovery sends to web searches, refuse another family member's ZIP or place name as the shared addresses.yaml once refused any address's ZIP; fails_when=the Private text rule reads this ballot's private_strings alone; why_new=ticket 27 (PR #54 review, D1), owner to confirm; seam=cli; no_claim=the sample-ballot accounting and ballot-id-private, which read this ballot's entries only
+  it("fails another ballot's private string in ballot.yaml and ignored_lines, never naming it", async () => {
+    const data = setup({
+      addresses: false,
+      ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 88888 Lakeside court"),
+      priv: `${PRIVATE}  - Return to 88888\n  - Lakeside Village hall\n`,
+    });
+    data.write(
+      "2026-general/xx-exampleton-2/private.yaml",
+      'private_strings:\n  - "88888"\n  - Lakeside Village\n',
+    );
+    const result = await ballotCheck(data);
+    assert.deepEqual(lines(result), [
+      `ballot.yaml:${yamlLine(data, "88888")} private-string jurisdiction`,
+      "private.yaml private-string ignored_lines",
+      "private.yaml private-string ignored_lines",
+    ]);
+    assert.equal(result.status, 1);
+    assert.ok(!data.exists(VIEW));
+    assert.doesNotMatch(result.stdout, /88888|Lakeside|exampleton-2/i);
   });
 });
 
@@ -1146,17 +1187,14 @@ describe("ballot-check: companion documents", () => {
     assert.ok(!data.exists(VIEW));
   });
 
-  it("fails a companion holding an address, street line or label, by its line, never the text", async () => {
+  // Value: protects=a companion's body is not scanned, since with no stored address nothing voter-specific is left to match that county-wide documents do not print by nature; a personalized one is the researcher's to retire; fails_when=the companion check scans the body for a private string, ZIP or anything else; why_new=ticket 27 drops the body check (ticket 19's second criterion); seam=cli; no_claim=companion-query, which stays (above)
+  it("reads a companion whatever its body holds: only a query fails it", async () => {
     const data = setup();
     plant(data, "pamphlet", "pamphlet", "Voter pamphlet\nMail to 123 Elm Street\nZIP 99999");
-    plant(data, "candidate-list", "candidate_list", "Prepared for addr-mom");
-    const result = await ballotCheck(data);
-    // The ZIP alone passes: county-wide documents print the county's ZIP codes.
-    assert.deepEqual(lines(result), [
-      "sources/_ballot/candidate-list.md:12 private-label",
-      `${PAMPHLET}:13 private-address`,
-    ]);
-    assert.doesNotMatch(result.stdout, /Elm|addr-mom/);
+    plant(data, "candidate-list", "candidate_list", "Prepared for addr-mom, Precinct 12");
+    assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
+    assert.match(data.read(VIEW), /^read: sources\/_ballot\/candidate-list\.md$/m);
+    assert.match(data.read(VIEW), /^read: sources\/_ballot\/pamphlet\.md$/m);
   });
 
   it("retires a companion: off the read: lines and out of the companion checks", async () => {

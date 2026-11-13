@@ -3,19 +3,13 @@
 // ballot-check's rules for the companion documents and the people they vouch
 // for (ballot-format.md, Companion documents, Party names, Write-ins and
 // Withdrawals). Companions are the _ballot snapshots the compile agent reads
-// whole, so none may come from a query URL or hold a voter's address, and a
-// retired one vouches for nothing. Failures name the field or the class,
-// never the text (Rule 5).
+// whole, so none may come from a query URL, and a retired one vouches for
+// nothing. A personalized one fetched without a query is the researcher's to
+// spot and retire (ADR 0009). Failures name the field, never the text (Rule 5).
 
 const { PARTY_FULL_WORDS, PARTY_JOINING_WORDS } = require("./constants");
-const { addressValues } = require("./data-files");
 const { Failure } = require("./output");
 const { bodyText, findExcerpt, normalizeLine } = require("./normalize");
-const { CLASSES, scan } = require("./privacy");
-
-// An address, street line or label; county-wide documents fail the scan's
-// ZIP, title and place-name checks by nature.
-const COMPANION_CLASSES = ["address", "label"];
 
 // Each part between spaces or hyphens: a hyphen joins words
 // (Democratic-Farmer-Labor), so each part is read as a word. A dotted word
@@ -53,20 +47,11 @@ const holds = (snapshot, text, { anyCase = false } = {}) => {
   return findExcerpt(snapshot[key], anyCase ? text.toLowerCase() : text);
 };
 
-// A query fetch, or a voter's address, street line or label in the body.
-// `companions`: [{ path, query, body, firstLine }].
-const checkCompanions = (companions, addresses) => {
-  const failures = [];
-  const values = addressValues(addresses ?? []);
-  for (const companion of companions) {
-    if (companion.query === "query") failures.push(new Failure(companion.path, "companion-query"));
-    for (const m of scan(companion.body, values, COMPANION_CLASSES)) {
-      const line = companion.firstLine + m.line - 1;
-      failures.push(new Failure(`${companion.path}:${line}`, CLASSES[m.class]));
-    }
-  }
-  return failures;
-};
+// A companion fetched from a URL with a query. `companions`: [{ path, query }].
+const checkCompanions = (companions) =>
+  companions
+    .filter((companion) => companion.query === "query")
+    .map((companion) => new Failure(companion.path, "companion-query"));
 
 // `candidates`: [{ name, status, party, partyName, at: { name, party,
 // party_name } }] as ballot.yaml gives them; `sample` the authoritative sample

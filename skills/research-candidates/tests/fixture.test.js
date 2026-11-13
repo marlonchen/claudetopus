@@ -313,12 +313,8 @@ describe("fixture ballot: a leak on the page refuses all of it", () => {
 });
 
 describe("fixture ballot: a ZIP listed only in private_strings", () => {
-  // The fixture with addresses.yaml holding no ZIP, so only private.yaml lists it.
-  const zipOnly = () => {
-    const data = copy();
-    data.write("addresses.yaml", data.read("addresses.yaml").replace(", XX 99999", ", XX"));
-    return data;
-  };
+  // The fixture lists its ZIP in private.yaml alone.
+  const zipOnly = copy;
   const named = (data, name) =>
     data.write("publish.yaml", `branch: main\ndisplay_name: ${JSON.stringify(name)}\n`);
 
@@ -358,16 +354,24 @@ describe("fixture ballot: a ZIP listed only in private_strings", () => {
 });
 
 describe("fixture ballot: publish without addresses.yaml", () => {
-  // Value: protects=publish's render and page scan take no value from addresses.yaml; fails_when=familyPrivateValues still reads addresses.yaml, so its label, street or address refuses the page; why_new=ticket 26; seam=cli; no_claim=a data repo with no addresses.yaml, which publish's ballot gate (ballot-check) still reads until ticket 27
-  it("publishes a page holding the label and street only addresses.yaml lists", async () => {
+  // Value: protects=publish's ballot gate, render and page scan take nothing from addresses.yaml, so the fixture publishes in a data repo that stores no address; fails_when=ballot-check, run by the gate, or familyPrivateValues still reads addresses.yaml; why_new=ticket 26's second criterion, completed by ticket 27; seam=cli; no_claim=a leftover file's refusal by ballot-check itself (ballot-check.test.js)
+  it("passes its ballot gate and publishes, with no addresses.yaml", async () => {
     const data = copy();
-    data.write(
-      "publish.yaml",
-      `branch: main\ndisplay_name: ${JSON.stringify("Sam addr-mom 123 Elm Street")}\n`,
-    );
+    assert.ok(!data.exists("addresses.yaml"));
     const result = await run(data, "publish", [BALLOT]);
     passes(result);
     assert.deepStrictEqual(lines(result), [...PUBLISHED, "site/index.html written"]);
+  });
+
+  // Value: protects=a leftover addresses.yaml stops publish at its ballot gate, before any page is written; fails_when=the gate passes while ballot-check fails addresses-leftover; why_new=ticket 27; seam=cli; no_claim=none
+  it("refuses at its ballot gate beside a leftover addresses.yaml, writing no page", async () => {
+    const data = copy();
+    data.write("addresses.yaml", "addr-mom: [unclosed\n");
+    fs.chmodSync(data.file("addresses.yaml"), 0o000);
+    const result = await run(data, "publish", [BALLOT]);
+    assert.ok(lines(result).includes("ballot.yaml ballot-check-failed"), result.stdout);
+    assert.strictEqual(result.status, 1);
+    assert.ok(!data.exists(SITE));
   });
 });
 
