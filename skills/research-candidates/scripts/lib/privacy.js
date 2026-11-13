@@ -21,9 +21,6 @@
 // privacy refusal prints for each (Rule 5: only the class, never the text).
 const CLASSES = {
   "ballot-id": "private-ballot-id",
-  address: "private-address",
-  zip: "private-zip",
-  label: "private-label",
   "private-string": "private-string",
   title: "private-title",
   key: "private-key",
@@ -210,7 +207,6 @@ const privateStringSearches = (entry) => {
 
 // The searches one value of `cls` makes, normalized for `variant` (null: raw).
 const searchesFor = (cls, value, variant) => {
-  if (cls === "zip") return [{ needle: value.trim(), edge: DIGIT, digits: true }];
   const needle = normalizeValue(value, variant);
   if (cls === "private-string") return needle ? privateStringSearches(needle) : [];
   return [{ needle, edge: WORD }];
@@ -285,8 +281,8 @@ const lineFinder = (text) => {
 
 // Every { line, class } where `text` holds a value of one of `classes`, sorted
 // and without repeats. `values` maps each class to its values (strings);
-// ZIPs are 5-digit strings, keys are API key values. Options: `skip`, a list
-// of [start, end) offsets in `text` where a digit-run or ZIP search does not
+// keys are API key values. Options: `skip`, a list
+// of [start, end) offsets in `text` where a digit-run search does not
 // count a match lying wholly inside one (publish's generated dates);
 // `spans`, to add each match's [start, end) offsets as `spans`; `hyphens`, to
 // also find a word value split at a line break (hyphenPattern, step 6.2).
@@ -368,7 +364,7 @@ const refusalCode = (matches) => {
 };
 
 // The classes a fetched URL may not hold (Rule 7, snapshot-format.md).
-const URL_CLASSES = ["ballot-id", "address", "zip", "label", "private-string", "key"];
+const URL_CLASSES = ["ballot-id", "private-string", "key"];
 
 // The refusal code for the first of `classes` any of `texts` holds, or null.
 const findRefusal = (texts, values, classes) =>

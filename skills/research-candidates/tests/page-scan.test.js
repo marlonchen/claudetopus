@@ -10,10 +10,14 @@ const { dropContests, scanPage } = require("../scripts/lib/page-scan");
 
 const VALUES = {
   "ballot-id": ["xx-exampleton-1"],
-  "private-string": ["Springfield Township", "Pct 12", "Mary-Jane Lane", "Oct 19 Ward"],
-  address: ["123 Elm Street Apt 4, Springfield, XX 99999", "123 Elm Street"],
-  zip: ["99999"],
-  label: ["addr-mom"],
+  "private-string": [
+    "Springfield Township",
+    "Pct 12",
+    "Mary-Jane Lane",
+    "Oct 19 Ward",
+    "Lincoln-Gym",
+    "99999",
+  ],
   title: ["Question 1: Springfield Township Library Levy"],
   key: ["k3yV4lue0123456789"],
 };
@@ -126,11 +130,11 @@ describe("publish scan: claims, excerpts and source names (step 6.2)", () => {
   });
 
   it("scans only ready contests, and reports each in ballot order", () => {
-    const leak = { ...CLEAN, text: "Jane Example lives at 123 Elm Street." };
+    const leak = { ...CLEAN, text: "Jane Example lives in Springfield Township." };
     const answers = new Map([
       ["b", answer([leak])],
       ["a", { ...answer([leak]), ready: false }],
-      ["c", answer([{ ...CLEAN, snapshot: "notes.md", source: "addr-mom notes" }])],
+      ["c", answer([{ ...CLEAN, snapshot: "notes.md", source: "Lincoln-Gym notes" }])],
     ]);
     const found = dropContests(["a", "b", "c"], answers, VALUES);
     assert.deepStrictEqual(found.lines, [
@@ -161,24 +165,24 @@ describe("publish scan: the rendered page (step 6.3)", () => {
       `<p>Oct 19, 2026 was the day.</p>`,
       `<div class="meta">Updated 99999</div>`,
     ].join("\n");
-    assert.deepStrictEqual(codes(pageOf(body)), ["7 private-string", "8 private-zip"]);
+    assert.deepStrictEqual(codes(pageOf(body)), ["7 private-string", "8 private-string"]);
   });
 
   it("refuses every value class in all three forms, by line", () => {
     const body = [
       `<a href="#xx-exampleton-1">x</a>`,
-      `<p>XX_EXAMPLETON_1 and addr&#45;mom</p>`,
+      `<p>XX_EXAMPLETON_1 and Lincoln&#45;Gym</p>`,
       `<p>Question 1: Springfield Township Library Levy</p>`,
-      `<p>123&nbsp;Elm Street</p>`,
+      `<p>Pct&nbsp;12</p>`,
       `<p>k3yV4lue0123456789</p>`,
     ].join("\n");
     assert.deepStrictEqual(codes(pageOf(body)), [
       "5 private-ballot-id",
       "6 private-ballot-id",
-      "6 private-label",
+      "6 private-string",
       "7 private-string",
       "7 private-title",
-      "8 private-address",
+      "8 private-string",
       "9 private-key",
     ]);
   });

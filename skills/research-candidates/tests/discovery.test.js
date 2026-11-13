@@ -69,7 +69,7 @@ describe("agent-bind and discovery-fetch --brief", () => {
     assert.strictEqual(brief.status, 1);
   });
 
-  // Value: protects=discovery never starts beside a leftover addresses.yaml, which ticket 28 stops guarding; fails_when=bind or the brief passes while ballot-check fails addresses-leftover; why_new=ticket 27; seam=cli; no_claim=ballot-check's own output (ballot-check.test.js)
+  // Value: protects=discovery never starts beside a leftover addresses.yaml, which session-guard no longer guards (ticket 28); fails_when=bind or the brief passes while ballot-check fails addresses-leftover; why_new=ticket 27; seam=cli; no_claim=ballot-check's own output (ballot-check.test.js)
   it("binds nothing, and briefs nothing, beside a leftover addresses.yaml", async () => {
     const data = await checkedBallot();
     const token = await bind(data, "us-house-07");

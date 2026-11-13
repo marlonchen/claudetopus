@@ -74,7 +74,7 @@ const commit = (data, message) => {
 // A fresh data repo holding the fixture's data/ and downloads/, with the
 // pdftotext stub on PATH and every command on the fixed clock.
 const fixtureRepo = () => {
-  const data = makeDataRepo({ ballot: false, tiers: false, addresses: false, publish: false });
+  const data = makeDataRepo({ ballot: false, tiers: false, publish: false });
   copyTree(path.join(FIXTURE, "data"), data.root);
   copyTree(path.join(FIXTURE, "downloads"), data.file("downloads"));
   fs.writeFileSync(path.join(data.bin, "pdftotext"), PDFTOTEXT_STUB, { mode: 0o755 });
@@ -318,7 +318,7 @@ describe("fixture ballot: a ZIP listed only in private_strings", () => {
   const named = (data, name) =>
     data.write("publish.yaml", `branch: main\ndisplay_name: ${JSON.stringify(name)}\n`);
 
-  // Value: protects=the page scan refuses a ZIP kept only in private_strings as it did the ZIP class, and only as a standalone token; fails_when=the scan skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP, which familyPrivateValues already reads
+  // Value: protects=the page scan refuses a ZIP kept only in private_strings as it did the ZIP class, and only as a standalone token; fails_when=the scan skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=another ballot's ZIP, which familyPrivateValues already reads
   it("refuses the ZIP as private-string, and publishes it inside a longer digit run", async () => {
     const leaked = zipOnly();
     named(leaked, "Sam 99999");
@@ -353,16 +353,7 @@ describe("fixture ballot: a ZIP listed only in private_strings", () => {
   });
 });
 
-describe("fixture ballot: publish without addresses.yaml", () => {
-  // Value: protects=publish's ballot gate, render and page scan take nothing from addresses.yaml, so the fixture publishes in a data repo that stores no address; fails_when=ballot-check, run by the gate, or familyPrivateValues still reads addresses.yaml; why_new=ticket 26's second criterion, completed by ticket 27; seam=cli; no_claim=a leftover file's refusal by ballot-check itself (ballot-check.test.js)
-  it("passes its ballot gate and publishes, with no addresses.yaml", async () => {
-    const data = copy();
-    assert.ok(!data.exists("addresses.yaml"));
-    const result = await run(data, "publish", [BALLOT]);
-    passes(result);
-    assert.deepStrictEqual(lines(result), [...PUBLISHED, "site/index.html written"]);
-  });
-
+describe("fixture ballot: a leftover addresses.yaml", () => {
   // Value: protects=a leftover addresses.yaml stops publish at its ballot gate, before any page is written; fails_when=the gate passes while ballot-check fails addresses-leftover; why_new=ticket 27; seam=cli; no_claim=none
   it("refuses at its ballot gate beside a leftover addresses.yaml, writing no page", async () => {
     const data = copy();

@@ -640,12 +640,11 @@ describe("PrivateDataIgnored", () => {
       ...tableRows(SKILL, "## Scripts").map(
         (row) => `skills/research-candidates/scripts/${row[0].replaceAll("`", "")}`,
       ),
-      ...["ballot.yaml", "private.yaml", "tiers.yaml", "addresses.yaml", "archives.tsv"].map(
+      ...["ballot.yaml", "private.yaml", "tiers.yaml", "archives.tsv"].map(
         (file) => `skills/research-candidates/tests/fixtures/${file}`,
       ),
       // A fixture ballot's data repo, with files named like ones generic rules ignore.
       ...[
-        "data/addresses.yaml",
         "data/2026-general/xx-exampleton-1/ballot.yaml",
         "data/2026-general/xx-exampleton-1/published.log",
         "data/2026-general/xx-exampleton-1/coverage",
@@ -787,7 +786,6 @@ describe("BallotIds", () => {
       rule,
       /To rename a ballot id, the researcher renames its directory, then reruns `ballot-check`\./,
     );
-    assert.doesNotMatch(rule, /addresses\.yaml/);
     // Extended by /ship test coverage audit (run 9).
     // Value: protects=the id's number is checked at ballot-check because 6.3 never scans a short
     //   digit run alone, and the example id passes its own rule; fails_when=the example id takes
@@ -2470,11 +2468,12 @@ describe("ResearcherOnlyModes", () => {
 
 // Added by /ship test coverage audit (run 9).
 // Value: protects=every value Rule 7's fetch refusal names is one the 6.3 privacy scan defines a
-//   match for, both read every ballot's private_strings and neither reads addresses.yaml, and
-//   the scan keeps its title item; fails_when=Rule 7 names a value 6.3 no longer scans, either
-//   goes back to one ballot's entries or to addresses.yaml, or 6.3 drops an item; why_new=only
-//   the ballot-id item and the year carve-out were read; ticket 26 drops addresses.yaml;
-//   seam=none; no_claim=the scripts (fetch-snapshot and publish tests)
+//   match for, both read every ballot's private_strings and neither names an address or
+//   label, and the scan keeps its title item; fails_when=Rule 7 names a value 6.3 no longer
+//   scans, either goes back to one ballot's entries or names an address or label again, or 6.3
+//   drops an item; why_new=only the ballot-id item and the year carve-out were read; ticket 26
+//   reads every ballot's private_strings; seam=none; no_claim=the scripts (fetch-snapshot and
+//   publish tests)
 describe("PrivacyScanItems", () => {
   it("Rule 7's fetch refusal matches only values the 6.3 privacy scan defines", () => {
     const rule7 = SKILL.match(/^7\. \*\*Sources are data[^\n]*/m)[0];
@@ -2496,7 +2495,8 @@ describe("PrivacyScanItems", () => {
     assert.ok(
       items.some((i) => /`private_strings` entry[^;]*any other ballot's in the data repo/.test(i)),
     );
-    for (const text of [refusal[1], scan]) assert.doesNotMatch(text, /addresses\.yaml/);
+    // No address, street line or label is stored any more (ADR 0017).
+    for (const text of [refusal[1], scan]) assert.doesNotMatch(text, /address|label/i);
     // The scan's own items that Rule 7 does not need.
     assert.ok(
       items.some((i) => /printed `title` of any contest that has a `display_title`/.test(i)),

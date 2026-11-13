@@ -20,10 +20,10 @@
 //   - agent-message-denied: any SendMessage, which would reach a Rule 7 agent
 //     with text other than its token;
 //   - private-file-denied: a command, file write, Read or Grep naming
-//     addresses.yaml or private.yaml, which only scripts read (Rule 5), a Grep
-//     from a directory that holds either, a recursive shell search anywhere
-//     in a command unless each of its starts is placed below those directories,
-//     or an xargs, which hands a tool paths this never sees;
+//     private.yaml, which only scripts read (Rule 5), a Grep from a directory
+//     that holds one, a recursive shell search anywhere in a command unless
+//     each of its starts is placed below those directories, or an xargs,
+//     which hands a tool paths this never sees;
 //   - session-file-denied: the same calls from the main session alone, for
 //     sources/_ballot/, downloads (in a command or a Grep's path, with or
 //     without its slash) and unfetchable.md, or a Grep or a placed recursive
@@ -67,7 +67,7 @@ const SCRIPT_ONLY =
 const CLAUDE_CLI = new Set(["claude", "claude-code"]);
 const FILE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 // Any case, since a case-insensitive filesystem opens the file under any.
-const PRIVATE_FILE = /addresses\.yaml|private\.yaml/i;
+const PRIVATE_FILE = /private\.yaml/i;
 // The input a call can name a file in. A Bash description or a Grep pattern
 // reads nothing, so neither counts; everything a file tool writes does, since
 // it could be a script to run later.
@@ -77,8 +77,8 @@ const namedIn = (tool, input) => {
   if (tool === "Grep") return [input.path, input.glob];
   return FILE_TOOLS.has(tool) ? [input] : [];
 };
-// addresses.yaml is at the root and private.yaml two levels under it, in
-// <election>/<ballot-id>/, so a search any deeper reaches neither.
+// private.yaml is two levels under the root, in <election>/<ballot-id>/, so a
+// search any deeper reaches none.
 const PRIVATE_FILE_DEPTH = 2;
 // What the main session has no use for: text that can name or locate the
 // voter, and the raw log of attacker-chosen URLs. Any case, so ~/Downloads

@@ -512,8 +512,8 @@ const check = (root, ballot, ballotDir, show) => {
 
   // A file that cannot be read at all is one failure; the others still run.
   const failures = dataRepoSetupFailures(root, ballot);
-  // No address is stored (ADR 0017), and the guards on a leftover file go, so
-  // it fails until it is deleted. Only its name is looked at, never its text.
+  // No address is stored (ADR 0017), and a leftover file has no guards, so it
+  // fails until it is deleted. Only its name is looked at, never its text.
   if (fs.lstatSync(path.join(root, "addresses.yaml"), { throwIfNoEntry: false })) {
     failures.push(
       new Failure("addresses.yaml", "addresses-leftover", undefined, "list-zips-then-delete"),

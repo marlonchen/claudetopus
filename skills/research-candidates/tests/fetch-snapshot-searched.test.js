@@ -3,7 +3,7 @@
 const assert = require("node:assert");
 const fs = require("node:fs");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_BALLOT, leaveUnreadableAddresses } = require("./harness");
+const { BALLOT, DEFAULT_BALLOT } = require("./harness");
 const { fetchSnapshot, repo } = require("./fetch-snapshot-fixture");
 
 // fetch-snapshot --searched (snapshot-format.md, Search log), run as a
@@ -47,16 +47,6 @@ describe("fetch-snapshot --searched: logging a checklist item", () => {
     await searched(data, "us-house-07", "jane-example", "4");
     const line = "us-house-07\tjane-example\t4\t<today>\n";
     assert.strictEqual(undated(data.read(LOG), before), line + line);
-  });
-
-  // Value: protects=--searched needs no addresses.yaml and never opens a leftover one; fails_when=search-log starts reading addresses.yaml (it never did, on base either, so this is a regression guard for criterion 1, not a pin of a change); why_new=ticket 26 criterion 1; seam=cli; no_claim=none
-  it("logs with no addresses.yaml, and beside one it cannot read", async () => {
-    for (const leftover of [false, true]) {
-      const data = repo({ addresses: false });
-      if (leftover) leaveUnreadableAddresses(data);
-      const result = await searched(data, "us-house-07", "jane-example", "4");
-      assert.strictEqual(result.stdout, "search-log/us-house-07.tsv logged\n");
-    }
   });
 
   it("logs a retention official under its id, item 7, and a measure under _race, item 6", async () => {
