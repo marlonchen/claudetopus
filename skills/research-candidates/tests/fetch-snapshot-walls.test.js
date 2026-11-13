@@ -2,7 +2,7 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_TIERS, runInTty } = require("./harness");
+const { BALLOT, DEFAULT_TIERS, leaveUnreadableAddresses, runInTty } = require("./harness");
 const { COUNTY_PAGE, fetchVia, frontMatter, repo, server } = require("./fetch-snapshot-fixture");
 
 // fetch-snapshot on pages that are not the article they stand for
@@ -265,6 +265,16 @@ describe("fetch-snapshot --keep-short saves a short page the researcher confirms
     assert.deepEqual(lines(yes).slice(-1), ["sources/us-house-07/_race/county-page.md saved"]);
     assert.equal(yes.status, 0);
     assert.equal(Object.fromEntries(frontMatter(data.read(SAVED))).requested_url, STORY);
+  });
+
+  // Value: protects=--keep-short needs no addresses.yaml and never opens a leftover one; fails_when=the plain fetch it runs reads addresses.yaml; why_new=ticket 26; seam=cli; no_claim=none
+  it("saves on a yes with no addresses.yaml, and beside one it cannot read", async () => {
+    for (const leftover of [false, true]) {
+      const data = repo({ addresses: false });
+      if (leftover) leaveUnreadableAddresses(data);
+      const yes = await keepShort(data, { [STORY]: TEASER }, "y");
+      assert.deepEqual(lines(yes).slice(-1), ["sources/us-house-07/_race/county-page.md saved"]);
+    }
   });
 
   it("refuses without a terminal, before fetching", async () => {

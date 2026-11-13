@@ -351,11 +351,6 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     `${COUNTY}- match: springfield-township.example.org\n  tier: T2\n  owner: third-party\n  source: X\n`,
     "tiers.yaml:5 private-string match\n",
   );
-  refusesTiers(
-    "a source holding a ZIP code from addresses.yaml",
-    `${COUNTY}- match: x.example.com\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
-    "tiers.yaml:8 private-zip source\n",
-  );
   // Value: protects=a ZIP kept only in private_strings fails a match or source as the ZIP class did, and only as a standalone token; fails_when=the Tiers rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=none
   const ZIP_ONLY = { private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES };
   refusesTiers(
@@ -382,7 +377,32 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     );
     assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
   });
-  it("ends another ballot's private.yaml failure, read for the Tiers rule, with check-each-ballot", async () => {
+  // Value: protects=the Tiers rule reads every ballot's private_strings and only them, so a leftover addresses.yaml no longer fails a match or source; fails_when=the check reads one ballot's entries, or still reports an address, label or ZIP class; why_new=ticket 26; seam=cli; no_claim=ballot-check's Tiers rule (ballot-check.test.js)
+  it("fails a match holding another ballot's private string, and no address, label or ZIP", async () => {
+    const leak = repo({
+      tiers: `${COUNTY}- match: lakeside-village.example.org\n  tier: T2\n  owner: third-party\n  source: X\n`,
+    });
+    leak.write(
+      "2026-general/xx-exampleton-2/private.yaml",
+      "private_strings:\n  - Lakeside Village\n",
+    );
+    const refused = await fetchVia(leak, {}, PLAIN);
+    assert.equal(refused.stdout, "tiers.yaml:5 private-string match\n");
+    assert.deepEqual(refused.seen, []);
+
+    // The fixture's addresses.yaml lists addr-mom, 123 Elm Street and 99999.
+    const data = repo({
+      tiers: `${COUNTY}- match: addr-mom.example.org/123-elm-street\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
+    });
+    const result = await fetchVia(
+      data,
+      { "https://county.example.gov/": { body: COUNTY_PAGE } },
+      PLAIN,
+    );
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+  });
+  // Value: protects=another ballot's unreadable private.yaml stops the fetch, unlocated, with check-each-ballot; fails_when=loadPrivateValues skips or no longer throws another ballot's private.yaml failure; why_new=ticket 26 moves this stop from loadTiers to loadPrivateValues; seam=cli; no_claim=none
+  it("stops at another ballot's unreadable private.yaml, read for the URL check, with check-each-ballot", async () => {
     const data = repo({ tiers: COUNTY });
     data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: [unclosed\n");
     const result = await fetchVia(
@@ -392,6 +412,22 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     );
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "- yaml-invalid\n- check-each-ballot\n");
+    assert.deepEqual(result.seen, []);
+  });
+  // Value: protects=another ballot's unreadable private.yaml stops the fetch before the URL check, so the URL check never runs on a partial set of private strings; fails_when=loadPrivateValues no longer throws another ballot's failure, and the URL check refuses first; why_new=ticket 26; seam=cli; no_claim=none
+  it("stops at another ballot's unreadable private.yaml before refusing this ballot's private string", async () => {
+    const data = repo({ tiers: COUNTY });
+    data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: Precinct 3\n");
+    const url = "https://county.example.gov/springfield-township/";
+    const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, [
+      BALLOT,
+      "us-house-07",
+      "_race",
+      "county-page",
+      url,
+    ]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "- private-invalid\n- check-each-ballot\n");
     assert.deepEqual(result.seen, []);
   });
   refusesTiers("a missing tiers.yaml", false, "tiers.yaml file-missing\n");

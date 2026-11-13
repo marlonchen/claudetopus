@@ -276,9 +276,8 @@ const LEAKS = [
     ["private-string"],
     "private-match",
   ],
-  // Listed in both addresses.yaml and private.yaml until ticket 28.
-  ["ZIP", "99999", ["private-zip", "private-string"], "figure-missing"],
-  ["address label", "addr-mom", ["private-label"], "private-match"],
+  // publish reads private.yaml alone (ticket 26).
+  ["ZIP", "99999", ["private-string"], "figure-missing"],
   [
     "printed title",
     "Question 1: Springfield Township Library Levy",
@@ -341,6 +340,34 @@ describe("fixture ballot: a ZIP listed only in private_strings", () => {
     passes(published);
     assert.deepStrictEqual(lines(published), [...PUBLISHED, "site/index.html written"]);
     assert.ok(longer.read(SITE).includes("Made by Sam 1999990 "));
+  });
+
+  // Value: protects=the page scan reads every ballot's private_strings, so another ballot's ZIP is refused as this one's is; fails_when=familyPrivateValues reads this ballot's private.yaml only; why_new=ticket 26; seam=cli; no_claim=none
+  it("refuses another ballot's ZIP as private-string, never naming the ballot", async () => {
+    const data = copy();
+    fs.mkdirSync(data.file("2026-general/xx-exampleton-2"));
+    data.write("2026-general/xx-exampleton-2/private.yaml", 'private_strings:\n  - "88888"\n');
+    named(data, "Sam 88888");
+    const refused = await run(data, "publish", [BALLOT]);
+    assert.deepStrictEqual(lines(refused), [
+      ...PUBLISHED,
+      `site/index.html:${TRUST_LINE} private-string`,
+    ]);
+    assert.ok(!data.exists(SITE));
+  });
+});
+
+describe("fixture ballot: publish without addresses.yaml", () => {
+  // Value: protects=publish's render and page scan take no value from addresses.yaml; fails_when=familyPrivateValues still reads addresses.yaml, so its label, street or address refuses the page; why_new=ticket 26; seam=cli; no_claim=a data repo with no addresses.yaml, which publish's ballot gate (ballot-check) still reads until ticket 27
+  it("publishes a page holding the label and street only addresses.yaml lists", async () => {
+    const data = copy();
+    data.write(
+      "publish.yaml",
+      `branch: main\ndisplay_name: ${JSON.stringify("Sam addr-mom 123 Elm Street")}\n`,
+    );
+    const result = await run(data, "publish", [BALLOT]);
+    passes(result);
+    assert.deepStrictEqual(lines(result), [...PUBLISHED, "site/index.html written"]);
   });
 });
 
