@@ -401,7 +401,8 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     );
     assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
   });
-  it("ends another ballot's private.yaml failure, read for the Tiers rule, with check-each-ballot", async () => {
+  // Value: protects=another ballot's unreadable private.yaml stops the fetch, unlocated, with check-each-ballot; fails_when=loadPrivateValues skips or no longer throws another ballot's private.yaml failure; why_new=ticket 26 moves this stop from loadTiers to loadPrivateValues; seam=cli; no_claim=none
+  it("stops at another ballot's unreadable private.yaml, read for the URL check, with check-each-ballot", async () => {
     const data = repo({ tiers: COUNTY });
     data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: [unclosed\n");
     const result = await fetchVia(
@@ -411,6 +412,22 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     );
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "- yaml-invalid\n- check-each-ballot\n");
+    assert.deepEqual(result.seen, []);
+  });
+  // Value: protects=another ballot's unreadable private.yaml stops the fetch before the URL check, so the URL check never runs on a partial set of private strings; fails_when=loadPrivateValues no longer throws another ballot's failure, and the URL check refuses first; why_new=ticket 26; seam=cli; no_claim=none
+  it("stops at another ballot's unreadable private.yaml before refusing this ballot's private string", async () => {
+    const data = repo({ tiers: COUNTY });
+    data.write("2026-general/xx-exampleton-2/private.yaml", "private_strings: Precinct 3\n");
+    const url = "https://county.example.gov/springfield-township/";
+    const result = await fetchVia(data, { [url]: { body: COUNTY_PAGE } }, [
+      BALLOT,
+      "us-house-07",
+      "_race",
+      "county-page",
+      url,
+    ]);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "- private-invalid\n- check-each-ballot\n");
     assert.deepEqual(result.seen, []);
   });
   refusesTiers("a missing tiers.yaml", false, "tiers.yaml file-missing\n");

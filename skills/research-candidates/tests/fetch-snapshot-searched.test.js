@@ -49,7 +49,7 @@ describe("fetch-snapshot --searched: logging a checklist item", () => {
     assert.strictEqual(undated(data.read(LOG), before), line + line);
   });
 
-  // Value: protects=--searched needs no addresses.yaml and never opens a leftover one; fails_when=search-log reads addresses.yaml; why_new=ticket 26; seam=cli; no_claim=none
+  // Value: protects=--searched needs no addresses.yaml and never opens a leftover one; fails_when=search-log starts reading addresses.yaml (it never did, on base either, so this is a regression guard for criterion 1, not a pin of a change); why_new=ticket 26 criterion 1; seam=cli; no_claim=none
   it("logs with no addresses.yaml, and beside one it cannot read", async () => {
     for (const leftover of [false, true]) {
       const data = repo({ addresses: false });

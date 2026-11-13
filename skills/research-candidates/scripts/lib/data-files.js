@@ -188,7 +188,6 @@ const loadTiers = (root, ballot, values) => {
     }
   }
   const [leak] = tiersPrivacy(root, ballot, values, { doc, lineCounter });
-  if (leak?.location === "-") leak.hint = "check-each-ballot";
   if (leak) throw leak;
   return entries.map(({ at, ...entry }) => entry);
 };

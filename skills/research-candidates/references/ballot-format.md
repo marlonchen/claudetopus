@@ -61,7 +61,7 @@ ignored_lines:          # sample-ballot lines that are not contests (instruction
 
 List the voter's ZIP code as its own five-digit entry, and each ZIP on its own when the ballot covers more than one address. Leave out the +4: every run of 4 or more digits in an entry is searched alone, so `99999-0001` would also refuse a bare `0001`. Quote it: YAML reads an unquoted `02134` as the number 2134, and `ballot-check` fails `private-invalid`. As a digit run of 4 or more digits that is not a year, the entry is matched as a standalone token (SKILL.md step 6.3): `99999` is refused in `?zip=99999`, `99999-0001` and `/99999/`, never inside a longer number such as `1999990`, and a refusal reports `private-string`. While `addresses.yaml` still holds the address, `ballot-check`'s `ballot.yaml` and `ignored_lines` scans match its ZIP as well and report both `private-zip` and `private-string`.
 
-`addresses.yaml`, at the project root, holds each address the researcher adds under its label (SKILL.md step 1); the model never reads or writes it (Rule 5). Only `ballot-check` reads it, to scan for its values; `fetch-snapshot`, the `tiers.yaml` check and `publish` never do:
+`addresses.yaml`, at the project root, holds each address the researcher adds under its label (SKILL.md step 1); the model never reads or writes it (Rule 5). Only `ballot-check` reads it, to scan for its values; `fetch-snapshot`, the `tiers.yaml` check and `publish`'s render and page scan never do. `publish`'s ballot gate, `agent-bind` and `discovery-fetch --brief` still read it, through `ballot-check`:
 
 ```yaml
 addr-mom:                 # the label: distinctive, never mom or home (SKILL.md step 6.3)

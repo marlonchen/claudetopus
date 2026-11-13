@@ -994,7 +994,7 @@ describe("BallotIds", () => {
   it("fetch-snapshot refuses a URL that contains the ballot id", () => {
     const rule7 = SKILL.match(/^7\. \*\*Sources are data[^\n]*/m);
     assert.ok(rule7, "SKILL.md has no Rule 7");
-    assert.match(rule7[0], /refuses any URL that contains[^.]*the ballot id/);
+    assert.match(rule7[0], /refuses any URL that contains[^.]*this ballot's id/);
   });
 
   it("the privacy scan matches the ballot id in all three forms", () => {
@@ -2470,7 +2470,7 @@ describe("PrivacyScanItems", () => {
     assert.ok(items.length >= 4, `only ${items.length} privacy scan items`);
     assert.match(
       refusal[1],
-      /\bthe ballot id\b/,
+      /\bthis ballot's id\b/,
       "Rule 7 no longer refuses a URL with the ballot id",
     );
     assert.ok(
