@@ -14,13 +14,12 @@ A push is permanent, so `publish` is the last and strictest check. It scans twic
 
 **Step 6.3, the rendered page.** It refuses:
 
-- this ballot's and any other ballot's id and `private_strings`;
+- this ballot's and any other ballot's id and `private_strings`, a ZIP among them, since no address is stored ([ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md));
 - a private digit run, under the rules in ADR 0005;
-- any address, street line, label or ZIP from `addresses.yaml`;
 - the printed `title` of a contest with a `display_title`;
 - `<script`, any external `src` or `href` that is not a receipt link, and any key parameter or key value.
 
-It also reads a punycode link host back as Unicode, the way a browser shows it. Only the page's generated dates are skipped, and only for digit and ZIP checks. A match refuses the whole page and writes no file. `publish` reports each match by page line and class, and the researcher reads it with `publish --show`.
+It also reads a punycode link host back as Unicode, the way a browser shows it. Only the page's generated dates are skipped, and only for the digit-run checks, which cover a ZIP. A match refuses the whole page and writes no file. `publish` reports each match by page line and class, and the researcher reads it with `publish --show`.
 
 ## Considered Options
 
