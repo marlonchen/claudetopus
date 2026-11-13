@@ -7,7 +7,6 @@ const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
 const {
   BALLOT,
-  DEFAULT_ADDRESSES,
   DEFAULT_BALLOT,
   git,
   leaveUnreadableAddresses,
@@ -804,7 +803,7 @@ describe("ballot-check: arguments and Rule 8", () => {
     const outdated = [`${SETTINGS} settings-outdated`];
     data.write(SETTINGS, current.replace("Bash|Monitor|Read|Grep|", "Bash|"));
     assert.deepEqual(failed(await ballotCheck(data)), outdated);
-    data.write(SETTINGS, current.replace('      "Read(/addresses.yaml)",\n', ""));
+    data.write(SETTINGS, current.replace('      "Read(/**/private.yaml)",\n', ""));
     assert.deepEqual(failed(await ballotCheck(data)), outdated);
     data.write(SETTINGS, "{");
     assert.deepEqual(failed(await ballotCheck(data)), outdated);
@@ -812,7 +811,7 @@ describe("ballot-check: arguments and Rule 8", () => {
     assert.deepEqual(failed(await ballotCheck(data)), outdated);
 
     data.write(SETTINGS, current);
-    data.write(".gitattributes", "addresses.yaml -diff\n");
+    data.write(".gitattributes", "**/private.yaml -diff\n");
     assert.deepEqual(failed(await ballotCheck(data)), [".gitattributes private-diff-shown"]);
     fs.rmSync(data.file(".gitattributes"));
     assert.deepEqual(failed(await ballotCheck(data)), [".gitattributes private-diff-shown"]);
@@ -1046,22 +1045,7 @@ describe("ballot-check: private text", () => {
     assert.equal(result.stderr, "");
   });
 
-  // Value: protects=the Private text rule reports private-string and private-title only, and a leftover addresses.yaml adds no value to it; fails_when=ballot.yaml or ignored_lines are still scanned for an address, street line, label or ZIP from the file; why_new=ticket 27; seam=cli; no_claim=the leftover file's own refusal (ballot-check without addresses.yaml)
-  it("reports nothing a leftover addresses.yaml lists, in ballot.yaml or ignored_lines", async () => {
-    const data = setup({
-      addresses: DEFAULT_ADDRESSES,
-      ballot: `${edit("jurisdiction: XX supreme court", "jurisdiction: XX 99999 court")}# for addr-mom at 123 Elm Street\n`,
-      priv: `${PRIVATE}  - Return to 99999\n  - Mail to 123 Elm Street\n`,
-    });
-    const result = await ballotCheck(data);
-    assert.deepEqual(lines(result), [
-      "addresses.yaml addresses-leftover",
-      "- list-zips-then-delete",
-    ]);
-    assert.equal(result.status, 1);
-  });
-
-  // Value: protects=a ZIP kept only in private_strings fails ballot.yaml and ignored_lines as the ZIP class did, and only as a standalone token; fails_when=the Private text rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=another ballot's ZIP (ballot-check without addresses.yaml)
+  // Value: protects=a ZIP kept only in private_strings fails ballot.yaml and ignored_lines as the ZIP class did, and only as a standalone token; fails_when=the Private text rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=another ballot's ZIP (ballot-check: no address stored)
   it("fails a ZIP listed in private_strings, never one inside a longer digit run", async () => {
     const priv = (ignored) =>
       `${PRIVATE.replace("private_strings:\n", '$&  - "99999"\n')}  - ${ignored}\n`;
@@ -1083,10 +1067,10 @@ describe("ballot-check: private text", () => {
   });
 });
 
-describe("ballot-check without addresses.yaml", () => {
-  // Value: protects=ballot-check and --show run in a data repo that stores no address; fails_when=ballot-check still loads addresses.yaml, so its absence fails file-missing; why_new=ticket 27; seam=cli; no_claim=a leftover file (below)
-  it("passes, and --show passes, with no addresses.yaml", async () => {
-    const data = setup({ addresses: false });
+describe("ballot-check: no address stored", () => {
+  // Value: protects=ballot-check and --show run in a data repo that stores no address; fails_when=either loads an address file again, so its absence fails file-missing; why_new=ticket 27; seam=cli; no_claim=a leftover file (below)
+  it("passes, and --show passes, in a data repo that stores no address", async () => {
+    const data = setup();
     assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
     const shown = await runInTty("ballot-check", ["--show", BALLOT], {
       cwd: data.root,
@@ -1096,9 +1080,9 @@ describe("ballot-check without addresses.yaml", () => {
     assert.match(shown.stdout, /ballot-view\.md written/);
   });
 
-  // Value: protects=a leftover addresses.yaml, which ticket 28 stops guarding, never lingers unnoticed, and is never opened to say so; fails_when=a leftover file passes, is located by an entry's line, or is read (an unreadable one fails file-missing or yaml-invalid instead); why_new=ticket 27; seam=cli; no_claim=agent-bind and --brief (discovery.test.js), publish (fixture.test.js)
+  // Value: protects=a leftover addresses.yaml, which session-guard no longer guards (ticket 28), never lingers unnoticed, and is never opened to say so; fails_when=a leftover file passes, is located by an entry's line, or is read (an unreadable one fails file-missing or yaml-invalid instead); why_new=ticket 27; seam=cli; no_claim=agent-bind and --brief (discovery.test.js), publish (fixture.test.js)
   it("fails a leftover addresses.yaml by the file alone, never opening it, and writes no view", async () => {
-    const data = setup({ addresses: false });
+    const data = setup();
     assert.deepEqual(lines(await ballotCheck(data)), ["ballot-view.md written"]);
     leaveUnreadableAddresses(data);
     const result = await ballotCheck(data);
@@ -1117,10 +1101,9 @@ describe("ballot-check without addresses.yaml", () => {
     assert.ok(!data.exists(VIEW));
   });
 
-  // Value: protects=ballot.yaml and ignored_lines, which discovery sends to web searches, refuse another family member's ZIP or place name as the shared addresses.yaml once refused any address's ZIP; fails_when=the Private text rule reads this ballot's private_strings alone; why_new=ticket 27 (PR #54 review, D1), owner to confirm; seam=cli; no_claim=the sample-ballot accounting and ballot-id-private, which read this ballot's entries only
+  // Value: protects=ballot.yaml and ignored_lines, which discovery sends to web searches, refuse another family member's ZIP or place name, as the family's one address file once refused any address's ZIP; fails_when=the Private text rule reads this ballot's private_strings alone; why_new=ticket 27 (PR #54 review, D1), owner to confirm; seam=cli; no_claim=the sample-ballot accounting and ballot-id-private, which read this ballot's entries only
   it("fails another ballot's private string in ballot.yaml and ignored_lines, never naming it", async () => {
     const data = setup({
-      addresses: false,
       ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 88888 Lakeside court"),
       priv: `${PRIVATE}  - Return to 88888\n  - Lakeside Village hall\n`,
     });

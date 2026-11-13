@@ -10,10 +10,14 @@ const { CLASSES, refusalCode, scan } = require("../scripts/lib/privacy");
 
 const VALUES = {
   "ballot-id": ["xx-exampleton-1"],
-  "private-string": ["Springfield Township", "Pct 12", "BS-0412", "Precinct 2024", "Ballot A"],
-  address: ["123 Elm Street Apt 4, Springfield, XX 99999", "123 Elm Street"],
-  zip: ["99999"],
-  label: ["addr-mom"],
+  "private-string": [
+    "Springfield Township",
+    "Pct 12",
+    "BS-0412",
+    "Precinct 2024",
+    "Ballot A",
+    "Lincoln-Gym",
+  ],
   key: ["k3yV4lue0123456789"],
 };
 const ALL = Object.keys(CLASSES);
@@ -89,8 +93,8 @@ describe("privacy matcher: every normalization variant, refusing on any", () => 
   });
 
   it("decodes entities and double URL encoding", () => {
-    assert.deepEqual(classes("addr&#45;mom"), ["label"]);
-    assert.deepEqual(classes("addr%252Dmom"), ["label"]);
+    assert.deepEqual(classes("Lincoln&#45;Gym"), ["private-string"]);
+    assert.deepEqual(classes("Lincoln%252DGym"), ["private-string"]);
   });
 
   it("decodes every entity as browsers do, numeric ones without a `;` too", () => {
@@ -106,8 +110,8 @@ describe("privacy matcher: every normalization variant, refusing on any", () => 
     ]) {
       assert.deepEqual(classes(text), ["private-string"], text);
     }
-    assert.deepEqual(classes("addr&#45mom"), ["label"]);
-    assert.deepEqual(classes("addr&#x2dmom"), ["label"]);
+    assert.deepEqual(classes("Lincoln&#45Gym"), ["private-string"]);
+    assert.deepEqual(classes("Lincoln&#x2dGym"), ["private-string"]);
     // Page text reads a known name before other letters or digits; an attribute value would not.
     assert.deepEqual(classes("Pct&nbsp12"), ["private-string"]);
     assert.deepEqual(classes("Springfield&nbspTownship"), ["private-string"]);
@@ -147,7 +151,7 @@ describe("privacy matcher: digit runs, ZIPs and the ballot id", () => {
       "?precinct=2024",
       "?ballot=xx,exampleton,1",
       "?t=springfield&township",
-      "?addr=123+Elm+Street",
+      "?site=Lincoln+Gym",
     ]) {
       assert.notDeepEqual(classes(text), [], text);
     }
@@ -162,17 +166,8 @@ describe("privacy matcher: digit runs, ZIPs and the ballot id", () => {
     assert.deepEqual(classes("precinct-2024"), ["private-string"]);
   });
 
-  it("matches a ZIP only as a standalone 5-digit token", () => {
-    for (const text of ["?zip=99999", "XX 99999-1234", "zip99999", "９９９９９"]) {
-      assert.deepEqual(classes(text, { zip: ["99999"] }), ["zip"], text);
-    }
-    for (const text of ["1999990", "999990", "9999"]) {
-      assert.deepEqual(classes(text, { zip: ["99999"] }), [], text);
-    }
-  });
-
-  // Value: protects=a ZIP kept only in private_strings matches beside a letter, as the ZIP class does; fails_when=a private_strings digit run is not searched alone, or is searched with a word edge; why_new=ticket 28 deletes the ZIP-class test above, the only one naming zip99999; seam=lib; no_claim=the encoded and split spellings of a ZIP
-  it("matches a digits-only private string as it matches the ZIP class", () => {
+  // Value: protects=a ZIP kept only in private_strings matches as a standalone token, beside a letter too, as the ZIP class did; fails_when=a private_strings digit run is not searched alone, or is searched with a word edge; why_new=ticket 28 deleted the ZIP class and its test, the only other one naming zip99999; seam=lib; no_claim=the encoded and split spellings of a ZIP
+  it("matches a digits-only private string, a ZIP, only as a standalone token", () => {
     const values = { "private-string": ["99999"] };
     for (const text of ["?zip=99999", "XX 99999-1234", "zip99999", "99999th", "９９９９９"]) {
       assert.deepEqual(classes(text, values), ["private-string"], text);
@@ -198,23 +193,23 @@ describe("privacy matcher: digit runs, ZIPs and the ballot id", () => {
 
 describe("privacy matcher: what callers pass and get back", () => {
   it("checks only the classes the caller asks for", () => {
-    const text = "addr-mom at 123 Elm Street Apt 4, 99999";
-    assert.deepEqual(classes(text), ["address", "zip", "label"]);
-    assert.deepEqual(classes(text, VALUES, ["zip"]), ["zip"]);
+    const text = "Lincoln-Gym at xx-exampleton-1, k3yV4lue0123456789";
+    assert.deepEqual(classes(text), ["ballot-id", "private-string", "key"]);
+    assert.deepEqual(classes(text, VALUES, ["key"]), ["key"]);
   });
 
   it("returns lines and classes only, never the text", () => {
-    const matches = scan("ok\nsee Springfield\nTownship\nand addr-mom", VALUES, ALL);
+    const matches = scan("ok\nsee Springfield\nTownship\nand xx-exampleton-1", VALUES, ALL);
     assert.deepEqual(matches, [
       { line: 2, class: "private-string" },
-      { line: 4, class: "label" },
+      { line: 4, class: "ballot-id" },
     ]);
   });
 
   it("locates a match by its line after many replacements before it", () => {
-    const text = `${"A&amp;B ’x’ Ｑ\n".repeat(50)}see addr&#45;mom\n${"ok\n".repeat(5)}SPRINGFIELD township`;
+    const text = `${"A&amp;B ’x’ Ｑ\n".repeat(50)}see xx&#45;exampleton&#45;1\n${"ok\n".repeat(5)}SPRINGFIELD township`;
     assert.deepEqual(scan(text, VALUES, ALL), [
-      { line: 51, class: "label" },
+      { line: 51, class: "ballot-id" },
       { line: 57, class: "private-string" },
     ]);
   });
@@ -223,8 +218,8 @@ describe("privacy matcher: what callers pass and get back", () => {
     // A heap far below one number per UTF-16 unit for every fold (PR #9 review: 3.5 GB).
     const script = `
       const { scan } = require(${JSON.stringify(require.resolve("../scripts/lib/privacy"))});
-      const text = "Lorem ipsum dolor sit amet &amp; elit.\\n".repeat(260000) + "addr-mom";
-      const hits = scan(text, { label: ["addr-mom"] }, ["label"]);
+      const text = "Lorem ipsum dolor sit amet &amp; elit.\\n".repeat(260000) + "xx-exampleton-1";
+      const hits = scan(text, { "ballot-id": ["xx-exampleton-1"] }, ["ballot-id"]);
       process.stdout.write(JSON.stringify(hits));
     `;
     const run = spawnSync(process.execPath, ["--max-old-space-size=400", "-e", script], {
@@ -232,7 +227,7 @@ describe("privacy matcher: what callers pass and get back", () => {
       env: process.env,
     });
     assert.strictEqual(run.status, 0, run.stderr.slice(0, 500));
-    assert.deepEqual(JSON.parse(run.stdout), [{ line: 260001, class: "label" }]);
+    assert.deepEqual(JSON.parse(run.stdout), [{ line: 260001, class: "ballot-id" }]);
   });
 
   it("matches a key value anywhere, as written", () => {
@@ -241,7 +236,7 @@ describe("privacy matcher: what callers pass and get back", () => {
   });
 
   it("skips values with no letter or digit instead of matching every separator", () => {
-    const values = { label: ["", "   "], "private-string": ["­", ".", "-", " / "] };
+    const values = { "ballot-id": ["", "   "], "private-string": ["­", ".", "-", " / "] };
     assert.deepEqual(classes("https://a.example/x-y/spring­field", values), []);
   });
 
@@ -250,20 +245,20 @@ describe("privacy matcher: what callers pass and get back", () => {
     assert.deepEqual(classes("anything", { key: ["  "] }), []);
   });
 
-  it("skips only digit-run and ZIP searches wholly inside a skip range", () => {
+  it("skips only digit-run searches wholly inside a skip range", () => {
     // "12 Pct" is only a digit-run search; the whole entry "Pct 12" is not one.
     const text = "font 99999 and 0412 near 12 Pct | Springfield Township | 99999";
     const skip = [[0, text.indexOf("|")]];
-    const values = { ...VALUES, "private-string": [...VALUES["private-string"], "4821"] };
+    const values = { ...VALUES, "private-string": [...VALUES["private-string"], "4821", "99999"] };
     // Before the bar: the ZIP, the 4-digit run and 12 Pct are all digit-run checks.
-    assert.deepEqual(classes(text.slice(0, skip[0][1]), values), ["zip", "private-string"]);
+    assert.deepEqual(classes(text.slice(0, skip[0][1]), values), ["private-string"]);
     const found = scan(text, values, ALL, { skip, spans: true });
     const at = found.flatMap((m) => m.spans.map(([start]) => [m.class, start]));
     assert.deepEqual(at, [
-      ["zip", text.lastIndexOf("99999")],
       ["private-string", text.indexOf("Springfield")],
+      ["private-string", text.lastIndexOf("99999")],
     ]);
-    const only = (t, s) => scan(t, values, ["private-string", "zip"], { skip: s });
+    const only = (t, s) => scan(t, values, ["private-string"], { skip: s });
     // A whole entry with letters is never skipped; one of digits alone is a digit run.
     assert.equal(only("Springfield Township", [[0, 20]]).length, 1);
     assert.equal(only("x 4821 y", [[0, 8]]).length, 0);
@@ -273,19 +268,19 @@ describe("privacy matcher: what callers pass and get back", () => {
   });
 
   it("returns each match's span in the original text when asked", () => {
-    const text = "one\nsee addr&#45;mom and ADDR-MOM\nz";
-    const [match] = scan(text, VALUES, ["label"], { spans: true });
+    const text = "one\nsee xx&#45;exampleton&#45;1 and XX-EXAMPLETON-1\nz";
+    const [match] = scan(text, VALUES, ["ballot-id"], { spans: true });
     assert.equal(match.line, 2);
     assert.deepEqual(
       match.spans.map(([start, end]) => text.slice(start, end)),
-      ["addr&#45;mom", "ADDR-MOM"],
+      ["xx&#45;exampleton&#45;1", "XX-EXAMPLETON-1"],
     );
   });
 
   it("refuses with the first class in report order", () => {
     assert.equal(
       refusalCode([
-        { line: 1, class: "label" },
+        { line: 1, class: "private-string" },
         { line: 1, class: "ballot-id" },
       ]),
       "private-ballot-id",

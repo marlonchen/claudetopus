@@ -2,7 +2,6 @@
 # from git's plain output: `git diff`, `git log -p`, `git show` and `git grep`
 # print no line of them, unless told to with --text or -a (README.md, Data-repo
 # settings).
-addresses.yaml -diff
 **/private.yaml -diff
 **/sources/_ballot/** -diff
 **/unfetchable.md -diff

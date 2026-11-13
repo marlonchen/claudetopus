@@ -2,13 +2,7 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const {
-  BALLOT,
-  DEFAULT_ADDRESSES,
-  DEFAULT_BALLOT,
-  ZIPLESS_ADDRESSES,
-  ZIP_PRIVATE,
-} = require("./harness");
+const { BALLOT, DEFAULT_BALLOT, ZIP_PRIVATE } = require("./harness");
 const {
   COUNTY_PAGE,
   PLAIN,
@@ -357,8 +351,8 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     `${COUNTY}- match: springfield-township.example.org\n  tier: T2\n  owner: third-party\n  source: X\n`,
     "tiers.yaml:5 private-string match\n",
   );
-  // Value: protects=a ZIP kept only in private_strings fails a match or source as the ZIP class did, and only as a standalone token; fails_when=the Tiers rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP out of addresses.yaml; seam=cli; no_claim=none
-  const ZIP_ONLY = { private: ZIP_PRIVATE, addresses: ZIPLESS_ADDRESSES };
+  // Value: protects=a ZIP kept only in private_strings fails a match or source as the ZIP class did, and only as a standalone token; fails_when=the Tiers rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=none
+  const ZIP_ONLY = { private: ZIP_PRIVATE };
   refusesTiers(
     "a match holding a ZIP listed in private_strings",
     `${COUNTY}- match: example.org/zip/99999\n  tier: T2\n  owner: third-party\n  source: X\n`,
@@ -383,8 +377,8 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     );
     assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
   });
-  // Value: protects=the Tiers rule reads every ballot's private_strings and only them, so a leftover addresses.yaml no longer fails a match or source; fails_when=the check reads one ballot's entries, or still reports an address, label or ZIP class; why_new=ticket 26; seam=cli; no_claim=ballot-check's Tiers rule (ballot-check.test.js)
-  it("fails a match holding another ballot's private string, and no address, label or ZIP", async () => {
+  // Value: protects=the Tiers rule reads every ballot's private_strings; fails_when=the check reads one ballot's entries; why_new=ticket 26; seam=cli; no_claim=ballot-check's Tiers rule (ballot-check.test.js)
+  it("fails a match holding another ballot's private string", async () => {
     const leak = repo({
       tiers: `${COUNTY}- match: lakeside-village.example.org\n  tier: T2\n  owner: third-party\n  source: X\n`,
     });
@@ -395,18 +389,6 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     const refused = await fetchVia(leak, {}, PLAIN);
     assert.equal(refused.stdout, "tiers.yaml:5 private-string match\n");
     assert.deepEqual(refused.seen, []);
-
-    // A leftover addresses.yaml listing addr-mom, 123 Elm Street and 99999.
-    const data = repo({
-      addresses: DEFAULT_ADDRESSES,
-      tiers: `${COUNTY}- match: addr-mom.example.org/123-elm-street\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
-    });
-    const result = await fetchVia(
-      data,
-      { "https://county.example.gov/": { body: COUNTY_PAGE } },
-      PLAIN,
-    );
-    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
   });
   // Value: protects=another ballot's unreadable private.yaml stops the fetch, unlocated, with check-each-ballot; fails_when=loadPrivateValues skips or no longer throws another ballot's private.yaml failure; why_new=ticket 26 moves this stop from loadTiers to loadPrivateValues; seam=cli; no_claim=none
   it("stops at another ballot's unreadable private.yaml, read for the URL check, with check-each-ballot", async () => {
