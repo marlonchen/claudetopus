@@ -792,7 +792,7 @@ describe("ballot-check: arguments and Rule 8", () => {
     assert.deepEqual(lines(await ballotCheck(data)), ["publish.yaml guard-no-publish-yaml"]);
   });
 
-  // Value: protects=Rule 5's enforcement after an upgrade, which replaces session-guard but neither of these data-repo files; fails_when=a repo missing a deny rule, a matcher tool or the attributes file passes; why_new=nothing read either file, so Read and Grep went unhooked with no signal; seam=subprocess; no_claim=a hook command the researcher repointed at another script
+  // Value: protects=Rule 5's enforcement after an upgrade, which replaces session-guard but neither of these data-repo files; fails_when=a repo missing a deny rule, a matcher tool or the attributes file passes, or one without the history-only attributes line fails; why_new=nothing read either file, so Read and Grep went unhooked with no signal; seam=subprocess; no_claim=a hook command the researcher repointed at another script
   it("fails until the data repo holds the current settings and attributes", async () => {
     const SETTINGS = ".claude/settings.json";
     const failed = (result) => lines(result).filter((line) => /^\.(claude|gitattr)/.test(line));
@@ -816,7 +816,11 @@ describe("ballot-check: arguments and Rule 8", () => {
     fs.rmSync(data.file(".gitattributes"));
     assert.deepEqual(failed(await ballotCheck(data)), [".gitattributes private-diff-shown"]);
     const attributes = fs.readFileSync(path.join(SKILL_DIR, "data-repo-gitattributes"), "utf8");
-    for (const rule of attributes.split("\n").filter((line) => line.endsWith(" -diff"))) {
+    const rules = (text) => text.split("\n").filter((line) => line.endsWith(" -diff"));
+    // The second block keeps a deleted file's history hidden; the check does not require it.
+    const [checked, history] = attributes.split("\n\n");
+    assert.equal(rules(history).length, 1);
+    for (const rule of rules(checked)) {
       data.write(".gitattributes", attributes.replace(`${rule}\n`, ""));
       assert.deepEqual(
         failed(await ballotCheck(data)),
@@ -824,6 +828,8 @@ describe("ballot-check: arguments and Rule 8", () => {
         rule,
       );
     }
+    data.write(".gitattributes", `${checked}\n`);
+    assert.deepEqual(failed(await ballotCheck(data)), []);
   });
 
   // Value: protects=Rule 5 and ADR 0009: session-guard refuses these files by name, and git's output is the plain way to print them without one; fails_when=plain git grep, git diff, git show or git log -p prints a line of the sample ballot, downloads/ or unfetchable.md; why_new=the attributes held only the two private files, so git grep Elm printed all three; seam=subprocess; no_claim=git told to print binary files (ADR 0003, Limits)

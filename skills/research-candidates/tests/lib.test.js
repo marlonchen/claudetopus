@@ -499,6 +499,26 @@ describe("each command's output codes are the ones its reference lists", () => {
   });
 });
 
+describe("ballot-check: the leftover addresses.yaml refusal", () => {
+  // Value: protects=ticket 26 criterion 1, no fetch-path script opens a leftover file when it is present; fails_when=any script but ballot-check names the file, or ballot-check names it outside the leftover check; why_new=the CLI tests beside an unreadable file went with the loader (ticket 28); seam=none; no_claim=a script that builds the name from parts
+  it("is the only script code that names the file, and names it only to find it", () => {
+    const scripts = path.join(SKILL_DIR, "scripts");
+    const naming = fs
+      .readdirSync(scripts, { recursive: true })
+      .filter((rel) => fs.statSync(path.join(scripts, rel)).isFile())
+      .filter((rel) => /addresses\.yaml/i.test(fs.readFileSync(path.join(scripts, rel), "utf8")));
+    assert.deepEqual(naming, [path.join("lib", "ballot-check.js")]);
+    const lines = read("scripts/lib/ballot-check.js")
+      .split("\n")
+      .filter((line) => /addresses\.yaml/i.test(line))
+      .map((line) => line.trim());
+    assert.deepEqual(lines, [
+      'if (fs.lstatSync(path.join(root, "addresses.yaml"), { throwIfNoEntry: false })) {',
+      'new Failure("addresses.yaml", "addresses-leftover", undefined, "list-zips-then-delete"),',
+    ]);
+  });
+});
+
 describe("snapshot-format.md, Manifest: the ballot lock", () => {
   it("is released only while this run still owns it", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-lock-"));
