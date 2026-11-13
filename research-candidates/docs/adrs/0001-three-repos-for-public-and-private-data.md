@@ -21,4 +21,4 @@ The skill's source is public, the research data locates voters, and the publishe
 
 - The slug stops someone guessing a page's URL, and it hides nothing else. `ballots` is public, so anyone can list every slug and read each page's source on github.com, and `noindex` covers only the `github.io` URL.
 - A page that is changed or removed stays readable in the public history. A page must therefore carry only facts that are safe to publish for good.
-- Nothing in the data is encrypted at rest. The private repo's access control and local file permissions are the only protection for `addresses.yaml`, `private.yaml` and saved sample ballots.
+- Nothing in the data is encrypted at rest. The private repo's access control and local file permissions are the only protection for `private.yaml` and saved sample ballots. No address is stored there ([ADR 0017](0017-no-address-is-stored-the-zip-is-a-private-string.md)), so `addresses.yaml`, which this once named too, is gone.
