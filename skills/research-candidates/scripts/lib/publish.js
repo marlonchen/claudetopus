@@ -7,7 +7,8 @@
 // source name that holds private text drops its contest, and the page is
 // rendered, scanned and only then written to site/index.html (page.md).
 // Output is `location code [key]` lines only (Rule 5); `--show`, researcher
-// only, adds the text each page refusal matched. `--push` and
+// only, adds the text each page refusal matched and the paths an
+// installed-skill refusal locates by area. `--push` and
 // `--device-check`, researcher only too, go on to copy the page into the
 // Pages repo and push it after their yes (steps 6.4-6.6, pages.js).
 
@@ -132,7 +133,8 @@ const refusalLines = (html, { line, code, spans }, show) => {
 // The gates, the scan, then the page: refuses with Failures, or returns the
 // drop and contest lines ending `site/index.html written`, with the page, the
 // slug and each contest's title and readiness for a push. `refresh` keeps the
-// ballot lock fresh; `show` adds each page refusal's matched text.
+// ballot lock fresh; `show` adds each page refusal's matched text and the
+// paths an installed-skill refusal locates by area.
 const publish = (root, ballot, ballotDir, refresh, show) => {
   // A page from an earlier run never outlives a refused one.
   fs.rmSync(path.join(siteDir(ballotDir), "index.html"), { force: true });
@@ -140,7 +142,7 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
   load("yaml");
   const config = readPublishYaml(root);
   const displayName = config.display_name;
-  ballotGate(root, ballot, ballotDir, config, refresh);
+  ballotGate(root, ballot, ballotDir, config, refresh, show);
   // Read once: the page shows the contests ready judged.
   const data = readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS();
   const contests = contestsOf(data);

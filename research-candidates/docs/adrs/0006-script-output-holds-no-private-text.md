@@ -10,7 +10,7 @@ The model reads whatever a script prints, so printing a match would hand it the 
 
 - [`output.js`](../../../skills/research-candidates/scripts/lib/output.js) gives every command one shape: `location code [key]`, with an optional fixed hint code. An unexpected error prints `- internal-error`.
 - [`privacy.js`](../../../skills/research-candidates/scripts/lib/privacy.js) returns only `{ line, class }` unless a caller asks for offsets.
-- Locations are chosen to carry nothing. A remote is named `remote:<name>`, never its URL. A failure in another ballot's file is located `-`, so no other ballot's id appears. `uncommitted` names an area, never a file, since a planted file name can take its name from private text.
+- Locations are chosen to carry nothing. A remote is named `remote:<name>`, never its URL. A failure in another ballot's file is located `-`, so no other ballot's id appears. `uncommitted` names an area, never a file, since a planted file name can take its name from private text. `publish`'s installed-skill check names a path only when it comes from the skill's public source tree (`skill-changed`, `skill-missing`); an extra file, a symlink or a second copy of the skill, found only on disk, is located by its area alone (`.claude/skills/research-candidates skill-extra`, `skill-symlink`, `.claude/skills skill-duplicate`), and only `publish --show` lists the paths.
 - `session-guard` prints only `<tool> <code>`, with `-` for a tool name that is not a plain word.
 - `session-guard` refuses a main-session call naming `unfetchable.md` (`session-file-denied`), and `review-list --refused-hosts` prints hosts, or a count of hosts it cannot show, so the session has no need to read the raw log.
 

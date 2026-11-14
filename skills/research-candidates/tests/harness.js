@@ -36,9 +36,11 @@ const write = (file, text) => {
 // and logs each call's repo to GH_STUB_LOG. A repo missing from the file fails
 // like a repo gh cannot see; `visibility: ""` or `id: ""` prints null, as jq
 // does for a field gh did not return. It also answers the source repo's
-// calls by its recorded id (`repositories/<id>/...`, publish's installed-skill
-// check) from the git repo at GH_STUB_SOURCE, as GitHub's JSON, logging each
-// endpoint; with no GH_STUB_SOURCE they fail like an unreachable GitHub.
+// calls by its recorded id (`gh api --hostname github.com repositories/<id>/...`,
+// publish's installed-skill check) from the git repo at GH_STUB_SOURCE, as
+// GitHub's JSON, logging each call's whole argv; with no GH_STUB_SOURCE, or
+// any other argv, they fail like an unreachable GitHub. GH_STUB_SOURCE_SLEEP
+// makes each of them wait that many milliseconds first, as a stalled gh would.
 const GH_STUB = `#!/usr/bin/env node
 "use strict";
 const fs = require("node:fs");
@@ -46,11 +48,14 @@ const { spawnSync } = require("node:child_process");
 const repos = JSON.parse(fs.readFileSync(process.env.GH_STUB_FILE, "utf8"));
 const args = process.argv.slice(2);
 const fail = (msg) => { process.stderr.write(msg + "\\n"); process.exit(1); };
-const source = (endpoint) => {
-  fs.appendFileSync(process.env.GH_STUB_LOG, endpoint + "\\n");
+const source = () => {
+  fs.appendFileSync(process.env.GH_STUB_LOG, args.join(" ") + "\\n");
+  const sleep = Number(process.env.GH_STUB_SOURCE_SLEEP || 0);
+  if (sleep) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleep);
   const dir = process.env.GH_STUB_SOURCE;
-  const m = /^repositories\\/${SOURCE_REPO_ID}(\\/.*)?$/.exec(endpoint);
-  if (!dir || !m) fail("HTTP 404: Not Found");
+  const host = args.length === 4 && args[1] === "--hostname" && args[2] === "github.com";
+  const m = /^repositories\\/${SOURCE_REPO_ID}(\\/.*)?$/.exec(args[3]);
+  if (!dir || !host || !m) fail("HTTP 404: Not Found");
   const git = (...a) => {
     const r = spawnSync("git", a, { cwd: dir });
     if (r.status !== 0) fail("HTTP 404: Not Found");
@@ -87,7 +92,7 @@ const source = (endpoint) => {
   }
   process.exit(0);
 };
-if (args[0] === "api" && args.length === 2 && /^repositories\\//.test(args[1])) source(args[1]);
+if (args[0] === "api" && args.some((a) => /^repositories\\//.test(a))) source();
 if (args[0] !== "api" || !/^repos\\/[^/]+\\/[^/]+$/.test(args[1] || "")) {
   fail("gh stub: unexpected call: " + args.join(" "));
 }
@@ -256,8 +261,9 @@ const makeDataRepo = (options = {}) => {
 // local git repo standing in for marlonchen/claudetopus. `pinned` holds a
 // small skill under skills/research-candidates; `main`, the default branch,
 // is one commit past it, outside the skill; `side` is a commit only on
-// another branch, as a fork's would be. Built once per test file, removed
-// when it exits.
+// another branch, as a fork's would be; `ahead` is a commit on a branch cut
+// from main's tip, which main has not reached yet. Built once per test file,
+// removed when it exits.
 const SKILL_FILES = {
   "SKILL.md": `---
 name: research-candidates
@@ -291,19 +297,24 @@ const sourceRepo = () => {
   const main = commit({ "README.md": "# claudetopus, later\n" });
   git(dir, "checkout", "-q", "-b", "side", pinned);
   const side = commit(skill({ "references/side.md": "# Side\n" }));
+  git(dir, "checkout", "-q", "-b", "next", main);
+  const ahead = commit({ "README.md": "# claudetopus, next\n" });
   git(dir, "checkout", "-q", "main");
-  source = { dir, pinned, main, side };
+  source = { dir, pinned, main, side, ahead };
   return source;
 };
 
-// SKILL.md as gh skill install writes it: the front matter rewritten with its
-// keys sorted and a `metadata` key added, and the blank line after it dropped.
-const INSTALLED_SKILL_MD = (commit) => `---
+// SKILL.md as gh skill install writes it (gh 2.103.3): the front matter
+// rewritten with its keys sorted and the five keys gh adds under `metadata`,
+// and the blank line after it dropped. `tree` is the skill directory's tree.
+const INSTALLED_SKILL_MD = (commit, tree) => `---
 description: 'Candidate research, for publish''s tests. Triggers: ''research my ballot''.'
 metadata:
     github-path: skills/research-candidates
+    github-pinned: ${commit}
     github-ref: ${commit}
     github-repo: https://github.com/marlonchen/claudetopus
+    github-tree-sha: ${tree}
 name: research-candidates
 ---
 # Research Candidates
@@ -317,8 +328,9 @@ The rules.
 const SKILL = ".claude/skills/research-candidates";
 const installSkill = (data) => {
   const { dir, pinned } = sourceRepo();
+  const tree = git(dir, "rev-parse", `${pinned}:skills/research-candidates`).trim();
   for (const [rel, text] of Object.entries(SKILL_FILES))
-    data.write(`${SKILL}/${rel}`, rel === "SKILL.md" ? INSTALLED_SKILL_MD(pinned) : text);
+    data.write(`${SKILL}/${rel}`, rel === "SKILL.md" ? INSTALLED_SKILL_MD(pinned, tree) : text);
   const yaml = data.exists("publish.yaml") ? data.read("publish.yaml") : "";
   data.write(
     "publish.yaml",

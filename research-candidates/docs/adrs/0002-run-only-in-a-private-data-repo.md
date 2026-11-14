@@ -29,4 +29,6 @@ A URL that is not on GitHub, a `gh` error or empty output counts as public. Fail
 - The guard runs when a script starts. It does not stop a later `git remote add`, a `git push` from another tool, or the repo being made public between runs.
 - A repo with no remotes passes, because the check loops over remotes. Such a repo has nowhere to push.
 - Every data command needs `gh` and network access when the repo has a remote, or it refuses.
-- `publish` refuses an installed skill that differs from its tree at `skill_commit` (SKILL.md step 6.1), read through `gh api repositories/<id>/...` by the recorded id. The check runs inside `publish`, so it confirms the rules running in the data repo are the ones that were reviewed only against accidental drift, never against a hostile edit to `publish` itself.
+- `publish` refuses an installed skill that differs from its tree at `skill_commit` (SKILL.md step 6.1), read through `gh api repositories/<id>/...` by the recorded id. The check runs inside `publish`, so it confirms that the installed skill directory is the one that was reviewed only against accidental drift, never against a hostile edit to `publish` itself.
+- The check covers the data repo's installed copy at `.claude/skills/research-candidates`, not the copy `publish` happens to run from. A user-scope install or another clone runs unchecked code while the project copy passes.
+- The agent definitions copied into `.claude/agents/` and the npm dependency cache under `~/.cache/research-candidates/` are not checked.
