@@ -1207,6 +1207,12 @@ describe("FailureCodes", () => {
       "john-smith-2",
       // A Claude Code SKILL.md front-matter key the ballot gate names, not a failure code.
       "allowed-tools",
+      // The keys gh skill install adds under SKILL.md's `metadata`, which the ballot gate names.
+      "github-path",
+      "github-pinned",
+      "github-ref",
+      "github-repo",
+      "github-tree-sha",
       // The Rule 7 agents, by the names their definitions in agents/ give them.
       ...fs.readdirSync(path.join(__dirname, "..", "agents")).map((f) => f.replace(/\.md$/, "")),
       exampleBallotId(),
@@ -2145,7 +2151,8 @@ describe("InstallCommands", () => {
     assert.match(gate, /every file on disk/, "the gate misses files added after install");
     assert.match(gate, /symlink/, "the gate allows symlinks");
     // Run 8 review: a Finder .DS_Store must not refuse election-week publish as if tampered with,
-    // and any other extra file must be named so the researcher can remove it.
+    // and any other extra file must be named so the researcher can remove it, but only to
+    // --show, since a name found on disk can hold private text (PR #60 review, M1).
     assert.match(
       gate,
       /except regular files that are operating-system and editor leftovers \(`\.DS_Store`/,
@@ -2153,13 +2160,15 @@ describe("InstallCommands", () => {
     assert.match(gate, /nothing under it may be a symlink/, "a skipped leftover may be a symlink");
     // The uncommitted-changes check comes first, so it must skip the same leftovers.
     assert.match(gate, /no uncommitted changes, apart from the leftover files named below/);
-    assert.match(gate, /any other extra file refuses with its path named/);
+    assert.match(gate, /any other extra file refuses, located by the skill directory alone/);
+    assert.match(gate, /only the researcher sees each path, with `publish --show` \(Rule 5\)/);
     // gh skill install rewrites SKILL.md's front matter, so that file is compared by content.
     assert.match(gate, /front matter/, "SKILL.md can never hash-match after install");
-    // gh drops the blank line after the front matter and adds only `metadata` (seen on both a
-    // --from-local and a --pin install); any other key, such as allowed-tools, must fail.
+    // gh drops the blank line after the front matter and adds only five `github-*` keys under
+    // `metadata` (seen on both a --from-local and a --pin install); any other key, such as
+    // allowed-tools, must fail, even under `metadata`.
     assert.match(gate, /blank lines at its start ignored/, "every real install fails the body");
-    assert.match(gate, /once the `metadata` key the install adds is removed/);
+    assert.match(gate, /once the five keys the install adds under `metadata`/);
     assert.match(gate, /`allowed-tools`, fails/, "added front matter keys pass the gate");
     // A SHA that exists only in a fork is served by the parent repo's API too.
     assert.match(gate, /reachable from that repo's default branch/, "fork-only commits pass");
