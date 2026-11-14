@@ -137,7 +137,7 @@ const plainFetch = (argv, { keepShort = false } = {}) =>
     };
     // Every spelling, before tiers.yaml is read, so a private URL never reaches the tier lookup.
     checkPrivate(spellings(args.url, args.given));
-    const entries = loadTiers(root, values);
+    const entries = loadTiers(root, values, args.ballot);
 
     // An Unfetchable pages rule is logged under the URL given, since that is
     // the source that could not be saved; any other failure under its hop.

@@ -2,6 +2,8 @@
 
 const assert = require("node:assert");
 const { afterEach, describe, it } = require("node:test");
+const { TYPE_KEYS } = require("../scripts/lib/ballot-check");
+const { SECTIONS } = require("../scripts/lib/constants");
 const { BALLOT, DEFAULT_BALLOT, makeDataRepo, runCli } = require("./harness");
 
 // ballot.yaml's one contest model (data-files.js): every reader judges a
@@ -45,6 +47,7 @@ const READERS = [
     ["--searched", BALLOT, "us-house-07", "john-sample", "1"],
     `${BALLOT}/ballot.yaml ballot-invalid`,
   ],
+  ["review-list", [BALLOT, "us-house-07"], "ballot.yaml ballot-invalid"],
 ];
 
 // Feed `ballot` to every reader: ballot-check reports `located`, each other
@@ -64,6 +67,12 @@ const everyReaderFails = async (ballot, located) => {
   assert.ok(!data.exists(`${BALLOT}/search-log/us-house-07.tsv`), "a search log was written");
   assert.ok(!data.exists(`${BALLOT}/sources/us-house-07`), "a snapshot was saved");
 };
+
+describe("contest model: the contest types", () => {
+  it("are the same three in ballot-check's keys and the model's sections", () => {
+    assert.deepEqual(Object.keys(TYPE_KEYS).sort(), Object.keys(SECTIONS).sort());
+  });
+});
 
 describe("contest model: the PR #16 divergences agree in every reader", () => {
   it("fails a whitespace-only name", async () => {

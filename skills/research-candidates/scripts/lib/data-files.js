@@ -82,8 +82,10 @@ const isMap = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 // fault, by id in ballot order, each { id, type, officeType, blocks, subjects,
 // notResearched }: blocks are the article's, in order (article-format.md),
 // each { name, subject, sections }; subjects the candidate or official ids;
-// notResearched the sections not_researched names, `all` resolved.
-const parseContests = (data, report) => {
+// notResearched the sections not_researched names, `all` resolved. `people`,
+// when given, also gets each candidate's or official's id that is an id and
+// unique in its contest, even in a contest with another fault.
+const parseContests = (data, report, people) => {
   const contests = new Map();
   if (!Array.isArray(data?.contests) || data.contests.length === 0) {
     report(["contests"], "ballot-invalid");
@@ -134,7 +136,10 @@ const parseContests = (data, report) => {
       if (typeof value.id !== "string" || !ID_PATTERN.test(value.id))
         fault([...pkeys, "id"], "id-invalid");
       else if (subjectIds.has(value.id)) fault([...pkeys, "id"], "id-duplicate");
-      else subjectIds.add(value.id);
+      else {
+        subjectIds.add(value.id);
+        people?.add(value.id);
+      }
       if (!isText(value.name)) fault([...pkeys, "name"], "ballot-invalid");
       return value;
     };
@@ -198,6 +203,13 @@ const contestsOf = (data, location = "ballot.yaml") => {
 const loadContests = (ballotDir, location = "ballot.yaml") =>
   contestsOf(readYamlDocument(path.join(ballotDir, "ballot.yaml"), location).doc.toJS(), location);
 
+// parseContests' contests of ballot.yaml as read (`data`) with no fault, or
+// null when it has no `contests` list: what a script reads of a ballot.yaml
+// it does not check, so a half-typed contest stops no other work. ballot-check
+// on that ballot locates the faults.
+const faultFreeContests = (data) =>
+  Array.isArray(data?.contests) ? parseContests(data, () => {}) : null;
+
 // The printed titles of contests with a display_title, from ballot.yaml as read.
 const hiddenTitles = (data) =>
   (Array.isArray(data?.contests) ? data.contests : [])
@@ -252,21 +264,39 @@ const tiersPrivacy = (
   return failures;
 };
 
+// The candidate and official ids of every ballot, the owners tiers.yaml may
+// name: each id parseContests accepts, even in a contest with another fault,
+// so a half-typed ballot.yaml stops no fetch. A ballot.yaml with no contests
+// list fails ballot-invalid, located by the file for the current ballot,
+// `ballot`. Another ballot's id never reaches this run's output, so its
+// failures are located `-` and followed by check-each-ballot.
+const ownerIds = (root, ballot) => {
+  const people = new Set();
+  for (const other of ballotDirs(root)) {
+    if (!fs.existsSync(path.join(root, other, "ballot.yaml"))) continue;
+    const location = other === ballot ? `${ballot}/ballot.yaml` : "-";
+    try {
+      const data = readYamlDocument(path.join(root, other, "ballot.yaml"), location).doc.toJS();
+      if (!Array.isArray(data?.contests)) throw new Failure(location, "ballot-invalid");
+      parseContests(data, () => {}, people);
+    } catch (error) {
+      if (error instanceof Failure && other !== ballot) error.hint = "check-each-ballot";
+      throw error;
+    }
+  }
+  return people;
+};
+
 // tiers.yaml entries, each { match, parsed, tier, statements_only, owner, source }.
 // Refuses the whole file on any bad entry (source-tiers.md), and on a match or
 // source holding a private value of any ballot (`values`, loadPrivateValues').
-const loadTiers = (root, values) => {
+// `ballot` is the current ballot (ownerIds).
+const loadTiers = (root, values, ballot) => {
   const { doc, lineCounter } = readYamlDocument(path.join(root, "tiers.yaml"), "tiers.yaml");
   if (!load("yaml").isSeq(doc.contents)) {
     throw new Failure("tiers.yaml", "tiers-invalid");
   }
-  const people = new Set();
-  for (const ballot of ballotDirs(root)) {
-    if (!fs.existsSync(path.join(root, ballot, "ballot.yaml"))) continue;
-    // Another ballot's id never reaches this run's output, so its failures are unlocated.
-    for (const contest of loadContests(path.join(root, ballot), "-").values())
-      for (const id of contest.subjects) people.add(id);
-  }
+  const people = ownerIds(root, ballot);
   const entries = doc.contents.items.map((node) => {
     const at = `tiers.yaml:${lineCounter.linePos(node.range[0]).line}`;
     const entry = node.toJSON?.();
@@ -377,6 +407,7 @@ module.exports = {
   ballotEntries,
   contestsOf,
   familyPrivateValues,
+  faultFreeContests,
   hiddenTitles,
   isDir,
   loadContests,

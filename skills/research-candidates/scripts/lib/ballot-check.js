@@ -18,7 +18,7 @@ const { checkPrivacy } = require("./ballot-privacy");
 const { dataRepoSetupFailures } = require("./data-repo-setup");
 const {
   ballotEntries,
-  contestsOf,
+  faultFreeContests,
   isDir,
   loadPrivate,
   parseContests,
@@ -308,13 +308,10 @@ const otherBallots = (root, ballot) => {
       codes.push(error.code);
       continue;
     }
-    // Read by the rules ballot-check holds this ballot to (data-files.js).
-    let contests = null;
-    try {
-      if (isMap(data)) contests = contestsOf(data, "-");
-    } catch (error) {
-      if (!(error instanceof Failure)) throw error;
-    }
+    // Its contests read by the rules ballot-check holds this ballot to
+    // (data-files.js); a faulted one is skipped, so a half-typed ballot.yaml
+    // stops no other ballot's check, and its own check locates the fault.
+    const contests = isMap(data) ? faultFreeContests(data) : null;
     if (!contests) {
       codes.push("ballot-invalid");
       continue;
@@ -577,4 +574,4 @@ const main = (argv) =>
     return withLock(ballotDir, () => check(root, ballot, ballotDir, show));
   });
 
-module.exports = { ballotIdPrefix, check, main };
+module.exports = { TYPE_KEYS, ballotIdPrefix, check, main };
