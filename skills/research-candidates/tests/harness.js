@@ -11,6 +11,7 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
+const { SOURCE_REPO_ID } = require("../scripts/lib/constants");
 
 const SKILL_DIR = path.join(__dirname, "..");
 const SCRIPTS_DIR = path.join(SKILL_DIR, "scripts");
@@ -30,17 +31,68 @@ const write = (file, text) => {
   fs.writeFileSync(file, text);
 };
 
-// The stub gh answers only the one call Rule 8 makes, from a JSON file of
+// The stub gh answers the one call Rule 8 makes, from a JSON file of
 // { "<owner>/<repo>": { visibility, id, sourceId, fail } } keyed in lower case,
 // and logs each call's repo to GH_STUB_LOG. A repo missing from the file fails
 // like a repo gh cannot see; `visibility: ""` or `id: ""` prints null, as jq
-// does for a field gh did not return.
+// does for a field gh did not return. It also answers the source repo's
+// calls by its recorded id (`gh api --hostname github.com repositories/<id>/...`,
+// publish's installed-skill check) from the git repo at GH_STUB_SOURCE, as
+// GitHub's JSON, logging each call's whole argv; with no GH_STUB_SOURCE, or
+// any other argv, they fail like an unreachable GitHub. GH_STUB_SOURCE_SLEEP
+// makes each of them wait that many milliseconds first, as a stalled gh would.
 const GH_STUB = `#!/usr/bin/env node
 "use strict";
 const fs = require("node:fs");
+const { spawnSync } = require("node:child_process");
 const repos = JSON.parse(fs.readFileSync(process.env.GH_STUB_FILE, "utf8"));
 const args = process.argv.slice(2);
 const fail = (msg) => { process.stderr.write(msg + "\\n"); process.exit(1); };
+const source = () => {
+  fs.appendFileSync(process.env.GH_STUB_LOG, args.join(" ") + "\\n");
+  const sleep = Number(process.env.GH_STUB_SOURCE_SLEEP || 0);
+  if (sleep) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleep);
+  const dir = process.env.GH_STUB_SOURCE;
+  const host = args.length === 4 && args[1] === "--hostname" && args[2] === "github.com";
+  const m = /^repositories\\/${SOURCE_REPO_ID}(\\/.*)?$/.exec(args[3]);
+  if (!dir || !host || !m) fail("HTTP 404: Not Found");
+  const git = (...a) => {
+    const r = spawnSync("git", a, { cwd: dir });
+    if (r.status !== 0) fail("HTTP 404: Not Found");
+    return r.stdout;
+  };
+  const commit = (ref) => git("rev-parse", "--verify", "-q", ref + "^{commit}").toString().trim();
+  const isAncestor = (a, b) => spawnSync("git", ["merge-base", "--is-ancestor", a, b], { cwd: dir }).status === 0;
+  const out = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+  const rest = m[1] ?? "";
+  let r;
+  if (rest === "") {
+    out({ id: ${SOURCE_REPO_ID}, default_branch: git("symbolic-ref", "--short", "HEAD").toString().trim() });
+  } else if ((r = /^\\/compare\\/(.+)\\.\\.\\.([^.]+)$/.exec(rest))) {
+    const [base, head] = [commit(r[1]), commit(r[2])];
+    const status = base === head ? "identical" : isAncestor(head, base) ? "behind"
+      : isAncestor(base, head) ? "ahead" : "diverged";
+    out({ status });
+  } else if ((r = /^\\/commits\\/([^/]+)$/.exec(rest))) {
+    const sha = commit(r[1]);
+    out({ sha, commit: { tree: { sha: git("rev-parse", sha + "^{tree}").toString().trim() } } });
+  } else if ((r = /^\\/git\\/trees\\/([0-9a-f]{40})\\?recursive=1$/.exec(rest))) {
+    const tree = git("ls-tree", "-r", "-t", "-z", r[1]).toString().split("\\0").filter(Boolean)
+      .map((line) => {
+        const [meta, path] = line.split("\\t");
+        const [mode, type, sha] = meta.split(" ");
+        return { path, mode, type, sha };
+      });
+    out({ sha: r[1], tree, truncated: process.env.GH_STUB_TRUNCATED === "1" });
+  } else if ((r = /^\\/git\\/blobs\\/([0-9a-f]{40})$/.exec(rest))) {
+    const content = git("cat-file", "blob", r[1]).toString("base64").replace(/.{60}/g, "$&\\n");
+    out({ sha: r[1], encoding: "base64", content });
+  } else {
+    fail("HTTP 404: Not Found");
+  }
+  process.exit(0);
+};
+if (args[0] === "api" && args.some((a) => /^repositories\\//.test(a))) source();
 if (args[0] !== "api" || !/^repos\\/[^/]+\\/[^/]+$/.test(args[1] || "")) {
   fail("gh stub: unexpected call: " + args.join(" "));
 }
@@ -203,6 +255,88 @@ const makeDataRepo = (options = {}) => {
       fs.rmSync(bin, { recursive: true, force: true });
     },
   };
+};
+
+// The skill's source repo, as the stub gh serves it by its recorded id: a
+// local git repo standing in for marlonchen/claudetopus. `pinned` holds a
+// small skill under skills/research-candidates; `main`, the default branch,
+// is one commit past it, outside the skill; `side` is a commit only on
+// another branch, as a fork's would be; `ahead` is a commit on a branch cut
+// from main's tip, which main has not reached yet. Built once per test file,
+// removed when it exits.
+const SKILL_FILES = {
+  "SKILL.md": `---
+name: research-candidates
+description: "Candidate research, for publish's tests. Triggers: 'research my ballot'."
+---
+
+# Research Candidates
+
+The rules.
+`,
+  "scripts/publish": "#!/usr/bin/env node\n",
+  "references/page.md": "# Page\n",
+};
+let source;
+const sourceRepo = () => {
+  if (source) return source;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-source-"));
+  process.on("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
+  const commit = (files) => {
+    for (const [rel, text] of Object.entries(files)) write(path.join(dir, rel), text);
+    git(dir, "add", "-A");
+    git(dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "skill");
+    return git(dir, "rev-parse", "HEAD").trim();
+  };
+  git(dir, "init", "-q", "-b", "main");
+  const skill = (files) =>
+    Object.fromEntries(
+      Object.entries(files).map(([rel, text]) => [`skills/research-candidates/${rel}`, text]),
+    );
+  const pinned = commit({ "README.md": "# claudetopus\n", ...skill(SKILL_FILES) });
+  const main = commit({ "README.md": "# claudetopus, later\n" });
+  git(dir, "checkout", "-q", "-b", "side", pinned);
+  const side = commit(skill({ "references/side.md": "# Side\n" }));
+  git(dir, "checkout", "-q", "-b", "next", main);
+  const ahead = commit({ "README.md": "# claudetopus, next\n" });
+  git(dir, "checkout", "-q", "main");
+  source = { dir, pinned, main, side, ahead };
+  return source;
+};
+
+// SKILL.md as gh skill install writes it (gh 2.103.3): the front matter
+// rewritten with its keys sorted and the five keys gh adds under `metadata`,
+// and the blank line after it dropped. `tree` is the skill directory's tree.
+const INSTALLED_SKILL_MD = (commit, tree) => `---
+description: 'Candidate research, for publish''s tests. Triggers: ''research my ballot''.'
+metadata:
+    github-path: skills/research-candidates
+    github-pinned: ${commit}
+    github-ref: ${commit}
+    github-repo: https://github.com/marlonchen/claudetopus
+    github-tree-sha: ${tree}
+name: research-candidates
+---
+# Research Candidates
+
+The rules.
+`;
+
+// Install the source repo's skill at `pinned` into `data` as gh skill install
+// --pin would, at .claude/skills/research-candidates, and record that commit
+// as skill_commit in publish.yaml. Nothing is committed.
+const SKILL = ".claude/skills/research-candidates";
+const installSkill = (data) => {
+  const { dir, pinned } = sourceRepo();
+  const tree = git(dir, "rev-parse", `${pinned}:skills/research-candidates`).trim();
+  for (const [rel, text] of Object.entries(SKILL_FILES))
+    data.write(`${SKILL}/${rel}`, rel === "SKILL.md" ? INSTALLED_SKILL_MD(pinned, tree) : text);
+  const yaml = data.exists("publish.yaml") ? data.read("publish.yaml") : "";
+  data.write(
+    "publish.yaml",
+    `${yaml.replace(/^skill_commit: .*\n/m, "")}skill_commit: ${pinned}\n`,
+  );
+  data.env.GH_STUB_SOURCE = dir;
 };
 
 // A local web server. `routes` maps an original URL (as the page would be
@@ -378,12 +512,15 @@ module.exports = {
   DEFAULT_TIERS,
   PDFTOTEXT_STUB,
   SCRIPTS_DIR,
+  SKILL,
   ZIP_PRIVATE,
   articlePage,
   git,
+  installSkill,
   leaveUnreadableAddresses,
   makeDataRepo,
   runCli,
   runInTty,
+  sourceRepo,
   startServer,
 };

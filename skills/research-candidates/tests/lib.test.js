@@ -405,7 +405,14 @@ describe("each command's output codes are the ones its reference lists", () => {
   // review-list's own module (review-list.md, Command line).
   const REVIEW_LIST = ["review-list.js"];
   // publish's own modules (page.md, Command line).
-  const PUBLISH = ["publish.js", "ballot-gate.js", "page.js", "page-scan.js", "pages.js"];
+  const PUBLISH = [
+    "publish.js",
+    "ballot-gate.js",
+    "skill-pin.js",
+    "page.js",
+    "page-scan.js",
+    "pages.js",
+  ];
 
   it("fetch-snapshot: every code is in snapshot-format.md's Command line section", () => {
     const listed = listedIn("snapshot-format.md");

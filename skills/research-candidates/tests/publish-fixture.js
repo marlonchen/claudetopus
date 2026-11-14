@@ -12,7 +12,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { BALLOT, git, makeDataRepo, runCli, runInTty } = require("./harness");
+const { BALLOT, git, installSkill, makeDataRepo, runCli, runInTty } = require("./harness");
 const { load } = require("../scripts/lib/deps");
 
 const repos = [];
@@ -323,12 +323,14 @@ const WITHDRAWAL_TEXT = notice(
 );
 
 // A data repo whose ballot, `ballot` with the sample ballot `sample`, passes
-// ballot-check, with nothing researched yet. A ballot with a certified
-// write-in or a withdrawn candidate gets the county's notice of it.
+// ballot-check, with the skill installed and nothing researched yet. A
+// ballot with a certified write-in or a withdrawn candidate gets the county's
+// notice of it.
 const checkedBallot = async ({ ballot = BALLOT_YAML, sample = SAMPLE_TEXT } = {}) => {
   const data = makeDataRepo({ ballot, private: PRIVATE });
   repos.push(data);
   data.write("publish.yaml", "branch: main\ndisplay_name: Sam\n");
+  installSkill(data);
   const saved = [[SAMPLE_BALLOT, "sample_ballot", sample]];
   if (ballot.includes("certified_write_in"))
     saved.push([WRITE_INS, "write_in_list", WRITE_IN_TEXT]);
@@ -413,9 +415,10 @@ const pagesSetup = (data, { seed, gh = { visibility: "PUBLIC", id: 77 } } = {}) 
     return result.stdout;
   };
   const dir = path.join(stub, "clone");
+  const skillCommit = data.read("publish.yaml").match(/^skill_commit: .*\n/m)?.[0] ?? "";
   data.write(
     "publish.yaml",
-    `pages_repo: ${PAGES_REPO}\npages_dir: ${dir}\nbranch: main\ndisplay_name: Sam\n`,
+    `pages_repo: ${PAGES_REPO}\npages_dir: ${dir}\nbranch: main\n${skillCommit}display_name: Sam\n`,
   );
   const pages = {
     dir,

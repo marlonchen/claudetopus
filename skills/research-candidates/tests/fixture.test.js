@@ -10,7 +10,9 @@ const { load } = require("../scripts/lib/deps");
 const {
   BALLOT,
   PDFTOTEXT_STUB,
+  SKILL,
   git,
+  installSkill,
   makeDataRepo,
   runCli,
   runInTty,
@@ -71,12 +73,14 @@ const commit = (data, message) => {
   git(data.root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", message);
 };
 
-// A fresh data repo holding the fixture's data/ and downloads/, with the
-// pdftotext stub on PATH and every command on the fixed clock.
+// A fresh data repo holding the fixture's data/ and downloads/ and the
+// installed skill, with the pdftotext stub on PATH and every command on the
+// fixed clock.
 const fixtureRepo = () => {
   const data = makeDataRepo({ ballot: false, tiers: false, publish: false });
   copyTree(path.join(FIXTURE, "data"), data.root);
   copyTree(path.join(FIXTURE, "downloads"), data.file("downloads"));
+  installSkill(data);
   fs.writeFileSync(path.join(data.bin, "pdftotext"), PDFTOTEXT_STUB, { mode: 0o755 });
   const clock = JSON.stringify(CLOCK);
   Object.assign(data.env, {
@@ -289,6 +293,15 @@ const LEAKS = [
   ["external src", '<img src="https://tracker.example.net/p.png">', ["page-link"], "claim-format"],
 ];
 
+// Name the researcher `name` in publish.yaml's display_name, keeping its other keys.
+const named = (data, name) =>
+  data.write(
+    "publish.yaml",
+    data
+      .read("publish.yaml")
+      .replace(/^display_name: .*$/m, `display_name: ${JSON.stringify(name)}`),
+  );
+
 // The golden page's line holding the trust header, where display_name shows.
 const TRUST_LINE =
   fs
@@ -300,7 +313,7 @@ describe("fixture ballot: a leak on the page refuses all of it", () => {
   for (const [name, leak, codes] of LEAKS) {
     it(`refuses the ${name} as ${codes.join(" and ")}, and writes no page`, async () => {
       const data = copy();
-      data.write("publish.yaml", `branch: main\ndisplay_name: ${JSON.stringify(`Sam ${leak}`)}\n`);
+      named(data, `Sam ${leak}`);
       const result = await run(data, "publish", [BALLOT], { OPENFEC_API_KEY: KEY });
       assert.deepStrictEqual(lines(result), [
         ...PUBLISHED,
@@ -315,8 +328,6 @@ describe("fixture ballot: a leak on the page refuses all of it", () => {
 describe("fixture ballot: a ZIP listed only in private_strings", () => {
   // The fixture lists its ZIP in private.yaml alone.
   const zipOnly = copy;
-  const named = (data, name) =>
-    data.write("publish.yaml", `branch: main\ndisplay_name: ${JSON.stringify(name)}\n`);
 
   // Value: protects=the page scan refuses a ZIP kept only in private_strings as it did the ZIP class, and only as a standalone token; fails_when=the scan skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=another ballot's ZIP, which familyPrivateValues already reads
   it("refuses the ZIP as private-string, and publishes it inside a longer digit run", async () => {
@@ -363,6 +374,105 @@ describe("fixture ballot: a leftover addresses.yaml", () => {
     assert.ok(lines(result).includes("ballot.yaml ballot-check-failed"), result.stdout);
     assert.strictEqual(result.status, 1);
     assert.ok(!data.exists(SITE));
+  });
+});
+
+describe("fixture ballot: an installed skill that differs from skill_commit", () => {
+  // Plant drift under the installed skill and commit it, as a researcher who
+  // missed it would, so the only refusal is the drift's own; publish then
+  // refuses at its ballot gate with exactly `refused`, writing no page, and
+  // `publish --show` in a terminal with exactly `shown` when it is given.
+  const refuses = async (plant, refused, shown) => {
+    const data = copy();
+    plant(data);
+    commit(data, "drift");
+    const result = await run(data, "publish", [BALLOT]);
+    assert.deepStrictEqual(lines(result), refused);
+    assert.strictEqual(result.status, 1);
+    assert.ok(!data.exists(SITE));
+    if (!shown) return;
+    const tty = await runInTty("publish", ["--show", BALLOT], { cwd: data.root, env: data.env });
+    assert.deepStrictEqual(lines(tty), shown);
+    assert.strictEqual(tty.status, 1);
+  };
+
+  // Value: protects=a hand edit to an installed skill file never runs at publish; fails_when=publish skips the installed skill, or compares anything but each file's git blob hash; why_new=ticket 51; seam=cli; no_claim=a hostile edit to publish itself
+  it("refuses an edited file, naming it", () =>
+    refuses(
+      (data) => fs.appendFileSync(data.file(`${SKILL}/references/page.md`), "One more rule.\n"),
+      [`${SKILL}/references/page.md skill-changed`],
+    ));
+
+  // Value: protects=a file a reinstall left behind, or one added by hand, never runs at publish, and --show names it so the researcher can delete it, while plain output names only the skill's area (ADR 0006); fails_when=publish compares only the tree's own files, skips ignored ones, or names a file found on disk outside --show; why_new=ticket 51, PR #60 review (M1); seam=cli; no_claim=none
+  it("refuses an extra file, ignored or not, naming each only to --show", () =>
+    refuses(
+      (data) => {
+        fs.writeFileSync(data.file(`${SKILL}/scripts/old-script`), "#!/bin/sh\n");
+        fs.writeFileSync(data.file(`${SKILL}/references/.gitignore`), "notes.md\n");
+        fs.writeFileSync(data.file(`${SKILL}/references/notes.md`), "My notes.\n");
+      },
+      // The ignored file is never committed.
+      [`${SKILL} skill-uncommitted`, `${SKILL} skill-extra`],
+      [
+        `${SKILL} skill-uncommitted`,
+        `${SKILL} skill-extra`,
+        `    ${SKILL}/references/.gitignore`,
+        `    ${SKILL}/references/notes.md`,
+        `    ${SKILL}/scripts/old-script`,
+      ],
+    ));
+
+  // SKILL.md passes with only gh skill install's rewrite of its front matter
+  // (the golden run): each of these goes past it.
+  const SKILL_MD_EDITS = [
+    ["an added front-matter key", (t) => t.replace("name: ", "allowed-tools: Bash\nname: ")],
+    [
+      "an added key under metadata",
+      (t) => t.replace("metadata:\n", "metadata:\n    allowed-tools: Bash\n"),
+    ],
+    ["a changed name", (t) => t.replace("name: research-candidates", "name: research-guide")],
+    ["a changed description", (t) => t.replace("Candidate research,", "Candidate research, fast,")],
+    ["a changed body", (t) => t.replace("The rules.", "The rules, mostly.")],
+    ["a blank line inside the body", (t) => t.replace("The rules.", "\nThe rules.")],
+  ];
+  for (const [name, edit] of SKILL_MD_EDITS) {
+    // Value: protects=SKILL.md is compared by its parsed front matter less the five keys gh adds under metadata and its body, so a changed trigger or tool grant never runs; fails_when=publish skips SKILL.md, drops a key gh does not add, or ignores more than the blank lines at the body's start; why_new=ticket 51, PR #60 review (O7); seam=cli; no_claim=none
+    it(`refuses SKILL.md with ${name}`, () =>
+      refuses(
+        (data) => data.write(`${SKILL}/SKILL.md`, edit(data.read(`${SKILL}/SKILL.md`))),
+        [`${SKILL}/SKILL.md skill-changed`],
+      ));
+  }
+
+  // Value: protects=nothing under the installed skill is a symlink, which could later point anywhere, even one to identical bytes or named as a leftover, and only --show names it; fails_when=publish follows links when it hashes, skips a leftover name that is a link, or names a link outside --show; why_new=ticket 51, PR #60 review (M1); seam=cli; no_claim=a symlinked .claude or .claude/skills above the skill (publish-skill.test.js)
+  it("refuses a symlink, even to the same bytes or named as a leftover", () =>
+    refuses(
+      (data) => {
+        const page = data.file(`${SKILL}/references/page.md`);
+        fs.renameSync(page, data.file("page-copy.md"));
+        fs.symlinkSync(path.join("..", "..", "..", "..", "page-copy.md"), page);
+        fs.symlinkSync("page.md", data.file(`${SKILL}/references/.DS_Store`));
+      },
+      [`${SKILL} skill-symlink`],
+      [
+        `${SKILL} skill-symlink`,
+        `    ${SKILL}/references/.DS_Store`,
+        `    ${SKILL}/references/page.md`,
+      ],
+    ));
+
+  // Value: protects=an operating-system or editor leftover never refuses an election-week publish, committed or not; fails_when=the extra-file or uncommitted check counts .DS_Store, Thumbs.db or a .swp; why_new=ticket 51; seam=cli; no_claim=none
+  it("publishes the golden page beside .DS_Store, Thumbs.db and .swp leftovers", async () => {
+    const data = copy();
+    fs.writeFileSync(data.file(`${SKILL}/.DS_Store`), "\0\0\0\x01Bud1");
+    fs.writeFileSync(data.file(`${SKILL}/references/.DS_Store`), "\0\0\0\x01Bud1");
+    commit(data, "a Finder leftover");
+    fs.writeFileSync(data.file(`${SKILL}/scripts/Thumbs.db`), "thumbs");
+    fs.writeFileSync(data.file(`${SKILL}/references/.page.md.swp`), "b0VIM");
+    const result = await run(data, "publish", [BALLOT]);
+    passes(result);
+    assert.deepStrictEqual(lines(result), [...PUBLISHED, "site/index.html written"]);
+    assert.ok(fs.readFileSync(data.file(SITE)).equals(fs.readFileSync(GOLDEN)));
   });
 });
 
