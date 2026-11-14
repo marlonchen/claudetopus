@@ -651,6 +651,39 @@ describe("ballot-check: ballot.yaml fields", () => {
     ]);
   });
 
+  // Value: protects=one ballot's half-typed ballot.yaml stops no other ballot's check (ticket 43 criterion 5), and its fault-free contests still count for the id rules; fails_when=otherBallots reads another ballot's contests strictly, or drops every contest of a file with one fault; why_new=ticket 43 review D1; seam=cli; no_claim=the half-typed ballot's own check, which locates its faults
+  it("reads only the fault-free contests of another ballot's half-typed ballot.yaml", async () => {
+    const halfTyped = DEFAULT_BALLOT.replace("k3x9qa", "zz9zz9").replace(
+      "        status: on_ballot\n",
+      "",
+    );
+    const data = setup();
+    data.write("2026-general/xx-exampleton-2/ballot.yaml", halfTyped);
+    assert.equal((await ballotCheck(data)).status, 0);
+    // A name in the faulted contest is not read; one in a fault-free contest is.
+    data.write(
+      "2026-general/xx-exampleton-2/ballot.yaml",
+      halfTyped.replace("name: John Sample", "name: John Q. Sample"),
+    );
+    assert.equal((await ballotCheck(data)).status, 0);
+    data.write(
+      "2026-general/xx-exampleton-2/ballot.yaml",
+      halfTyped.replace("name: Pat Example", "name: Pat Q. Example"),
+    );
+    assert.deepEqual(lines(await ballotCheck(data)), [
+      `ballot.yaml:${yamlLine(data, "id: pat-example")} id-name-conflict id`,
+    ]);
+  });
+
+  it("fails, located -, another ballot.yaml with no contests list", async () => {
+    const data = setup();
+    data.write(
+      "2026-general/xx-exampleton-2/ballot.yaml",
+      DEFAULT_BALLOT.replace("k3x9qa", "zz9zz9").replace(/contests:[\s\S]*$/, "contests: none\n"),
+    );
+    assert.deepEqual(lines(await ballotCheck(data)), ["- ballot-invalid", "- check-each-ballot"]);
+  });
+
   it("reports, never crashes on, a state another ballot or this one gives as any text", async () => {
     const data = setup();
     data.write(

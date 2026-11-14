@@ -11,7 +11,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { CHECKLIST_ITEMS, ID_PATTERN } = require("./constants");
-const { loadBallot } = require("./data-files");
+const { loadContests } = require("./data-files");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { Failure, runCommand } = require("./output");
 const { today } = require("./snapshot-file");
@@ -86,14 +86,11 @@ const checkTarget = (root, { ballot, contest, subject, item }) => {
   if (subject !== "_race" && !ID_PATTERN.test(subject)) {
     throw new Failure(`${contest}/-`, "unknown-subject");
   }
-  const listed = loadBallot(root, ballot).contests.get(contest);
+  const listed = loadContests(path.join(root, ballot), `${ballot}/ballot.yaml`).get(contest);
   if (!listed) throw new Failure(`${ballot}/ballot.yaml`, "unknown-contest");
   const known = listed.type === "measure" ? subject === "_race" : listed.subjects.has(subject);
   if (!known) throw new Failure(`${contest}/${subject}`, "unknown-subject");
-  if (
-    !Object.hasOwn(CHECKLIST_ITEMS, listed.type) ||
-    !CHECKLIST_ITEMS[listed.type].includes(item)
-  ) {
+  if (!CHECKLIST_ITEMS[listed.type].includes(item)) {
     throw new Failure(`${contest}/${subject}`, "bad-item");
   }
   return listed.type;

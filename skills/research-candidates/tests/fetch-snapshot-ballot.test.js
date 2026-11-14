@@ -6,7 +6,14 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
-const { BALLOT, PDFTOTEXT_STUB, ZIP_PRIVATE, articlePage, runInTty } = require("./harness");
+const {
+  BALLOT,
+  DEFAULT_BALLOT,
+  PDFTOTEXT_STUB,
+  ZIP_PRIVATE,
+  articlePage,
+  runInTty,
+} = require("./harness");
 const {
   body,
   fetchSnapshot,
@@ -366,6 +373,36 @@ describe("fetch-snapshot --ballot refusals", () => {
       assert.equal(result.status, 1);
       assert.deepEqual(result.seen, seen);
       assertNothingWritten(data);
+    }
+  });
+
+  // Value: protects=a half-typed ballot.yaml of the ballot being imported reaches the prompt, as before ticket 43, and its owner ids still count when their contest has another fault; fails_when=loadTiers reads the ballot's own contests strictly, or drops every id of a faulted contest; why_new=ticket 43 review M1; seam=cli; no_claim=ballot-check, which locates the fault
+  it("reaches the prompt with a half-typed ballot.yaml", async () => {
+    // jane-example, the tiers.yaml owner, is in the contest with the fault.
+    const data = ballotRepo({ ballot: DEFAULT_BALLOT.replace("        status: on_ballot\n", "") });
+    const result = await ballotVia(
+      data,
+      { [LOOKUP]: { body: SAMPLE } },
+      [BALLOT, "sample_ballot", LOOKUP],
+      { answer: "n" },
+    );
+    assert.deepEqual(lines(result), ["_ballot not-confirmed"]);
+    assert.equal(result.status, 1);
+    assertNothingWritten(data);
+  });
+
+  // Value: protects=a ballot.yaml of the ballot being imported that cannot be read is located by the file, never `-`; fails_when=loadTiers locates the current ballot's failure as another ballot's; why_new=ticket 43 review M1; seam=cli; no_claim=another ballot's file (fetch-snapshot-tiers.test.js)
+  it("locates its own unreadable ballot.yaml by the file", async () => {
+    const cases = [
+      ["contests: [unclosed\n", "yaml-invalid"],
+      ["election: 2026-general\n", "ballot-invalid"],
+    ];
+    for (const [ballot, code] of cases) {
+      const data = ballotRepo({ ballot });
+      const result = await ballotVia(data, {}, [BALLOT, "sample_ballot", LOOKUP]);
+      assert.deepEqual(lines(result), [`${BALLOT}/ballot.yaml ${code}`]);
+      assert.equal(result.status, 1);
+      assert.deepEqual(result.seen, []);
     }
   });
 

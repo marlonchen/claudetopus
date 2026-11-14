@@ -22,7 +22,8 @@ const {
   resolveTarget,
 } = require("./check");
 const { ABBREVIATIONS, ALLEGATION_WORDS, ALWAYS_REVIEWED, ID_PATTERN } = require("./constants");
-const { coverArticle, readContests } = require("./coverage");
+const { coverArticle } = require("./coverage");
+const { loadContests } = require("./data-files");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { normalizeLine } = require("./normalize");
@@ -340,7 +341,7 @@ const readClaims = (rel, contest, article, { subjects, names }, { readSnapshot, 
 const runContext = (ballotDir, { entries }, given = {}) => {
   // Loaded first, so a missing install is one deps-missing, not a failure per contest.
   const YAML = load("yaml");
-  const contests = given.contests ?? readContests(ballotDir);
+  const contests = given.contests ?? loadContests(ballotDir);
   const failureLines = given.manifestVerified ? [] : verifyManifest(ballotDir).map((f) => f.line);
   const check = checkContext(ballotDir, YAML, failureLines);
   return {
@@ -576,7 +577,7 @@ const runStart = (dates) => {
 // --refused-hosts: the hosts of the current discovery run's domain refusals.
 const refusedHosts = (ballotDir, id) => {
   load("yaml");
-  const contest = readContests(ballotDir).get(id);
+  const contest = loadContests(ballotDir).get(id);
   if (!contest) throw new Failure(`articles/${id}.md`, "unknown-contest");
   const log = readSearchLog(ballotDir, id, contest.type);
   if (log.faults.length) throw new Failure(`search-log/${id}.tsv`, "search-log-invalid");
