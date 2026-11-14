@@ -1,7 +1,8 @@
 "use strict";
 
 // publish's ballot gate (SKILL.md step 6.1), which refuses the whole publish:
-// ballot-check passes, every snapshot matches snapshots.sha256, and review/,
+// ballot-check passes, the installed skill is its tree at skill_commit
+// (skill-pin.js), every snapshot matches snapshots.sha256, and review/,
 // tiers.yaml, snapshots.sha256, search-log/ and published.log are exactly as
 // committed, so every acceptance, tier, hash, search and published slug is in
 // one of the researcher's commits. The caller holds the ballot lock. Failures are `location code
@@ -15,6 +16,7 @@ const { spawnSync } = require("node:child_process");
 const { check: checkBallot } = require("./ballot-check");
 const { loadContests } = require("./data-files");
 const { Failure, Failures } = require("./output");
+const { skillPin } = require("./skill-pin");
 const { verifyManifest } = require("./snapshot-hash");
 
 // Room for a long history's output, which spawnSync caps at 1MB by default.
@@ -251,9 +253,9 @@ const contestIds = (ballotDir) => {
   }
 };
 
-// Throws Failures holding every refusal found, or returns nothing. `refresh`
-// keeps the ballot lock fresh between its steps.
-const ballotGate = (root, ballot, ballotDir, refresh) => {
+// Throws Failures holding every refusal found, or returns nothing. `config`
+// is publish.yaml; `refresh` keeps the ballot lock fresh between its steps.
+const ballotGate = (root, ballot, ballotDir, config, refresh) => {
   const lines = [];
   try {
     checkBallot(root, ballot, ballotDir, /* show */ false);
@@ -262,6 +264,8 @@ const ballotGate = (root, ballot, ballotDir, refresh) => {
     // ballot-check's own lines say why; running it shows them.
     lines.push(new Failure("ballot.yaml", "ballot-check-failed").line);
   }
+  refresh();
+  lines.push(...skillPin(root, config));
   refresh();
   lines.push(...verifyManifest(ballotDir).map((f) => f.line));
   refresh();

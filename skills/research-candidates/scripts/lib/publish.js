@@ -140,7 +140,7 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
   load("yaml");
   const config = readPublishYaml(root);
   const displayName = config.display_name;
-  ballotGate(root, ballot, ballotDir, refresh);
+  ballotGate(root, ballot, ballotDir, config, refresh);
   // Read once: the page shows the contests ready judged.
   const data = readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS();
   const contests = contestsOf(data);

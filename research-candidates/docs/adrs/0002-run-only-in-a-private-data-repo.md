@@ -29,4 +29,4 @@ A URL that is not on GitHub, a `gh` error or empty output counts as public. Fail
 - The guard runs when a script starts. It does not stop a later `git remote add`, a `git push` from another tool, or the repo being made public between runs.
 - A repo with no remotes passes, because the check loops over remotes. Such a repo has nowhere to push.
 - Every data command needs `gh` and network access when the repo has a remote, or it refuses.
-- The installed-skill check is not built. SKILL.md step 6.1 and the README say `publish` refuses an installed copy that differs from `skill_commit`, but `skill_commit` appears nowhere under `scripts/` and SKILL.md's status lists the check as unfinished. Until it lands, nothing mechanical confirms the rules running in the data repo are the ones that were reviewed.
+- `publish` refuses an installed skill that differs from its tree at `skill_commit` (SKILL.md step 6.1), read through `gh api repositories/<id>/...` by the recorded id. The check runs inside `publish`, so it confirms the rules running in the data repo are the ones that were reviewed only against accidental drift, never against a hostile edit to `publish` itself.

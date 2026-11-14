@@ -2,7 +2,7 @@
 
 Candidate research skill for Claude Code. For each ballot the researcher adds it builds a guide where every claim is backed by a verbatim excerpt from a saved source, then publishes one static, phone-friendly page per ballot.
 
-See [SKILL.md](SKILL.md) for the full spec. **Status: mostly built**: every script in SKILL.md's script table runs, and so do the discovery, compile and neutrality agents ([Agents](#agents)). SKILL.md's status lists what is not built yet, among them `fetch-snapshot`'s Wayback copies (`archives.tsv`) and `supersedes` field, and `publish`'s installed-skill check.
+See [SKILL.md](SKILL.md) for the full spec. **Status: mostly built**: every script in SKILL.md's script table runs, and so do the discovery, compile and neutrality agents ([Agents](#agents)). SKILL.md's status lists what is not built yet, among them `fetch-snapshot`'s Wayback copies (`archives.tsv`) and `supersedes` field.
 
 This directory is the skill's *source*. The research data it works on (ballots, their private strings, snapshots, review lists, articles) belongs in a separate **private** repo and must never be committed here: this repo is public.
 
@@ -25,7 +25,7 @@ cd ~/src/github/<user>/elections
 gh skill install marlonchen/claudetopus research-candidates --agent claude-code --pin <commit>
 ```
 
-Pin a commit of this repo you have read that is on its default branch (`main`; publish refuses a commit only on another branch or a fork), record it as `skill_commit` in `publish.yaml` (publish refuses an installed copy that differs from it), and review the installed files before committing them to the data repo: the skill's rules are its privacy boundary. Do not install it with `npx skills`, which runs whatever version of that package is newest inside the repo that holds the private data, and never update it with `gh skill update --all`. To upgrade, read the diff, delete `.claude/skills/research-candidates` so files the new commit removed do not linger, run the install again with the new commit, then set `skill_commit` in `publish.yaml` to it and commit both.
+Pin a commit of this repo you have read that is on its default branch (`main`; publish refuses a commit only on another branch or a fork), record it as `skill_commit` in `publish.yaml`, by its full 40-character id (publish refuses an installed copy that differs from it, with each changed, extra or missing file named; [SKILL.md](SKILL.md) step 6.1), and review the installed files before committing them to the data repo: the skill's rules are its privacy boundary. Do not install it with `npx skills`, which runs whatever version of that package is newest inside the repo that holds the private data, and never update it with `gh skill update --all`. To upgrade, read the diff, delete `.claude/skills/research-candidates` so files the new commit removed do not linger, run the install again with the new commit, then set `skill_commit` in `publish.yaml` to it and commit both.
 
 Never install it at user scope (`--scope user`): Rule 8 lets it run only in the private data repo, so everywhere else it would only load and refuse. To try local changes before they are pushed, see [Install a skill](../../README.md#install-a-skill), and never run `--from-local` into the real data repo: use a throwaway private repo with made-up ballots and private strings, so unreviewed code never runs next to real ones.
 
