@@ -13,7 +13,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { check: checkBallot } = require("./ballot-check");
-const { readContests } = require("./coverage");
+const { loadContests } = require("./data-files");
 const { Failure, Failures } = require("./output");
 const { verifyManifest } = require("./snapshot-hash");
 
@@ -244,7 +244,7 @@ const history = (root, ballot, ids, refresh) => {
 // it cannot be read, which ballot-check reports.
 const contestIds = (ballotDir) => {
   try {
-    return new Set(readContests(ballotDir).keys());
+    return new Set(loadContests(ballotDir).keys());
   } catch (error) {
     if (error instanceof Failure) return new Set();
     throw error;

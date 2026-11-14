@@ -1,15 +1,24 @@
 "use strict";
 
-// Parsers for the data files fetch-snapshot, ballot-check and check read:
-// ballot.yaml (only the ids fetch-snapshot needs and the printed titles check
-// needs; ballot-check validates the rest),
-// tiers.yaml, and the private values in private.yaml.
+// Parsers for the data files the scripts read: ballot.yaml's contests (the
+// one contest model every script reads, which ballot-check validates against)
+// and the printed titles check needs, tiers.yaml, and the private values in
+// private.yaml.
 // Failures are located by file and, where there is one, the entry's line,
 // never by a private value.
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { BALLOT_ID_PATTERN, ELECTION_PATTERN, KEY_ENV } = require("./constants");
+const {
+  BALLOT_ID_PATTERN,
+  ELECTION_PATTERN,
+  ID_PATTERN,
+  KEY_ENV,
+  OFFICE_TYPES,
+  SECTIONS,
+  STATUSES,
+  WITHDRAWN_SECTIONS,
+} = require("./constants");
 const { load } = require("./deps");
 const { Failure } = require("./output");
 const { CLASSES, scan } = require("./privacy");
@@ -53,25 +62,141 @@ const ballotDirs = (root) =>
     .filter((entry) => entry.valid)
     .map((entry) => entry.ballot);
 
-// { contests: Map<contest id, { type, subjects: Set<id> }>, people: Set<id> }
-// from <ballot>/ballot.yaml. Subjects are the contest's candidate or official ids.
-const loadBallot = (root, ballot, location = `${ballot}/ballot.yaml`) => {
-  const data = readYamlDocument(path.join(root, ballot, "ballot.yaml"), location).doc.toJS();
-  if (!data || !Array.isArray(data.contests)) throw new Failure(location, "ballot-invalid");
+// sections.md: the section a contest's not_researched never names.
+const ON_BALLOT = SECTIONS.candidate[0];
+// The sections each contest type's not_researched may name, and what `all`
+// names: every section but On the ballot.
+const DEFERRABLE = Object.fromEntries(
+  Object.entries(SECTIONS).map(([type, names]) => [type, names.filter((n) => n !== ON_BALLOT)]),
+);
+
+const isText = (v) => typeof v === "string" && v.trim() !== "";
+const isMap = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+// ballot.yaml's contests (`data`, the file as read), each judged by the rules
+// every script shares (ballot-format.md): its id, type, office_type and
+// not_researched, and each candidate's or the official's id, name and status.
+// Each fault goes to `report(keys, code)`, `keys` the path from the file's root
+// to the field at fault, which ballot-check locates by line; ballot-check adds
+// the rest of ballot-format.md's rules. Returns the contests with no
+// fault, by id in ballot order, each { id, type, officeType, blocks, subjects,
+// notResearched }: blocks are the article's, in order (article-format.md),
+// each { name, subject, sections }; subjects the candidate or official ids;
+// notResearched the sections not_researched names, `all` resolved.
+const parseContests = (data, report) => {
   const contests = new Map();
-  const people = new Set();
-  for (const contest of data.contests) {
-    if (!contest || typeof contest.id !== "string") throw new Failure(location, "ballot-invalid");
-    const subjects = new Set();
-    for (const candidate of Array.isArray(contest.candidates) ? contest.candidates : []) {
-      if (typeof candidate?.id === "string") subjects.add(candidate.id);
-    }
-    if (typeof contest.official?.id === "string") subjects.add(contest.official.id);
-    for (const id of subjects) people.add(id);
-    contests.set(contest.id, { type: contest.type, subjects });
+  if (!Array.isArray(data?.contests) || data.contests.length === 0) {
+    report(["contests"], "ballot-invalid");
+    return contests;
   }
-  return { contests, people };
+  const ids = new Set();
+  for (const [c, contest] of data.contests.entries()) {
+    const keys = ["contests", c];
+    let faulted = false;
+    const fault = (at, code) => {
+      faulted = true;
+      report(at, code);
+    };
+    if (!isMap(contest)) {
+      fault(keys, "ballot-invalid");
+      continue;
+    }
+    const { type } = contest;
+    if (typeof type !== "string" || !Object.hasOwn(SECTIONS, type)) {
+      fault([...keys, "type"], "ballot-invalid");
+      continue;
+    }
+    if (typeof contest.id !== "string" || !ID_PATTERN.test(contest.id) || contest.id === "ballot") {
+      fault([...keys, "id"], "id-invalid");
+    } else if (ids.has(contest.id)) {
+      fault([...keys, "id"], "id-duplicate");
+    } else {
+      ids.add(contest.id);
+    }
+    const later = contest.not_researched;
+    if (
+      later !== undefined &&
+      later !== "all" &&
+      (!Array.isArray(later) ||
+        !later.every((s) => DEFERRABLE[type].includes(s)) ||
+        new Set(later).size !== later.length)
+    ) {
+      fault([...keys, "not_researched"], "not-researched-invalid");
+    }
+
+    // A candidate or the official, or null when it is not a map.
+    const subjectIds = new Set();
+    const person = (value, pkeys) => {
+      if (!isMap(value)) {
+        fault(pkeys, "ballot-invalid");
+        return null;
+      }
+      if (typeof value.id !== "string" || !ID_PATTERN.test(value.id))
+        fault([...pkeys, "id"], "id-invalid");
+      else if (subjectIds.has(value.id)) fault([...pkeys, "id"], "id-duplicate");
+      else subjectIds.add(value.id);
+      if (!isText(value.name)) fault([...pkeys, "name"], "ballot-invalid");
+      return value;
+    };
+
+    let blocks;
+    if (type === "candidate") {
+      if (!OFFICE_TYPES.includes(contest.office_type))
+        fault([...keys, "office_type"], "ballot-invalid");
+      const listed = Array.isArray(contest.candidates) ? contest.candidates : [];
+      if (listed.length === 0) fault([...keys, "candidates"], "ballot-invalid");
+      const people = [];
+      for (const [n, candidate] of listed.entries()) {
+        const pkeys = [...keys, "candidates", n];
+        if (!person(candidate, pkeys)) continue;
+        if (!STATUSES.includes(candidate.status)) fault([...pkeys, "status"], "ballot-invalid");
+        people.push(candidate);
+      }
+      // Printed candidates in ballot order, then certified write-ins (article-format.md).
+      const writeIn = (p) => p.status === "certified_write_in";
+      blocks = [...people.filter((p) => !writeIn(p)), ...people.filter(writeIn)].map((p) => ({
+        name: p.name,
+        subject: p.id,
+        sections: p.status === "withdrawn_still_printed" ? WITHDRAWN_SECTIONS : SECTIONS.candidate,
+      }));
+    } else if (type === "retention") {
+      if (contest.office_type !== undefined && contest.office_type !== "judicial") {
+        fault([...keys, "office_type"], "ballot-invalid");
+      }
+      const official = person(contest.official, [...keys, "official"]);
+      blocks = official
+        ? [{ name: official.name, subject: official.id, sections: SECTIONS.retention }]
+        : [];
+    } else {
+      blocks = [{ name: contest.id, subject: "_race", sections: SECTIONS.measure }];
+    }
+    if (faulted) continue;
+    contests.set(contest.id, {
+      id: contest.id,
+      type,
+      officeType: contest.office_type,
+      blocks,
+      subjects: subjectIds,
+      notResearched: new Set(later === "all" ? DEFERRABLE[type] : later),
+    });
+  }
+  return contests;
 };
+
+// parseContests' contests of ballot.yaml as read (`data`), or one failure,
+// `location ballot-invalid`, for any fault: ballot-check locates each by line.
+const contestsOf = (data, location = "ballot.yaml") => {
+  let faulted = false;
+  const contests = parseContests(data, () => {
+    faulted = true;
+  });
+  if (faulted) throw new Failure(location, "ballot-invalid");
+  return contests;
+};
+
+// contestsOf, read from <ballotDir>/ballot.yaml.
+const loadContests = (ballotDir, location = "ballot.yaml") =>
+  contestsOf(readYamlDocument(path.join(ballotDir, "ballot.yaml"), location).doc.toJS(), location);
 
 // The printed titles of contests with a display_title, from ballot.yaml as read.
 const hiddenTitles = (data) =>
@@ -139,7 +264,8 @@ const loadTiers = (root, values) => {
   for (const ballot of ballotDirs(root)) {
     if (!fs.existsSync(path.join(root, ballot, "ballot.yaml"))) continue;
     // Another ballot's id never reaches this run's output, so its failures are unlocated.
-    for (const id of loadBallot(root, ballot, "-").people) people.add(id);
+    for (const contest of loadContests(path.join(root, ballot), "-").values())
+      for (const id of contest.subjects) people.add(id);
   }
   const entries = doc.contents.items.map((node) => {
     const at = `tiers.yaml:${lineCounter.linePos(node.range[0]).line}`;
@@ -246,16 +372,19 @@ const familyPrivateValues = (root, ballot) => {
 };
 
 module.exports = {
+  ON_BALLOT,
   ballotDirs,
   ballotEntries,
+  contestsOf,
   familyPrivateValues,
   hiddenTitles,
   isDir,
-  loadBallot,
+  loadContests,
   loadPrivate,
   loadPrivateValues,
   loadTiers,
   otherPrivateStrings,
+  parseContests,
   readYamlDocument,
   tiersPrivacy,
 };

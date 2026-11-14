@@ -416,7 +416,9 @@ describe("each command's output codes are the ones its reference lists", () => {
   it("coverage: every code is in article-format.md's Command line section", () => {
     const listed = listedIn("article-format.md");
     const own = new Set(COVERAGE.flatMap((f) => [...emittedBy(f)]));
-    assert.ok(own.size >= 8, `only ${own.size} codes found in coverage`);
+    // ballot-invalid is raised by data-files.js's shared contest loader, and
+    // coverage still prints it (coverage.test.js, contest-model.test.js).
+    assert.ok(own.size >= 7, `only ${own.size} codes found in coverage`);
     for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
 

@@ -12,21 +12,18 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const {
-  ID_PATTERN,
-  LEDGER,
-  LEFTOVER,
-  OFFICE_TYPES,
-  ROLES,
-  SECTIONS,
-  SLUG_PATTERN,
-  STATUSES,
-  VIEW,
-} = require("./constants");
+const { ID_PATTERN, LEDGER, LEFTOVER, ROLES, SLUG_PATTERN, VIEW } = require("./constants");
 const { checkCompanions, checkPeople } = require("./ballot-companions");
 const { checkPrivacy } = require("./ballot-privacy");
 const { dataRepoSetupFailures } = require("./data-repo-setup");
-const { ballotEntries, isDir, loadPrivate, readYamlDocument } = require("./data-files");
+const {
+  ballotEntries,
+  contestsOf,
+  isDir,
+  loadPrivate,
+  parseContests,
+  readYamlDocument,
+} = require("./data-files");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { matchBallot } = require("./ballot-match");
@@ -74,6 +71,8 @@ const ALLOWED_KEYS = new Set([
 const isText = (v) => typeof v === "string" && v.trim() !== "";
 const isCount = (v) => Number.isInteger(v) && v > 0;
 const isMap = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+// The line a ballot.yaml failure is located by.
+const lineOf = (failure) => Number(failure.location.split(":")[1]);
 
 // The ballot id prefix ballot.yaml's state and county build (ballot-format.md,
 // Ballot ids): <state>-<county>, without the 1-2 digit number.
@@ -165,8 +164,12 @@ const checkBallotYaml = (root, ballot) => {
       lists[key] = [];
     } else lists[key] = list.map((entry, i) => ({ path: entry, at: at([key, i]) }));
   }
+  // The rules every script reads contests by (data-files.js), then the rest,
+  // reported in line order, so the two read as one list.
+  parseContests(data, fail);
+  const byLine = () => failures.sort((x, y) => lineOf(x) - lineOf(y));
   if (!Array.isArray(data.contests) || data.contests.length === 0) {
-    fail(["contests"], "ballot-invalid");
+    byLine();
     return {
       failures,
       contests: [],
@@ -186,26 +189,13 @@ const checkBallotYaml = (root, ballot) => {
   const contests = [];
   const people = [];
   const candidates = [];
-  const contestIds = new Set();
   for (const [c, contest] of data.contests.entries()) {
     const keys = ["contests", c];
-    if (!isMap(contest)) {
-      fail(keys, "ballot-invalid");
-      continue;
-    }
-    const type = contest.type;
-    if (typeof type !== "string" || !Object.hasOwn(TYPE_KEYS, type)) {
-      fail([...keys, "type"], "ballot-invalid");
-      continue;
-    }
+    // parseContests has failed a contest that is not a map or has no type.
+    if (!isMap(contest) || typeof contest.type !== "string") continue;
+    if (!Object.hasOwn(TYPE_KEYS, contest.type)) continue;
+    const { type } = contest;
     unknownKeys(contest, [...CONTEST_KEYS, ...TYPE_KEYS[type]], keys);
-    if (typeof contest.id !== "string" || !ID_PATTERN.test(contest.id) || contest.id === "ballot") {
-      fail([...keys, "id"], "id-invalid");
-    } else if (contestIds.has(contest.id)) {
-      fail([...keys, "id"], "id-duplicate");
-    } else {
-      contestIds.add(contest.id);
-    }
     if (!isText(contest.jurisdiction)) fail([...keys, "jurisdiction"], "ballot-invalid");
     const titled = isText(contest.title);
     if (!titled) fail([...keys, "title"], "ballot-invalid");
@@ -215,34 +205,13 @@ const checkBallotYaml = (root, ballot) => {
         fail([...keys, "display_title"], "display-title-same");
       }
     }
-    const notResearched = contest.not_researched;
-    if (notResearched !== undefined && notResearched !== "all") {
-      const allowed = SECTIONS[type].filter((s) => s !== "On the ballot");
-      if (
-        !Array.isArray(notResearched) ||
-        !notResearched.every((s) => allowed.includes(s)) ||
-        new Set(notResearched).size !== notResearched.length
-      ) {
-        fail([...keys, "not_researched"], "not-researched-invalid");
-      }
-    }
 
     const entries = [];
-    const personIds = new Set();
+    // One person's name for matching, or null; parseContests judges the id and name.
     const person = (value, pkeys, allowed) => {
-      if (!isMap(value)) {
-        fail(pkeys, "ballot-invalid");
-        return null;
-      }
+      if (!isMap(value)) return null;
       unknownKeys(value, allowed, pkeys);
-      if (typeof value.id !== "string" || !ID_PATTERN.test(value.id))
-        fail([...pkeys, "id"], "id-invalid");
-      else if (personIds.has(value.id)) fail([...pkeys, "id"], "id-duplicate");
-      else personIds.add(value.id);
-      if (!isText(value.name)) {
-        fail([...pkeys, "name"], "ballot-invalid");
-        return null;
-      }
+      if (!isText(value.name)) return null;
       if (typeof value.id === "string")
         people.push({ id: value.id, name: value.name, at: at([...pkeys, "id"]) });
       return { name: normalizeLine(value.name), at: at([...pkeys, "name"]) };
@@ -250,19 +219,14 @@ const checkBallotYaml = (root, ballot) => {
 
     let voteFor;
     if (type === "candidate") {
-      if (!OFFICE_TYPES.includes(contest.office_type))
-        fail([...keys, "office_type"], "ballot-invalid");
       if (!isCount(contest.vote_for)) fail([...keys, "vote_for"], "ballot-invalid");
       else voteFor = contest.vote_for;
-      if (!Array.isArray(contest.candidates) || contest.candidates.length === 0) {
-        fail([...keys, "candidates"], "ballot-invalid");
-      } else {
+      if (Array.isArray(contest.candidates) && contest.candidates.length > 0) {
         let printed = 0;
         for (const [n, candidate] of contest.candidates.entries()) {
           const pkeys = [...keys, "candidates", n];
           const entry = person(candidate, pkeys, CANDIDATE_KEYS);
           if (!isMap(candidate)) continue;
-          if (!STATUSES.includes(candidate.status)) fail([...pkeys, "status"], "ballot-invalid");
           for (const key of ["party", "party_name"]) {
             if (candidate[key] !== undefined && !isText(candidate[key]))
               fail([...pkeys, key], "ballot-invalid");
@@ -293,9 +257,6 @@ const checkBallotYaml = (root, ballot) => {
           fail([...keys, "printed_count"], "printed-count-mismatch");
       }
     } else if (type === "retention") {
-      if (contest.office_type !== undefined && contest.office_type !== "judicial") {
-        fail([...keys, "office_type"], "ballot-invalid");
-      }
       const entry = person(contest.official, [...keys, "official"], OFFICIAL_KEYS);
       if (entry) entries.push({ ...entry, party: null, printed: true, official: true });
     } else if (!isText(contest.search_terms)) {
@@ -311,6 +272,7 @@ const checkBallotYaml = (root, ballot) => {
       });
     }
   }
+  byLine();
   return {
     failures,
     contests,
@@ -346,20 +308,21 @@ const otherBallots = (root, ballot) => {
       codes.push(error.code);
       continue;
     }
-    if (!isMap(data) || !Array.isArray(data.contests)) {
+    // Read by the rules ballot-check holds this ballot to (data-files.js).
+    let contests = null;
+    try {
+      if (isMap(data)) contests = contestsOf(data, "-");
+    } catch (error) {
+      if (!(error instanceof Failure)) throw error;
+    }
+    if (!contests) {
       codes.push("ballot-invalid");
       continue;
     }
     if (!idMatches(rel.split("/")[1], data.state, data.county)) codes.push("ballot-id-mismatch");
-    const names = [];
-    for (const contest of data.contests) {
-      const listed = [
-        ...(Array.isArray(contest?.candidates) ? contest.candidates : []),
-        contest?.official,
-      ];
-      for (const p of listed)
-        if (typeof p?.id === "string" && typeof p.name === "string") names.push([p.id, p.name]);
-    }
+    const names = [...contests.values()].flatMap((contest) =>
+      contest.blocks.filter((b) => contest.subjects.has(b.subject)).map((b) => [b.subject, b.name]),
+    );
     others.push({ slug: data.slug, names });
   }
   const failures = codes.map((code) => new Failure("-", code));

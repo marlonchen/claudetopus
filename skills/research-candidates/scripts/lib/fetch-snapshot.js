@@ -23,7 +23,7 @@ const path = require("node:path");
 const { jsonToText } = require("./api-text");
 const ballotImport = require("./ballot-import").main;
 const { ID_PATTERN, SHORT_PAGE, WALL_SEGMENTS } = require("./constants");
-const { loadBallot, loadPrivateValues, loadTiers } = require("./data-files");
+const { loadContests, loadPrivateValues, loadTiers } = require("./data-files");
 const { openBallot, parseBallot, parseHttpUrl } = require("./fetch-common");
 const { fetchPage, recordedHref, spellings } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
@@ -52,8 +52,7 @@ const checkTarget = (root, { ballot, contest, subject, name }) => {
   if (subject !== "_race" && !ID_PATTERN.test(subject)) {
     throw new Failure(`${contest}/-`, "unknown-subject");
   }
-  const contests = loadBallot(root, ballot).contests;
-  const listed = contests.get(contest);
+  const listed = loadContests(path.join(root, ballot), `${ballot}/ballot.yaml`).get(contest);
   if (!listed) throw new Failure(`${ballot}/ballot.yaml`, "unknown-contest");
   if (subject !== "_race" && !listed.subjects.has(subject)) {
     throw new Failure(`${contest}/${subject}`, "unknown-subject");
