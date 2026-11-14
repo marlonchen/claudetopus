@@ -10,11 +10,12 @@
 // place, so recovery and saves hold a per-ballot lock: <ballot>/.lock/held,
 // holding a random token, created whole by an exclusive link so it is never
 // empty. A lock is held only for one recovery or save, so it is stale once it
-// is older than any save could take. Age is the only test: a pid means nothing
-// to a run in another pid namespace (a sandboxed agent). Removing a stale lock
-// is serialized by a second lock, .lock/break, and checked against the very
-// file judged stale (breakLock), and a run removes its own lock only while it
-// still holds its token.
+// is older than any save could take; a run that holds it longer, waiting on a
+// network answer, keeps it fresh (withLockAsync). Age is the only test: a pid
+// means nothing to a run in another pid namespace (a sandboxed agent).
+// Removing a stale lock is serialized by a second lock, .lock/break, and
+// checked against the very file judged stale (breakLock), and a run removes
+// its own lock only while it still holds its token.
 //
 // RESEARCH_CANDIDATES_TEST_CRASH=after-partial|after-manifest|after-link kills the
 // process with SIGKILL right after that step. Tests only.
@@ -113,10 +114,10 @@ const removeLeftoverTemps = (lockDir) => {
   }
 };
 
-// Run `body` holding the ballot's lock, or fail with ballot-locked after `waitMs`.
-// A long body calls the `refresh` it is given between its steps, so no
-// waiting run judges the lock stale; it fails ballot-locked if one broke it.
-const withLock = (ballotDir, body, waitMs = LOCK_WAIT_MS) => {
+// Take the ballot's lock, or fail with ballot-locked after `waitMs`. Returns
+// the lock directory, `refresh`, which fails ballot-locked if another run
+// broke the lock and otherwise keeps it fresh, and `release`.
+const acquire = (ballotDir, waitMs) => {
   const lockDir = path.join(ballotDir, ".lock");
   fs.mkdirSync(lockDir, { recursive: true });
   const lock = path.join(lockDir, "held");
@@ -137,11 +138,47 @@ const withLock = (ballotDir, body, waitMs = LOCK_WAIT_MS) => {
     const now = Date.now() / 1000;
     fs.utimesSync(lock, now, now);
   };
+  const release = () => {
+    if (readLock(lock)?.text === text) fs.rmSync(lock, { force: true });
+  };
+  return { lockDir, refresh, release };
+};
+
+// Run `body` holding the ballot's lock, or fail with ballot-locked after `waitMs`.
+// A long body calls the `refresh` it is given between its steps, so no
+// waiting run judges the lock stale; it fails ballot-locked if one broke it.
+const withLock = (ballotDir, body, waitMs = LOCK_WAIT_MS) => {
+  const { lockDir, refresh, release } = acquire(ballotDir, waitMs);
   try {
     removeLeftoverTemps(lockDir);
     return body(refresh);
   } finally {
-    if (readLock(lock)?.text === text) fs.rmSync(lock, { force: true });
+    release();
+  }
+};
+
+// withLock for a body that awaits a network answer (archive.js): the lock is
+// refreshed on a timer while it waits, so no waiting run judges it stale, and
+// the `refresh` the body is given fails ballot-locked if one broke it meanwhile.
+const withLockAsync = async (ballotDir, body, waitMs = LOCK_WAIT_MS) => {
+  const { lockDir, refresh, release } = acquire(ballotDir, waitMs);
+  let lost = null;
+  const timer = setInterval(() => {
+    try {
+      refresh();
+    } catch (error) {
+      lost ??= error;
+    }
+  }, LOCK_STALE_MS / 3);
+  try {
+    removeLeftoverTemps(lockDir);
+    return await body(() => {
+      if (lost) throw lost;
+      refresh();
+    });
+  } finally {
+    clearInterval(timer);
+    release();
   }
 };
 
@@ -288,6 +325,7 @@ module.exports = {
   save,
   sha256,
   withLock,
+  withLockAsync,
   writeOnce,
   writeSynced,
 };
