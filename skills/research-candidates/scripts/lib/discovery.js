@@ -44,7 +44,7 @@ const requireBallotCheck = (root, ballot, ballotDir) => {
 };
 
 // The contest entry of ballot.yaml, as typed (ballot-check has passed it).
-const readContest = (root, ballot, contest) => {
+const contestEntry = (root, ballot, contest) => {
   const location = `${ballot}/ballot.yaml`;
   const data = readYamlDocument(path.join(root, ballot, "ballot.yaml"), location).doc.toJS();
   const found = data.contests.find((c) => c.id === contest);
@@ -63,7 +63,7 @@ const bind = (argv) =>
     const ballotDir = openBallot(root, ballot);
     if (!ID_PATTERN.test(contest)) throw new Failure(`${ballot}/ballot.yaml`, "unknown-contest");
     requireBallotCheck(root, ballot, ballotDir);
-    readContest(root, ballot, contest);
+    contestEntry(root, ballot, contest);
     return [`${contest} bound ${bindContest(root, ballot, contest)}`];
   });
 
@@ -79,7 +79,7 @@ const bound = (root, token) => {
 const brief = (root, { ballot, contest }) => {
   const ballotDir = openBallot(root, ballot);
   requireBallotCheck(root, ballot, ballotDir);
-  const entry = readContest(root, ballot, contest);
+  const entry = contestEntry(root, ballot, contest);
   const lines = [`contest: ${contest}`, `type: ${entry.type}`];
   if (entry.office_type) lines.push(`office_type: ${entry.office_type}`);
   lines.push(`jurisdiction: ${entry.jurisdiction}`);
@@ -90,7 +90,7 @@ const brief = (root, { ballot, contest }) => {
   }
   if (entry.official) lines.push(`official: ${entry.official.id} ${entry.official.name}`);
   if (entry.type === "measure") lines.push("subject: _race");
-  const hosts = loadTiers(root, loadPrivateValues(root, ballot)).map((e) => e.parsed.host);
+  const hosts = loadTiers(root, loadPrivateValues(root, ballot), ballot).map((e) => e.parsed.host);
   for (const host of new Set(hosts)) lines.push(`domain: ${host}`);
   return lines;
 };

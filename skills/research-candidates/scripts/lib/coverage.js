@@ -16,16 +16,13 @@ const { parseArticle } = require("./article");
 const { allContests, parseArgs, resolveTarget } = require("./check");
 const {
   EXEMPTION,
-  OFFICE_TYPES,
   POSITIONS_ISSUES,
   SAYS_ONLY,
   SECTION_ITEMS,
   SECTION_STATES,
   SECTIONS,
-  STATUSES,
-  WITHDRAWN_SECTIONS,
 } = require("./constants");
-const { readYamlDocument } = require("./data-files");
+const { ON_BALLOT, loadContests } = require("./data-files");
 const { openBallot } = require("./fetch-common");
 const { Failure, Failures, runCommand } = require("./output");
 const { readSearchLog } = require("./search-log");
@@ -33,71 +30,8 @@ const { locate, walk } = require("./snapshot-hash");
 const { withLock } = require("./snapshot-store");
 
 const [UNKNOWN, NOT_RESEARCHED, NOT_JOB] = SECTION_STATES;
-const ON_BALLOT = SECTIONS.candidate[0];
 // source-tiers.md, Claim tags: a "Says:" tag.
 const SAYS_TAG = /^T[1-4]s$/;
-
-const isText = (value) => typeof value === "string" && value !== "";
-
-// What coverage reads of one ballot.yaml contest, or null when it lacks it.
-// ballot-check validates the rest and locates each fault by line.
-const readContest = (contest) => {
-  if (!contest || !isText(contest.id) || !Object.hasOwn(SECTIONS, contest.type)) return null;
-  const { type } = contest;
-  // The sections not_researched may name: all but On the ballot.
-  const deferrable = SECTIONS[type].filter((s) => s !== ON_BALLOT);
-  const later = contest.not_researched;
-  const valid =
-    later === undefined ||
-    later === "all" ||
-    (Array.isArray(later) && later.every((s) => deferrable.includes(s)));
-  if (!valid) return null;
-  const read = {
-    id: contest.id,
-    type,
-    notResearched: new Set(later === "all" ? deferrable : later),
-  };
-  if (type === "candidate") {
-    if (!OFFICE_TYPES.includes(contest.office_type) || !Array.isArray(contest.candidates))
-      return null;
-    const people = contest.candidates;
-    if (!people.every((c) => isText(c?.id) && isText(c.name) && STATUSES.includes(c.status)))
-      return null;
-    // Printed candidates in ballot order, then certified write-ins (article-format.md).
-    const writeIn = (c) => c.status === "certified_write_in";
-    const ordered = [...people.filter((c) => !writeIn(c)), ...people.filter(writeIn)];
-    read.officeType = contest.office_type;
-    read.blocks = ordered.map((c) => ({
-      name: c.name,
-      subject: c.id,
-      sections: c.status === "withdrawn_still_printed" ? WITHDRAWN_SECTIONS : SECTIONS.candidate,
-    }));
-  } else if (type === "retention") {
-    const { official } = contest;
-    if (!isText(official?.id) || !isText(official.name)) return null;
-    read.blocks = [{ name: official.name, subject: official.id, sections: SECTIONS.retention }];
-  } else {
-    read.blocks = [{ name: contest.id, subject: "_race", sections: SECTIONS.measure }];
-  }
-  return read;
-};
-
-// ballot.yaml's contests by id, as readContest reads them.
-const readContests = (ballotDir) =>
-  contestsOf(readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS());
-
-// The same, from ballot.yaml already read, so a caller that also shows its
-// raw fields reads the file once.
-const contestsOf = (data) => {
-  if (!Array.isArray(data?.contests)) throw new Failure("ballot.yaml", "ballot-invalid");
-  const contests = new Map();
-  for (const contest of data.contests) {
-    const read = readContest(contest);
-    if (!read) throw new Failure("ballot.yaml", "ballot-invalid");
-    contests.set(read.id, read);
-  }
-  return contests;
-};
 
 // A section's heading as sections.md writes it: its letter and its name.
 const heading = (type, name) =>
@@ -288,7 +222,7 @@ const coverArticle = (ballotDir, contest, article) => {
 };
 
 const coverage = (ballotDir, given) => {
-  const contests = readContests(ballotDir);
+  const contests = loadContests(ballotDir);
   const lines = [];
   let failed = false;
   for (const id of given.length ? given : allContests(ballotDir)) {
@@ -323,4 +257,4 @@ const main = (argv) =>
     return withLock(ballotDir, () => coverage(ballotDir, contests));
   });
 
-module.exports = { contestsOf, coverArticle, main, readContests };
+module.exports = { coverArticle, main };

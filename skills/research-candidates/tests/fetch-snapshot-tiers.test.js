@@ -439,7 +439,27 @@ describe("a broken ballot.yaml elsewhere in the data repo", () => {
     data.write("2026-general/yy-otherplace-2/ballot.yaml", "contests: [unclosed\n");
     const result = await fetchVia(data, routes, PLAIN);
     assert.equal(result.status, 1);
-    assert.equal(result.stdout, "- yaml-invalid\n");
+    assert.equal(result.stdout, "- yaml-invalid\n- check-each-ballot\n");
     assert.doesNotMatch(result.stdout, /yy-otherplace/);
+  });
+  // Value: protects=a ballot.yaml with no contests list elsewhere stops the fetch unlocated, with the hint to check each ballot; fails_when=loadTiers skips the file, names it, or drops the hint; why_new=ticket 43 review O1; seam=cli; no_claim=a half-typed contest (below)
+  it("stops at another ballot's ballot.yaml with no contests list, with check-each-ballot", async () => {
+    const data = repo();
+    data.write("2026-general/yy-otherplace-2/ballot.yaml", "election: 2026-general\n");
+    const result = await fetchVia(data, routes, PLAIN);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "- ballot-invalid\n- check-each-ballot\n");
+    assert.deepEqual(result.seen, []);
+  });
+  // Value: protects=one ballot's half-typed ballot.yaml stops no fetch on another (ticket 43 criterion 5); fails_when=loadTiers reads another ballot's contests strictly; why_new=ticket 43 review D1; seam=cli; no_claim=that ballot's own ballot-check, which locates the fault
+  it("fetches past another ballot's half-typed contest", async () => {
+    const data = repo();
+    data.write(
+      "2026-general/yy-otherplace-2/ballot.yaml",
+      DEFAULT_BALLOT.replace("        status: on_ballot\n", ""),
+    );
+    const result = await fetchVia(data, routes, PLAIN);
+    assert.equal(result.stdout, "sources/us-house-07/_race/county-page.md saved\n");
+    assert.equal(result.status, 0);
   });
 });

@@ -364,15 +364,23 @@ describe("each command's output codes are the ones its reference lists", () => {
     const section = format.slice(start, format.indexOf("\n## ", start + 1));
     return new Set([...section.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]));
   };
-  // The codes a lib file can print: new Failure(location, "code"), a fail(..., "code")
-  // helper's last argument, refusals ({ code: "..." }, refuse(url, "...")) and the fixed
-  // "- code" lines a command prints itself.
+  // The codes the contest model reports (data-files.js, fault(..., "code") and
+  // report(..., "code")): ballot-check prints each by line; every other script
+  // prints ballot-invalid for any of them (contestsOf).
+  const CONTEST_CODE = /\b(?:fault|report)\([^;]*?, "([a-z-]+)"\)/g;
+  const contestCodes = new Set(
+    [...read("scripts/lib/data-files.js").matchAll(CONTEST_CODE)].map((m) => m[1]),
+  );
+  // The codes a lib file can print: new Failure(location, "code"), a fail(..., "code"),
+  // fault(..., "code") or report(..., "code") helper's last argument, refusals
+  // ({ code: "..." }, refuse(url, "...")) and the fixed "- code" lines a command prints itself.
   const emittedBy = (file) => {
     const source = fs.readFileSync(path.join(SKILL_DIR, "scripts", "lib", file), "utf8");
     const emitted = new Set();
     for (const pattern of [
       /new Failure\([^;]*?, "([a-z-]+)"/g,
       /\bfail\([^;]*?, "([a-z-]+)"\)/g,
+      CONTEST_CODE,
       /code: "([a-z-]+)"/g,
       /refuse\(\w+, "([a-z-]+)"/g,
       /"- ([a-z-]+)/g,
@@ -408,7 +416,11 @@ describe("each command's output codes are the ones its reference lists", () => {
           f !== "install-deps.js" &&
           ![...BALLOT_CHECK, ...CHECK, ...COVERAGE, ...REVIEW_LIST, ...PUBLISH].includes(f),
       );
-    const emitted = new Set(files.flatMap((f) => [...emittedBy(f)]));
+    const emitted = new Set(
+      files
+        .flatMap((f) => [...emittedBy(f)])
+        .filter((code) => code === "ballot-invalid" || !contestCodes.has(code)),
+    );
     assert.ok(emitted.size >= 20, `only ${emitted.size} codes found in scripts/lib`);
     for (const code of emitted) assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
@@ -416,7 +428,9 @@ describe("each command's output codes are the ones its reference lists", () => {
   it("coverage: every code is in article-format.md's Command line section", () => {
     const listed = listedIn("article-format.md");
     const own = new Set(COVERAGE.flatMap((f) => [...emittedBy(f)]));
-    assert.ok(own.size >= 8, `only ${own.size} codes found in coverage`);
+    // ballot-invalid is raised by data-files.js's shared contest loader, and
+    // coverage still prints it (coverage.test.js, contest-model.test.js).
+    assert.ok(own.size >= 7, `only ${own.size} codes found in coverage`);
     for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
   });
 
@@ -469,7 +483,9 @@ describe("each command's output codes are the ones its reference lists", () => {
       "repo-guard.js",
       "terminal.js",
     ];
-    const own = new Set(BALLOT_CHECK.flatMap((f) => [...emittedBy(f)]));
+    const own = new Set([...BALLOT_CHECK.flatMap((f) => [...emittedBy(f)]), ...contestCodes]);
+    for (const code of ["id-invalid", "id-duplicate", "not-researched-invalid"])
+      assert.ok(contestCodes.has(code), `\`${code}\` is no longer a contest code`);
     assert.ok(own.size >= 15, `only ${own.size} codes found in ballot-check`);
     for (const code of own) assert.ok(listed.has(code), `\`${code}\` is not listed`);
     // Shared codes ballot-check can reach.
