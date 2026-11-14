@@ -439,7 +439,7 @@ describe("publish: receipts", () => {
     assert.deepStrictEqual(archived.links, [
       ["Original page ↗", "https://news.example.com/archived"],
       [
-        "Saved copy ↗",
+        "Archive copy (captured separately) ↗",
         "https://web.archive.org/web/20261019120000/https://news.example.com/archived",
       ],
     ]);

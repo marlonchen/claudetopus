@@ -410,6 +410,7 @@ describe("each command's output codes are the ones its reference lists", () => {
     "ballot-gate.js",
     "skill-pin.js",
     "page.js",
+    "page-contests.js",
     "page-scan.js",
     "pages.js",
   ];

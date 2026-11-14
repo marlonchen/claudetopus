@@ -14,17 +14,17 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { readArchives } = require("./archive");
 const { ballotGate } = require("./ballot-gate");
-const { ID_PATTERN, LEDGER } = require("./constants");
-const { contestsOf, familyPrivateValues, hiddenTitles, readYamlDocument } = require("./data-files");
+const { LEDGER } = require("./constants");
+const { readYamlDocument } = require("./data-files");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { Failure, Failures, report, runCommand } = require("./output");
+const { pageContests } = require("./page-contests");
 const { receiptLinks, renderPage } = require("./page");
 const { pushPage } = require("./pages");
-const { dropContests, scanPage } = require("./page-scan");
-const { ready } = require("./review-list");
-const { isSnapshotPath } = require("./snapshot-hash");
+const { scanPage } = require("./page-scan");
 const { today } = require("./snapshot-file");
 const { withLock, writeSynced } = require("./snapshot-store");
 const { printable, requireTerminal } = require("./terminal");
@@ -49,30 +49,6 @@ const readPublishYaml = (root) => {
   if (typeof name !== "string" || name.trim() === "")
     throw new Failure("publish.yaml", "publish-invalid", "display_name");
   return data;
-};
-
-// archives.tsv as a Map from snapshot path to its 14-digit Wayback capture
-// time (snapshot-format.md, Saved copies); a later line for a path wins. Any
-// other line, or a last line with no newline, fails archives-invalid.
-const ARCHIVE_LINE = /^(sources\/[^\t]+)\t([0-9]{14})$/;
-const readArchives = (ballotDir) => {
-  let text;
-  try {
-    text = fs.readFileSync(path.join(ballotDir, "archives.tsv"), "utf8");
-  } catch (error) {
-    if (error.code === "ENOENT") return new Map();
-    throw error;
-  }
-  const lines = text.split("\n");
-  const unended = lines.pop();
-  if (unended !== "") throw new Failure(`archives.tsv:${lines.length + 1}`, "archives-invalid");
-  const archives = new Map();
-  for (const [i, line] of lines.entries()) {
-    const m = ARCHIVE_LINE.exec(line);
-    if (!m || !isSnapshotPath(m[1])) throw new Failure(`archives.tsv:${i + 1}`, "archives-invalid");
-    archives.set(m[1], m[2]);
-  }
-  return archives;
 };
 
 // Does the ballot have a certified write-in list: a ledger line with role
@@ -143,24 +119,12 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
   const config = readPublishYaml(root);
   const displayName = config.display_name;
   ballotGate(root, ballot, ballotDir, config, refresh, show);
-  // Read once: the page shows the contests ready judged.
-  const data = readYamlDocument(path.join(ballotDir, "ballot.yaml"), "ballot.yaml").doc.toJS();
-  const contests = contestsOf(data);
-  const ids = data.contests.map((c) => c.id).filter((id) => ID_PATTERN.test(id));
-  // Once, for every contest, under the ballot lock (review-list.md).
-  const answers = ready(ballotDir, ids, { contests, manifestVerified: true });
-  refresh();
-  // A review file missing next to its baseline refuses: review-list rebuilds it.
-  const missing = ids.filter((id) => answers.get(id).reasons.includes("review-missing"));
-  if (missing.length)
-    throw new Failures(missing.map((id) => new Failure(`review/${id}.md`, "review-missing").line));
-  // Step 6.2: a contest whose claims, excerpts or source names hold private
-  // text is not ready (SKILL.md step 6.3). The page is public, so private
-  // means any ballot's in this data repo, not only this one's.
-  const values = { ...familyPrivateValues(root, ballot), title: hiddenTitles(data) };
-  const drops = dropContests(ids, answers, values);
-  const shown = new Map(answers);
-  for (const [id, reasons] of drops.dropped) shown.set(id, { ready: false, reasons });
+  const { data, contests, ids, values, drops, shown } = pageContests(
+    root,
+    ballot,
+    ballotDir,
+    refresh,
+  );
   const contestLines = ids.map((id) => {
     const { ready: isReady, reasons } = shown.get(id);
     return isReady ? `articles/${id}.md ready` : `articles/${id}.md not-ready ${reasons.join(",")}`;

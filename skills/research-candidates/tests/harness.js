@@ -340,9 +340,10 @@ const installSkill = (data) => {
 };
 
 // A local web server. `routes` maps an original URL (as the page would be
-// fetched on the open web) to { status, headers, body }. fetch-snapshot sends
-// every request here when RESEARCH_CANDIDATES_TEST_HTTP_TARGET is set, carrying
-// the original URL in the X-Original-Url header.
+// fetched on the open web) to { status, headers, body, during, delay }.
+// fetch-snapshot sends every request here when
+// RESEARCH_CANDIDATES_TEST_HTTP_TARGET is set, carrying the original URL in
+// the X-Original-Url header.
 const startServer = async (routes) => {
   const seen = [];
   const headers = [];
@@ -356,11 +357,18 @@ const startServer = async (routes) => {
       res.end("not found");
       return;
     }
-    res.writeHead(route.status ?? 200, {
-      "content-type": "text/html; charset=utf-8",
-      ...route.headers,
-    });
-    res.end(route.body ?? "");
+    const answer = () => {
+      res.writeHead(route.status ?? 200, {
+        "content-type": "text/html; charset=utf-8",
+        ...route.headers,
+      });
+      res.end(route.body ?? "");
+    };
+    // A route's `during` runs before it answers, `delay` milliseconds later
+    // when it gives one.
+    route.during?.();
+    if (route.delay) setTimeout(answer, route.delay);
+    else answer();
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
