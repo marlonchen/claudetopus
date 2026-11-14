@@ -2,7 +2,7 @@
 
 Candidate research skill for Claude Code. For each ballot the researcher adds it builds a guide where every claim is backed by a verbatim excerpt from a saved source, then publishes one static, phone-friendly page per ballot.
 
-See [SKILL.md](SKILL.md) for the full spec. **Status: mostly built**: every script in SKILL.md's script table runs, and so do the discovery, compile and neutrality agents ([Agents](#agents)). SKILL.md's status lists what is not built yet, among them `fetch-snapshot`'s Wayback copies (`archives.tsv`) and `supersedes` field.
+See [SKILL.md](SKILL.md) for the full spec. **Status: mostly built**: every script in SKILL.md's script table runs, and so do the discovery, compile and neutrality agents ([Agents](#agents)). SKILL.md's status lists what is not built yet, among them `fetch-snapshot`'s `supersedes` field.
 
 This directory is the skill's *source*. The research data it works on (ballots, their private strings, snapshots, review lists, articles) belongs in a separate **private** repo and must never be committed here: this repo is public.
 

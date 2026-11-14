@@ -51,22 +51,29 @@ const recordedHref = (url) => cleanUrl(url).href.replace(/[\s|]/g, encodeURIComp
 // The API-key variable of an API host (KEY_HOSTS), or null for any other host.
 const keyEnv = (url) => (Object.hasOwn(KEY_HOSTS, url.hostname) ? KEY_HOSTS[url.hostname] : null);
 
+// Whether RESEARCH_CANDIDATES_TEST_HTTP_TARGET names a local test server.
+const testTarget = () => TEST_TARGET.test(process.env.RESEARCH_CANDIDATES_TEST_HTTP_TARGET ?? "");
+
+// Request `url` with `options`, or the local test server for it.
+const send = (url, options) => {
+  if (testTarget()) {
+    options.headers["x-original-url"] = url.href;
+    const target = process.env.RESEARCH_CANDIDATES_TEST_HTTP_TARGET;
+    return fetch(`http://${target}${url.pathname}${url.search}`, options);
+  }
+  return fetch(url.href, options);
+};
+
 // An API's key goes only to its own host, over https, as a header and never in
 // the URL; any key parameter the caller gave that host is dropped.
 const request = (url, accept) => {
-  const target = process.env.RESEARCH_CANDIDATES_TEST_HTTP_TARGET;
   const headers = { "user-agent": "research-candidates fetch-snapshot", accept };
   const env = keyEnv(url);
   const sent = env ? cleanUrl(url) : withoutFragment(url);
   if (env && url.protocol === "https:" && process.env[env]) {
     headers["x-api-key"] = process.env[env];
   }
-  const options = { redirect: "manual", headers, signal: AbortSignal.timeout(TIMEOUT_MS) };
-  if (target && TEST_TARGET.test(target)) {
-    headers["x-original-url"] = sent.href;
-    return fetch(`http://${target}${sent.pathname}${sent.search}`, options);
-  }
-  return fetch(sent.href, options);
+  return send(sent, { redirect: "manual", headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
 };
 
 // The body, or null once it passes MAX_BYTES; never buffers more than that.
@@ -227,4 +234,14 @@ const fetchPage = async (entries, startUrl, checkPrivate, options = {}) => {
   return refuse(url, "too-many-redirects", "too many redirects");
 };
 
-module.exports = { cleanUrl, decode, fetchPage, isHttp, isPdf, recordedHref, spellings };
+module.exports = {
+  cleanUrl,
+  decode,
+  fetchPage,
+  isHttp,
+  isPdf,
+  recordedHref,
+  send,
+  spellings,
+  testTarget,
+};

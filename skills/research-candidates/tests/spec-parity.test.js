@@ -2350,7 +2350,8 @@ describe("InstallCommands", () => {
 //   agree: _ballot gets the county origin and no saved copy, a query or API url gets no link;
 //   fails_when=one file adds a link case, drops one, or lets _ballot or a query url reach
 //   Wayback; why_new=no test read receipt links or Saved copies; seam=none;
-//   no_claim=publish's renderer and fetch-snapshot (not built yet; spec text only)
+//   no_claim=publish's renderer (publish-page.test.js) and fetch-snapshot --archive
+//   (fetch-snapshot-archive.test.js)
 describe("ReceiptLinks", () => {
   it("6.2's link cases, page.md's receipt lines and the Wayback rule agree", () => {
     const step62 = between(SKILL, "\n2. Before rendering,", "\n3. Privacy scan.");

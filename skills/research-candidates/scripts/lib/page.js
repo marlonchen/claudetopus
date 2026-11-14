@@ -108,7 +108,7 @@ const receiptOf = (rel, fields, archives) => {
   const stamp = archives.get(rel);
   if (stamp)
     links.push({
-      text: "Saved copy",
+      text: "Archive copy (captured separately)",
       href: `https://web.archive.org/web/${stamp}/${rebuilt(url)}`,
     });
   return {

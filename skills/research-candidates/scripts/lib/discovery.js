@@ -20,7 +20,7 @@
 //   names, and the hosts in tiers.yaml, rerunning ballot-check first. The
 //   other two are fetch-snapshot's plain fetch and --searched with the bound
 //   ballot and contest filled in, so the agent never gives either, and every
-//   other mode (--ballot, --file, --keep-short) is out of reach.
+//   other mode (--ballot, --file, --keep-short, --archive) is out of reach.
 
 const path = require("node:path");
 const { check: checkBallot } = require("./ballot-check");
