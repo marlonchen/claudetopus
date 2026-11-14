@@ -14,6 +14,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { readArchives } = require("./archive");
 const { ballotGate } = require("./ballot-gate");
 const { ID_PATTERN, LEDGER } = require("./constants");
 const { contestsOf, familyPrivateValues, hiddenTitles, readYamlDocument } = require("./data-files");
@@ -24,7 +25,6 @@ const { receiptLinks, renderPage } = require("./page");
 const { pushPage } = require("./pages");
 const { dropContests, scanPage } = require("./page-scan");
 const { ready } = require("./review-list");
-const { isSnapshotPath } = require("./snapshot-hash");
 const { today } = require("./snapshot-file");
 const { withLock, writeSynced } = require("./snapshot-store");
 const { printable, requireTerminal } = require("./terminal");
@@ -49,30 +49,6 @@ const readPublishYaml = (root) => {
   if (typeof name !== "string" || name.trim() === "")
     throw new Failure("publish.yaml", "publish-invalid", "display_name");
   return data;
-};
-
-// archives.tsv as a Map from snapshot path to its 14-digit Wayback capture
-// time (snapshot-format.md, Saved copies); a later line for a path wins. Any
-// other line, or a last line with no newline, fails archives-invalid.
-const ARCHIVE_LINE = /^(sources\/[^\t]+)\t([0-9]{14})$/;
-const readArchives = (ballotDir) => {
-  let text;
-  try {
-    text = fs.readFileSync(path.join(ballotDir, "archives.tsv"), "utf8");
-  } catch (error) {
-    if (error.code === "ENOENT") return new Map();
-    throw error;
-  }
-  const lines = text.split("\n");
-  const unended = lines.pop();
-  if (unended !== "") throw new Failure(`archives.tsv:${lines.length + 1}`, "archives-invalid");
-  const archives = new Map();
-  for (const [i, line] of lines.entries()) {
-    const m = ARCHIVE_LINE.exec(line);
-    if (!m || !isSnapshotPath(m[1])) throw new Failure(`archives.tsv:${i + 1}`, "archives-invalid");
-    archives.set(m[1], m[2]);
-  }
-  return archives;
 };
 
 // Does the ballot have a certified write-in list: a ledger line with role

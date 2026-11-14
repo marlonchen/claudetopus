@@ -16,11 +16,13 @@
 // requested and never logged, since the URL is the private text.
 //
 // fetch-snapshot --ballot ... is the researcher's step 2 import (ballot-import.js),
-// and fetch-snapshot --searched ... the discovery agent's search log (search-log.js).
+// fetch-snapshot --searched ... the discovery agent's search log (search-log.js),
+// and fetch-snapshot --archive ... the Wayback batch (archive.js).
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { jsonToText } = require("./api-text");
+const archive = require("./archive").main;
 const ballotImport = require("./ballot-import").main;
 const { ID_PATTERN, SHORT_PAGE, WALL_SEGMENTS } = require("./constants");
 const { loadContests, loadPrivateValues, loadTiers } = require("./data-files");
@@ -111,6 +113,7 @@ const landedOnWall = (given, page) => {
 const SHORT = { code: "short-page", reason: "short page" };
 
 const MODES = {
+  "--archive": (argv) => archive(argv.slice(1)),
   "--ballot": ballotImport,
   "--searched": searched,
   "--keep-short": (argv) => plainFetch(argv.slice(1), { keepShort: true }),
