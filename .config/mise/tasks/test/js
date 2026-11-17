@@ -2,6 +2,13 @@
 #MISE description="Run JavaScript tests with the node:test builtin"
 set -euo pipefail
 
+# Git exports GIT_DIR, GIT_INDEX_FILE and its other local variables to hooks.
+# Inside a worktree they name the shared repository, and they win over a
+# test's cwd, so a test's `git init` in a temp directory would act on the main
+# checkout instead (on 2026-11-11 it set core.bare there). Run every suite
+# without them.
+unset $(git rev-parse --local-env-vars)
+
 # `node --test <dir>` exits 0 when it discovers nothing, so a test file renamed
 # off the *.test.js pattern — or a tests/ directory that moves — would leave
 # every caller (the pre-commit hook, CI) reporting green while running zero

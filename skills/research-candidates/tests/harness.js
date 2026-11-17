@@ -20,8 +20,23 @@ const SCRIPTS_DIR = path.join(SKILL_DIR, "scripts");
 // the file's process alive (.config/mise/tasks/test/js).
 const CHILD_TIMEOUT = { timeout: 100_000, killSignal: "SIGKILL" };
 
+// Git exports GIT_DIR, GIT_INDEX_FILE and its other local variables to hooks,
+// and they win over cwd: under the pre-commit hook in a worktree, every git
+// the tests start would act on the shared repository (ticket 61). The git
+// helper, the spawn helpers and publish-fixture's git pass on the environment
+// without them.
+const GIT_LOCAL_VARS = new Set(
+  spawnSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf8" }).stdout.split("\n"),
+);
+const withoutGitLocals = (env) =>
+  Object.fromEntries(Object.entries(env).filter(([name]) => !GIT_LOCAL_VARS.has(name)));
+
 const git = (cwd, ...args) => {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: withoutGitLocals(process.env),
+  });
   if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
   return result.stdout;
 };
@@ -386,7 +401,7 @@ const runCli = (script, args, { cwd, env = {} }) =>
   new Promise((resolve) => {
     const child = spawn(process.execPath, [path.join(SCRIPTS_DIR, script), ...args], {
       cwd,
-      env: { ...process.env, CLAUDECODE: "", ...env },
+      env: { ...withoutGitLocals(process.env), CLAUDECODE: "", ...env },
       stdio: ["ignore", "pipe", "pipe"],
       ...CHILD_TIMEOUT,
     });
@@ -461,7 +476,7 @@ sys.exit(child.returncode)
 // what the terminal showed, without escape sequences and with line ends as "\n".
 const runInTty = (script, args, { cwd, env = {}, answer = "y", pipe = "none" }) =>
   new Promise((resolve) => {
-    const base = { ...process.env, ...env };
+    const base = { ...withoutGitLocals(process.env), ...env };
     if (!Object.hasOwn(env, "CLAUDECODE")) delete base.CLAUDECODE;
     const child = spawn(
       "python3",
@@ -531,4 +546,5 @@ module.exports = {
   runInTty,
   sourceRepo,
   startServer,
+  withoutGitLocals,
 };

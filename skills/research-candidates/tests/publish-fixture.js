@@ -12,7 +12,15 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { BALLOT, git, installSkill, makeDataRepo, runCli, runInTty } = require("./harness");
+const {
+  BALLOT,
+  git,
+  installSkill,
+  makeDataRepo,
+  runCli,
+  runInTty,
+  withoutGitLocals,
+} = require("./harness");
 const { load } = require("../scripts/lib/deps");
 
 const repos = [];
@@ -409,7 +417,7 @@ const pagesSetup = (data, { seed, gh = { visibility: "PUBLIC", id: 77 } } = {}) 
     const result = spawnSync("git", args, {
       cwd,
       encoding: "utf8",
-      env: { ...process.env, ...data.env },
+      env: { ...withoutGitLocals(process.env), ...data.env },
     });
     if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
     return result.stdout;
@@ -426,7 +434,11 @@ const pagesSetup = (data, { seed, gh = { visibility: "PUBLIC", id: 77 } } = {}) 
     git: (...args) => pagesGit(dir, ...args),
     // A file in the remote's main, or null when it has none.
     remoteFile: (rel) => {
-      const result = spawnSync("git", ["show", `main:${rel}`], { cwd: bare, encoding: "utf8" });
+      const result = spawnSync("git", ["show", `main:${rel}`], {
+        cwd: bare,
+        encoding: "utf8",
+        env: withoutGitLocals(process.env),
+      });
       return result.status === 0 ? result.stdout : null;
     },
     // Push files to the remote's `branch` from a clone of its own, as
