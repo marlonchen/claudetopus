@@ -137,15 +137,41 @@ const isPastStamp = (stamp) => {
   return Number.isFinite(time) && new Date(time).toISOString() === iso && time <= Date.now();
 };
 
+// `url` spelled as RFC 3986 section 6.2 compares it: parsed, which lowers the
+// scheme and host, drops a default port and gives a bare host its "/"
+// (6.2.3), then each percent-encoded octet in upper-case hex, and decoded
+// when it is an unreserved character (6.2.2). Only a URL with nothing past
+// its path is spelled; any other gives null. So a different scheme, host or
+// path never compares equal: `http` against `https`, or a `www.` added or
+// dropped, is another URL here.
+const UNRESERVED = /^[A-Za-z0-9._~-]$/;
+const comparable = (text) => {
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    return null;
+  }
+  const bare = `${url.protocol}//${url.host}${url.pathname}`;
+  if (url.href !== bare) return null;
+  return bare.replace(/%([0-9A-Fa-f]{2})/g, (_, hex) => {
+    const char = String.fromCharCode(Number.parseInt(hex, 16));
+    return UNRESERVED.test(char) ? char : `%${hex.toUpperCase()}`;
+  });
+};
+
 // The 14-digit capture time a Save Page Now answer names, from the
 // /web/<timestamp>/<url> URL it redirects to or gives as its
-// Content-Location, only when that <url> is the one sent and the timestamp
-// is a real time, not in the future.
+// Content-Location, only when that <url> is the one sent, in any spelling
+// `comparable` makes equal, and the timestamp is a real time, not in the
+// future. The live anonymous route answers a 302 with an absolute Location
+// of this form (ticket 63).
 const CAPTURE = /^(?:https?:\/\/web\.archive\.org)?\/web\/([0-9]{14})\/(.*)$/s;
 const captureTime = (response, url) => {
+  const sent = comparable(url.href);
   for (const header of ["location", "content-location"]) {
     const m = CAPTURE.exec(response.headers.get(header) ?? "");
-    if (m && m[2] === url.href && isPastStamp(m[1])) return m[1];
+    if (m && sent && comparable(m[2]) === sent && isPastStamp(m[1])) return m[1];
   }
   return null;
 };
