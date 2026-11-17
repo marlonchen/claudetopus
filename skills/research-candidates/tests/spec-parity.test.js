@@ -2822,7 +2822,7 @@ describe("AddABallot", () => {
   it("step 2 has the researcher list the ZIP in private.yaml before the first --ballot", () => {
     assert.match(
       step2(),
-      /Before the first `--ballot`, the researcher creates the ballot directory, then `<election>\/<ballot-id>\/private\.yaml` in it .*? listing the voter's ZIP[^.]*ward, precinct, township or ballot style/,
+      /Before the first `--ballot`, the researcher creates the ballot directory, then `<election>\/<ballot-id>\/private\.yaml` in it .*? It must list the voter's ZIP[^.]*precinct or ballot style the lookup showed[^.]*ward or township/,
     );
     assert.doesNotMatch(step2(), /addresses\.yaml|\blabels?\b/i);
   });
@@ -2889,6 +2889,116 @@ describe("AddABallot", () => {
     const ignored = checkIgnore(["-v"], ["addresses.yaml"]);
     assert.strictEqual(ignored.status, 0, "addresses.yaml is not ignored");
     assert.match(ignored.stdout, /^\.gitignore:/);
+  });
+});
+
+// Added for ticket 62 (prefer the county's sample ballot; owner, 2026-11-14).
+// Value: protects=step 2 asks first for the county's non-personalized sample ballot for the
+//   voter's ballot style, checked against the lookup's contests, with the ZIP and precinct listed
+//   in private.yaml first, so no printed address reaches the snapshot or private.yaml, and a
+//   personalized one is the fallback that step 3's in-parts rule covers; the session never asks
+//   for or repeats a precinct; fails_when=step 2 again sends the researcher only to the voter
+//   lookup's ballot, drops the fallback order or the ballot-style check, lets the session ask
+//   which precinct, makes the precinct listing optional, or loses a privacy rule (lookups in the
+//   researcher's browser, saved only with --ballot at their terminal); why_new=PR #58 review
+//   M1/D1, PR #63 review M1/M2/D1/O6; seam=spec text; no_claim=the session following it
+describe("CountySampleBallot", () => {
+  const step2 = () => between(WORKFLOW, "### 2. ", "\n### ");
+
+  it("step 2 asks first for the county's non-personalized sample ballot, by precinct or ballot style", () => {
+    assert.match(
+      step2(),
+      /Ask first for the county's non-personalized sample ballot for the ballot's precinct or ballot style/,
+    );
+    assert.match(step2(), /county election office's sample-ballot page/);
+    assert.match(step2(), /without giving an address/);
+    assert.match(step2(), /never tells the session which/);
+    assert.match(step2(), /often a personalized sample ballot, the fallback below/);
+  });
+
+  it("the researcher takes the voter's ballot style and checks it against the lookup before saving", () => {
+    assert.match(
+      step2(),
+      /When the county publishes sample ballots by ballot style \(or precinct split\), the researcher takes the one for the voter's ballot style\. Before saving it, they check that its contests and districts match the ones the lookup showed\./,
+    );
+  });
+
+  it("the session never asks for a precinct or ballot style and never repeats one typed", () => {
+    const text = step2();
+    assert.doesNotMatch(
+      text,
+      /(?<!never )\bask (the researcher )?(which|what|for (the|their))\b[^.]*(precinct|ballot style)/i,
+    );
+    assert.match(text, /Never ask which precinct or ballot style the lookup showed\./);
+    assert.match(
+      text,
+      /If the researcher types one anyway, do not repeat it or write it anywhere; ask them to list it themselves in that ballot's `private\.yaml`/,
+    );
+  });
+
+  it("a personalized sample ballot comes after it, only when neither the county nor the state publishes one", () => {
+    const text = step2();
+    const county = text.indexOf("non-personalized sample ballot");
+    const fallback = text.search(
+      /Use a personalized sample ballot[^.]* only when neither the county nor the state publishes a non-personalized one/,
+    );
+    assert.ok(county >= 0, "step 2 does not ask for the county's non-personalized sample ballot");
+    assert.ok(fallback > county, "step 2 does not keep the personalized ballot as the fallback");
+    assert.match(
+      text.slice(fallback),
+      /^[^.]*step 3/,
+      "the fallback does not point to step 3's rule",
+    );
+  });
+
+  // The model never looking up an address or fetching a lookup result is OwnerDecisions' pin.
+  it("step 2 keeps the researcher's browser and terminal for the lookups and the save", () => {
+    const text = step2();
+    assert.match(
+      text,
+      /The researcher runs the lookups in their own browser and tells the session only the county/,
+    );
+    assert.match(
+      text,
+      /the researcher saves it in their own terminal with `fetch-snapshot --ballot` \(or `--ballot --file`[,)]/,
+    );
+  });
+
+  it("private.yaml must list the precinct, and --ballot --file is used whenever the URL names it", () => {
+    const text = step2();
+    assert.match(
+      text,
+      /It must list the voter's ZIP, quoted, and the precinct or ballot style the lookup showed, each as its own `private_strings` entry/,
+    );
+    assert.doesNotMatch(text, /already know/);
+    assert.match(
+      text,
+      /`--ballot` asks for `--ballot --file` with `use-ballot-file` when the URL's path holds a listed `private_strings` entry of any ballot or the ballot id\./,
+    );
+    assert.match(
+      text,
+      /use `--ballot --file` whenever the URL names the precinct or ballot style\./,
+    );
+  });
+
+  it("ballot-format.md agrees: the county's sample ballot first, a personalized one as the fallback", () => {
+    const intro = between(BALLOT, "Text on the ballot that locates or names the voter", "\n```");
+    assert.match(
+      intro,
+      /before the first `--ballot`, listing at least the voter's ZIP and the precinct or ballot style the lookup showed/,
+    );
+    assert.match(
+      intro,
+      /The sample ballot is the county's non-personalized one for the precinct or ballot style \(SKILL\.md step 2\)/,
+    );
+    assert.match(
+      intro,
+      /When the county publishes sample ballots by ballot style \(or precinct split\), it is the one for the voter's ballot style, and before saving it the researcher checks that its contests and districts match the ones the lookup showed\./,
+    );
+    assert.match(
+      intro,
+      /A personalized sample ballot, used only when neither the county nor the state publishes a non-personalized one, prints the voter's name and address: they go under `private_strings` in parts \(SKILL\.md step 3\), never in `ignored_lines`\./,
+    );
   });
 });
 

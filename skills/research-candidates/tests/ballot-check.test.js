@@ -1140,7 +1140,7 @@ describe("ballot-check: no address stored", () => {
     assert.ok(!data.exists(VIEW));
   });
 
-  // Value: protects=ballot.yaml and ignored_lines, which discovery sends to web searches, refuse another family member's ZIP or place name, as the family's one address file once refused any address's ZIP; fails_when=the Private text rule reads this ballot's private_strings alone; why_new=ticket 27 (PR #54 review, D1), owner to confirm; seam=cli; no_claim=the sample-ballot accounting and ballot-id-private, which read this ballot's entries only
+  // Value: protects=ballot.yaml and ignored_lines, which discovery sends to web searches, refuse another family member's ZIP or place name, as the family's one address file once refused any address's ZIP; fails_when=the Private text rule reads this ballot's private_strings alone; why_new=ticket 27 (PR #54 review, D1), owner confirmed 2026-11-14; seam=cli; no_claim=the sample-ballot accounting and ballot-id-private, which read this ballot's entries only
   it("fails another ballot's private string in ballot.yaml and ignored_lines, never naming it", async () => {
     const data = setup({
       ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 88888 Lakeside court"),
