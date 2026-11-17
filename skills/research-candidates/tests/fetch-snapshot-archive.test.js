@@ -212,10 +212,11 @@ describe("fetch-snapshot --archive reads the live Save Page Now answer", () => {
     return { own, data, rel };
   };
 
-  // Value: protects=ticket 63's spelling cases that RFC 3986 section 6.2 makes the same URL: a bare host with or without its "/" (6.2.3), percent-encoding in lower-case hex (6.2.2.1), and an unreserved character percent-encoded or not (6.2.2.2), each way; fails_when=the match goes back to comparing strings and drops a capture of the very page sent; why_new=new; seam=cli; no_claim=how the live service spells these URLs (none was recorded)
+  // Value: protects=ticket 63's spelling cases that RFC 3986 section 6.2 makes the same URL: a bare host's "/" dropped from the Location (6.2.3), percent-encoding in lower-case hex (6.2.2.1), and an unreserved character percent-encoded or not (6.2.2.2), each way; slash-unrecorded is a guard that archiveUrl sends a bare host with its "/", so the Location's "/" is the URL sent; fails_when=the match goes back to comparing strings and drops a capture of the very page sent; why_new=new; seam=cli; no_claim=how the live service spells these URLs (none was recorded)
   it("records a capture whose Location spells the URL sent another equal way", async () => {
     const cases = [
       ["slash-dropped", "https://example.com/", "https://example.com"],
+      // Not a spelling rule: archiveUrl sends a bare host with its "/".
       ["slash-unrecorded", "https://example.org", "https://example.org/"],
       ["hex-case", "https://news.example.com/caf%C3%A9", "https://news.example.com/caf%c3%a9"],
       [
@@ -235,8 +236,8 @@ describe("fetch-snapshot --archive reads the live Save Page Now answer", () => {
       assert.match(archives(data), new RegExp(`spell-${name}\\.md\\t${STAMP}\\n`));
   });
 
-  // Value: protects=ticket 63's spelling cases that name another URL, and those no recorded answer shows the live service's spelling of, kept strict: `http` against `https` and a `www.` added or dropped (another scheme or host), a "/" added or dropped after a path or a "/" percent-encoded (another path), a query string, and a path's raw UTF-8 bytes where its percent-encoding was sent; each is wayback-no-capture and records nothing; fails_when=the match is loosened to treat another scheme, host or path as the page sent; why_new=new; seam=cli; no_claim=that the live service ever answers these spellings
-  it("records nothing when the Location names another scheme, host or path", async () => {
+  // Value: protects=ticket 63's spelling cases that name another URL, kept strict: `http` against `https` and a `www.` added or dropped (another scheme or host), a "/" added or dropped after a path, a "/" or "?" percent-encoded, or a letter in another case (another path), and a query string; and a path's raw UTF-8 bytes where its percent-encoding was sent, the same page, kept strict because no recorded answer shows the live service spelling it; each is wayback-no-capture and records nothing; fails_when=the match is loosened to treat another scheme, host or path, or raw UTF-8, as the URL sent; why_new=new; seam=cli; no_claim=that the live service ever answers these spellings
+  it("records nothing when the Location names another URL or raw UTF-8", async () => {
     const cases = [
       ["to-http", "https://news.example.com/scheme", "http://news.example.com/scheme"],
       ["to-https", "http://news.example.com/plain", "https://news.example.com/plain"],
@@ -245,6 +246,8 @@ describe("fetch-snapshot --archive reads the live Save Page Now answer", () => {
       ["path-slash-added", "https://news.example.com/jim", "https://news.example.com/jim/"],
       ["path-slash-dropped", "https://news.example.com/joe/", "https://news.example.com/joe"],
       ["slash-encoded", "https://news.example.com/a/b", "https://news.example.com/a%2Fb"],
+      ["qmark-encoded", "https://news.example.com/a", "https://news.example.com/a%3Fb"],
+      ["path-case", "https://news.example.com/jan", "https://news.example.com/Jan"],
       ["query", "https://news.example.com/q", "https://news.example.com/q?x=1"],
       [
         "raw-utf8",

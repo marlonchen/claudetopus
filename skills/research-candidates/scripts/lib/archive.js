@@ -137,13 +137,16 @@ const isPastStamp = (stamp) => {
   return Number.isFinite(time) && new Date(time).toISOString() === iso && time <= Date.now();
 };
 
-// `url` spelled as RFC 3986 section 6.2 compares it: parsed, which lowers the
-// scheme and host, drops a default port and gives a bare host its "/"
-// (6.2.3), then each percent-encoded octet in upper-case hex, and decoded
-// when it is an unreserved character (6.2.2). Only a URL with nothing past
-// its path is spelled; any other gives null. So a different scheme, host or
-// path never compares equal: `http` against `https`, or a `www.` added or
-// dropped, is another URL here.
+// `url` spelled as RFC 3986 section 6.2 compares it: parsed by the WHATWG URL
+// parser, which lowers the scheme and host, drops a default port and gives a
+// bare host its "/" (6.2.3), then each percent-encoded octet in upper-case
+// hex, and decoded when it is an unreserved character (6.2.2). The parser
+// also removes dot segments (`%2e` ones too), reads `\` as `/`, accepts
+// `https:host`, strips tabs and newlines, percent-encodes a space and reads
+// numeric IPv4 forms, so each of those is the same resource as the URL sent.
+// Only a URL with nothing past its path is spelled; any other gives null. So
+// another URL never compares equal: `http` against `https`, or a `www.` added
+// or dropped, is another URL here.
 const UNRESERVED = /^[A-Za-z0-9._~-]$/;
 const comparable = (text) => {
   let url;
