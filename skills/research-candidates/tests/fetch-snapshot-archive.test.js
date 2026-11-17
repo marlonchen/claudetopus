@@ -147,6 +147,123 @@ describe("fetch-snapshot --archive records Wayback captures in archives.tsv", ()
   });
 });
 
+describe("fetch-snapshot --archive reads the live Save Page Now answer", () => {
+  // The owner's one anonymous capture made by hand on 2026-11-14 (ticket 63),
+  // `curl -sS -i 'https://web.archive.org/save/https://example.com/'`, as
+  // recorded: status, headers and body, less the network id and the session
+  // cookie. It came over HTTP/2; the local server answers over HTTP/1.1, which
+  // fetch reads the same. The timestamp is a recent existing capture, hours
+  // before the request, not a new one.
+  const EXAMPLE = `${MONEY}/example.md`;
+  const EXAMPLE_URL = "https://example.com/";
+  const RECORDED = {
+    status: 302,
+    headers: {
+      server: "nginx",
+      date: "Sun, 15 Nov 2026 03:42:10 GMT",
+      "content-type": "text/html; charset=utf-8",
+      "content-length": "286",
+      location: "https://web.archive.org/web/20261115000019/https://example.com/",
+      "x-location": "save-sync",
+      "x-rl": "0",
+    },
+    body:
+      '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n' +
+      "<title>Redirecting...</title>\n" +
+      "<h1>Redirecting...</h1>\n" +
+      '<p>You should be redirected automatically to target URL: <a href="/web/20261115000019/https://example.com/">/web/20261115000019/https://example.com/</a>. If not click the link.',
+  };
+
+  // Value: protects=ticket 63 criterion 2: the answer the live anonymous route gave (a 302 whose absolute Location is /web/<timestamp>/<the URL sent>, with x-location save-sync) is read as a capture and its own timestamp recorded; fails_when=captureTime stops reading that answer, or records the request's time instead of the capture's; why_new=new; seam=cli; no_claim=answers to other URLs, or SPN2's authenticated job route
+  it("records the recorded answer's capture time", async () => {
+    const data = await ballotCiting({ [EXAMPLE]: { url: EXAMPLE_URL } });
+    const result = await archive(data, { ...BASE, [save(EXAMPLE_URL)]: RECORDED });
+    assert.strictEqual(
+      result.stdout,
+      `${JANE_BIO} archived\n${EXAMPLE} archived\n${JANE_SITE} archived\n`,
+    );
+    assert.strictEqual(result.status, 0);
+    assert.deepStrictEqual(result.seen, [save(BIO_URL), save(EXAMPLE_URL), save(SITE_URL)]);
+    assert.strictEqual(
+      archives(data),
+      `${JANE_BIO}\t${STAMP}\n${EXAMPLE}\t20261115000019\n${JANE_SITE}\t${STAMP}\n`,
+    );
+  });
+
+  // Run the batch with one cited snapshot per case, [name, its url, the URL
+  // the answer's Location names after /web/<timestamp>/], each answered as the
+  // recorded answer is; the stdout line each gets, path order.
+  const spelled = async (cases) => {
+    const rel = (name) => `${MONEY}/spell-${name}.md`;
+    const data = await ballotCiting(
+      Object.fromEntries(cases.map(([name, url]) => [rel(name), { url }])),
+    );
+    const routes = { ...BASE };
+    for (const [, url, named] of cases) {
+      routes[save(new URL(url).href)] = {
+        ...RECORDED,
+        headers: { ...RECORDED.headers, location: `https://web.archive.org/web/${STAMP}/${named}` },
+      };
+    }
+    const result = await archive(data, routes);
+    assert.strictEqual(result.status, 0, result.stdout);
+    assert.strictEqual(result.seen.length, cases.length + 2);
+    const own = result.stdout.split("\n").filter((line) => line.includes("/spell-"));
+    return { own, data, rel };
+  };
+
+  // Value: protects=ticket 63's spelling cases that RFC 3986 section 6.2 makes the same URL: a bare host's "/" dropped from the Location (6.2.3), percent-encoding in lower-case hex (6.2.2.1), and an unreserved character percent-encoded or not (6.2.2.2), each way; slash-unrecorded is a guard that archiveUrl sends a bare host with its "/", so the Location's "/" is the URL sent; fails_when=the match goes back to comparing strings and drops a capture of the very page sent; why_new=new; seam=cli; no_claim=how the live service spells these URLs (none was recorded)
+  it("records a capture whose Location spells the URL sent another equal way", async () => {
+    const cases = [
+      ["slash-dropped", "https://example.com/", "https://example.com"],
+      // Not a spelling rule: archiveUrl sends a bare host with its "/".
+      ["slash-unrecorded", "https://example.org", "https://example.org/"],
+      ["hex-case", "https://news.example.com/caf%C3%A9", "https://news.example.com/caf%c3%a9"],
+      [
+        "tilde-encoded",
+        "https://news.example.com/~jane/notes",
+        "https://news.example.com/%7Ejane/notes",
+      ],
+      [
+        "tilde-decoded",
+        "https://news.example.com/%7ebob/notes",
+        "https://news.example.com/~bob/notes",
+      ],
+    ];
+    const { own, data, rel } = await spelled(cases);
+    assert.deepStrictEqual(own, cases.map(([name]) => `${rel(name)} archived`).sort());
+    for (const [name] of cases)
+      assert.match(archives(data), new RegExp(`spell-${name}\\.md\\t${STAMP}\\n`));
+  });
+
+  // Value: protects=ticket 63's spelling cases that name another URL, kept strict: `http` against `https` and a `www.` added or dropped (another scheme or host), a "/" added or dropped after a path, a "/" or "?" percent-encoded, or a letter in another case (another path), and a query string; and a path's raw UTF-8 bytes where its percent-encoding was sent, the same page, kept strict because no recorded answer shows the live service spelling it; each is wayback-no-capture and records nothing; fails_when=the match is loosened to treat another scheme, host or path, or raw UTF-8, as the URL sent; why_new=new; seam=cli; no_claim=that the live service ever answers these spellings
+  it("records nothing when the Location names another URL or raw UTF-8", async () => {
+    const cases = [
+      ["to-http", "https://news.example.com/scheme", "http://news.example.com/scheme"],
+      ["to-https", "http://news.example.com/plain", "https://news.example.com/plain"],
+      ["www-added", "https://example.net/", "https://www.example.net/"],
+      ["www-dropped", "https://www.example.edu/", "https://example.edu/"],
+      ["path-slash-added", "https://news.example.com/jim", "https://news.example.com/jim/"],
+      ["path-slash-dropped", "https://news.example.com/joe/", "https://news.example.com/joe"],
+      ["slash-encoded", "https://news.example.com/a/b", "https://news.example.com/a%2Fb"],
+      ["qmark-encoded", "https://news.example.com/a", "https://news.example.com/a%3Fb"],
+      ["path-case", "https://news.example.com/jan", "https://news.example.com/Jan"],
+      ["query", "https://news.example.com/q", "https://news.example.com/q?x=1"],
+      [
+        "raw-utf8",
+        "https://news.example.com/r%C3%A9sum%C3%A9",
+        Buffer.from("https://news.example.com/résumé").toString("latin1"),
+      ],
+    ];
+    const { own, data } = await spelled(cases);
+    assert.deepStrictEqual(
+      own,
+      cases.map(([name]) => `${MONEY}/spell-${name}.md wayback-no-capture`).sort(),
+    );
+    assert.strictEqual(archives(data), BOTH);
+  });
+});
+
 describe("fetch-snapshot --archive sends only snapshots the page cites", () => {
   // Value: protects=D2: an uncited snapshot, and an unnamed listed path, are never sent, printed or recorded (ADR 0006); only snapshots cited by ready contests are; fails_when=the batch walks sources/ again or prints a planted name; why_new=new; seam=cli; no_claim=publish's own drops (the next test)
   it("never sends an uncited snapshot or a listed path fetch-snapshot could not name", async () => {
