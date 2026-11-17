@@ -23,7 +23,8 @@ const CHILD_TIMEOUT = { timeout: 100_000, killSignal: "SIGKILL" };
 // Git exports GIT_DIR, GIT_INDEX_FILE and its other local variables to hooks,
 // and they win over cwd: under the pre-commit hook in a worktree, every git
 // the tests start would act on the shared repository (ticket 61). The git
-// helper and the spawn helpers pass on the environment without them.
+// helper, the spawn helpers and publish-fixture's git pass on the environment
+// without them.
 const GIT_LOCAL_VARS = new Set(
   spawnSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf8" }).stdout.split("\n"),
 );
@@ -545,4 +546,5 @@ module.exports = {
   runInTty,
   sourceRepo,
   startServer,
+  withoutGitLocals,
 };

@@ -26,6 +26,9 @@ while IFS= read -r file; do
     fi
 done <<< "$(git -c core.quotePath=false diff --name-only)"
 
+# Every worktree runs the main checkout's hook: guard branches cut before ticket 61's fix too.
+unset $(git rev-parse --local-env-vars)
+
 # Run lint
 echo "Running lint..."
 mise run lint || exit 1
