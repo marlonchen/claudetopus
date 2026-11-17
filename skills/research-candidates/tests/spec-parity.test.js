@@ -2892,6 +2892,68 @@ describe("AddABallot", () => {
   });
 });
 
+// Added for ticket 62 (prefer the county's sample ballot; owner, 2026-11-14).
+// Value: protects=step 2 asks first for the county's non-personalized sample ballot for the
+//   precinct or ballot style, so no printed address reaches the snapshot or private.yaml, and a
+//   personalized one is the fallback that step 3's in-parts rule covers; fails_when=step 2 again
+//   sends the researcher only to the voter lookup's ballot, drops the fallback order, or loses a
+//   privacy rule (lookups in the researcher's browser, saved only with --ballot at their
+//   terminal); why_new=PR #58 review M1/D1; seam=spec text; no_claim=the session following it
+describe("CountySampleBallot", () => {
+  const step2 = () => between(WORKFLOW, "### 2. ", "\n### ");
+
+  it("step 2 asks first for the county's non-personalized sample ballot, by precinct or ballot style", () => {
+    assert.match(
+      step2(),
+      /Ask first for the county's non-personalized sample ballot for the ballot's precinct or ballot style/,
+    );
+    assert.match(step2(), /county election office's sample-ballot page/);
+    assert.match(step2(), /without giving an address/);
+    assert.match(step2(), /never tells the session which/);
+  });
+
+  it("a personalized sample ballot comes after it, only when the county publishes no other", () => {
+    const text = step2();
+    const county = text.indexOf("non-personalized sample ballot");
+    const fallback = text.search(
+      /Use a personalized sample ballot[^.]* only when the county publishes no other/,
+    );
+    assert.ok(county >= 0, "step 2 does not ask for the county's non-personalized sample ballot");
+    assert.ok(fallback > county, "step 2 does not keep the personalized ballot as the fallback");
+    assert.match(
+      text.slice(fallback),
+      /^[^.]*step 3/,
+      "the fallback does not point to step 3's rule",
+    );
+  });
+
+  it("step 2 keeps every privacy rule: no lookup by the model, the researcher's browser and terminal", () => {
+    const text = step2();
+    assert.match(text, /^Never look up the address\. Give the researcher links instead/m);
+    assert.match(text, /never fetch a lookup result/);
+    assert.match(
+      text,
+      /The researcher runs the lookups in their own browser and tells the session only the county/,
+    );
+    assert.match(
+      text,
+      /the researcher saves it in their own terminal with `fetch-snapshot --ballot` \(or `--ballot --file`[,)]/,
+    );
+  });
+
+  it("ballot-format.md agrees: the county's sample ballot first, a personalized one as the fallback", () => {
+    const intro = between(BALLOT, "Text on the ballot that locates or names the voter", "\n```");
+    assert.match(
+      intro,
+      /The sample ballot is the county's non-personalized one for the precinct or ballot style \(SKILL\.md step 2\)/,
+    );
+    assert.match(
+      intro,
+      /A personalized sample ballot, used only when the county publishes no other, prints the voter's name and address: they go under `private_strings` in parts \(SKILL\.md step 3\)/,
+    );
+  });
+});
+
 // Added for the owner decisions of 2026-10-23 (no address lookups, mechanical baseline,
 //   researcher review of privacy matches outside a claim).
 // Value: protects=the model never looks up an address, the first-run baseline accepts only
