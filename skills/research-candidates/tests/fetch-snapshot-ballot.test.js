@@ -476,6 +476,19 @@ describe("fetch-snapshot --ballot refusals", () => {
     assert.deepEqual(lines(saved), ["sources/_ballot/sample-ballot.md saved"]);
   });
 
+  // Value: protects=documents the limit SKILL.md step 2 states: only a listed private_strings entry is refused, so an unlisted precinct in the path saves and step 2 has the researcher list it first and use --ballot --file; fails_when=the docs claim more than the matcher does; why_new=PR #63 review M2; seam=cli; no_claim=how the snapshot's url: is kept private (page.js, archive.js)
+  it("saves a path naming a precinct that private.yaml does not list", async () => {
+    const data = ballotRepo({ private: 'private_strings:\n  - "99999"\n' });
+    const url = "https://county.example.gov/sample-ballots/precinct-12/ballot";
+    const result = await ballotVia(data, { [url]: { body: SAMPLE } }, [
+      BALLOT,
+      "sample_ballot",
+      url,
+    ]);
+    assert.deepEqual(lines(result), ["sources/_ballot/sample-ballot.md saved"]);
+    assert.equal(result.status, 0);
+  });
+
   // Value: protects=a redirect's path is checked like the first URL's, before it is requested; fails_when=the ballot check callback is not passed to fetchPage; why_new=new; seam=cli; no_claim=none
   it("checks every redirect's path before requesting it", async () => {
     const data = ballotRepo();
