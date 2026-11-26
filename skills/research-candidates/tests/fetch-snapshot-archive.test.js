@@ -1,7 +1,12 @@
 "use strict";
 
 const assert = require("node:assert");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
+const { archiveTarget } = require("../scripts/lib/archive");
+const { load } = require("../scripts/lib/deps");
 const { BALLOT } = require("./harness");
 const { fetchSnapshot, server, sha256 } = require("./fetch-snapshot-fixture");
 const {
@@ -10,7 +15,9 @@ const {
   JANE_SITE,
   checkedBallot,
   claim,
+  commit,
   houseArticle,
+  publish,
   repos,
   setup,
   snapshot,
@@ -270,6 +277,8 @@ describe("fetch-snapshot --archive sends only snapshots the page cites", () => {
     const data = await ballotCiting();
     plantUncited(data, `${MONEY}/uncited.md`, "https://news.example.com/uncited");
     plantUncited(data, "sources/springfield-township-notes.md", "https://news.example.com/notes");
+    // Committed, as publish's ballot gate requires.
+    commit(data);
     const result = await archive(data, {
       ...BASE,
       ...captured("https://news.example.com/uncited"),
@@ -281,9 +290,10 @@ describe("fetch-snapshot --archive sends only snapshots the page cites", () => {
     assert.strictEqual(archives(data), BOTH);
   });
 
-  // Value: protects=D2: a contest that is not ready, or that publish's step 6.2 scan drops, gets no capture; fails_when=readiness or the drop is skipped; why_new=new; seam=cli; no_claim=the page scan of step 6.3
+  // Value: protects=D2: a contest that is not ready, or that publish's step 6.2 scan drops, gets no capture; fails_when=readiness or the drop is skipped; why_new=new; seam=cli; no_claim=publish's ballot gate and the page scan of step 6.3 (fixture.test.js)
   it("sends nothing for a contest that is not ready or that publish drops", async () => {
     const unreviewed = await checkedBallot();
+    commit(unreviewed);
     const none = await archive(
       unreviewed,
       captured("https://county.example.gov/ballots/precinct-12.pdf"),
@@ -343,6 +353,12 @@ describe("fetch-snapshot --archive sends only snapshots the page cites", () => {
       [`${MONEY}/userinfo.md`]: { url: "https://user:secret@news.example.com/userinfo" },
       [`${MONEY}/data-url.md`]: { url: "data:text/html,hello" },
     });
+    // Saved by --ballot, as ballot-check requires of anything under sources/_ballot/.
+    const ledger = `${BALLOT}/ballot.ledger`;
+    data.write(
+      ledger,
+      `${data.read(ledger)}sources/_ballot/odd-subject.md\tpamphlet\turl\tnone\t2026-10-20\n`,
+    );
     const result = await archive(data, {
       ...BASE,
       ...captured("https://county.example.gov/ballots/precinct-12.pdf"),
@@ -520,30 +536,38 @@ describe("fetch-snapshot --archive never sends a URL holding a private value", (
     ],
   ];
 
-  // Value: protects=ADR 0010, Rule 7 and M1 at the batch: every URL is matched with the values and classes the page scan uses (this and every other ballot's id, every ballot's private_strings in each spelling, a key value, a hidden printed title) before it is sent, a match is never sent or recorded, and the output names only the snapshot path and the class code, never a URL (ADR 0006); fails_when=a class or a spelling is skipped, a refusal still sends, or a URL reaches stdout or stderr; why_new=new; seam=cli; no_claim=private text no private_strings entry lists
-  it("refuses each class by its code, sends nothing for it, and prints no URL", async () => {
-    const data = await ballotCiting(
-      Object.fromEntries(CASES.map(([name, url]) => [`${MONEY}/leak-${name}.md`, { url }])),
-      { ballot: BALLOT_YAML.replace(TITLE, `${TITLE}    display_title: U.S. House\n`) },
-    );
-    data.write(`${OTHER_BALLOT}/ballot.yaml`, "contests: []\n");
-    data.write(`${OTHER_BALLOT}/private.yaml`, "private_strings:\n  - Maple Ward\n  - Peña Ward\n");
-    const result = await archive(
-      data,
-      { ...BASE, ...Object.assign({}, ...CASES.map(([, url]) => captured(url))) },
-      { OPENFEC_API_KEY: "s3cr3t-fec-key" },
-    );
-    const expected = [
-      `${JANE_BIO} archived`,
-      ...CASES.map(([name, , code]) => `${MONEY}/leak-${name}.md ${code}`),
-      `${JANE_SITE} archived`,
-    ].sort();
-    assert.strictEqual(result.stdout, `${expected.join("\n")}\n`);
-    assert.strictEqual(result.stderr, "");
-    assert.strictEqual(result.status, 1);
-    assert.deepStrictEqual(result.seen, [save(BIO_URL), save(SITE_URL)]);
-    assert.strictEqual(archives(data), BOTH);
-  });
+  // Each case alone: a cited URL holding a private value is the page's own
+  // original-page link, so publish's page scan refuses the page (SKILL.md step
+  // 6.3), and the batch, which runs that scan first, sends nothing at all.
+  for (const [name, url, code] of CASES) {
+    // Value: protects=ADR 0010, Rule 7 and ticket 65 (review M1): a URL holding any class the page scan matches (this and every other ballot's id, every ballot's private_strings in each spelling, a key value, a hidden printed title) refuses the page, so the batch sends nothing, not even the clean URLs, records nothing, and prints publish's own lines, which name a page line and the class code, never a URL (ADR 0006); fails_when=the batch skips publish's page scan, a class or a spelling is skipped, or a URL reaches stdout or stderr; why_new=new, reworked by ticket 65; seam=cli; no_claim=private text no private_strings entry lists
+    it(`sends nothing while a cited URL holds the ${name}, printing ${code} and no URL`, async () => {
+      const data = await ballotCiting(
+        { [`${MONEY}/leak-${name}.md`]: { url } },
+        { ballot: BALLOT_YAML.replace(TITLE, `${TITLE}    display_title: U.S. House\n`) },
+      );
+      data.write(
+        `${OTHER_BALLOT}/ballot.yaml`,
+        "election: 2026-general\nstate: YY\ncounty: Otherville County\ncontests: []\n",
+      );
+      data.write(
+        `${OTHER_BALLOT}/private.yaml`,
+        "private_strings:\n  - Maple Ward\n  - Peña Ward\n",
+      );
+      data.env.OPENFEC_API_KEY = "s3cr3t-fec-key";
+      const result = await archive(data, { ...BASE, ...captured(url) });
+      const refusals = result.stdout.split("\n").filter((line) => line.startsWith("site/"));
+      assert.ok(refusals.length > 0, result.stdout);
+      for (const line of refusals)
+        assert.match(line, new RegExp(`^site/index\\.html:\\d+ ${code}$`));
+      assert.strictEqual(result.stdout, (await publish(data)).stdout);
+      assert.doesNotMatch(result.stdout, /:\/\/|example\.com/);
+      assert.strictEqual(result.stderr, "");
+      assert.strictEqual(result.status, 1);
+      assert.deepStrictEqual(result.seen, []);
+      assert.strictEqual(archives(data), null);
+    });
+  }
 
   // Value: protects=only snapshots fetch-snapshot wrote, unchanged, are ever sent: a snapshot that does not match snapshots.sha256 stops the whole batch before any request; fails_when=an edited url is sent; why_new=new; seam=cli; no_claim=check's own manifest report
   it("sends nothing while a snapshot does not match its manifest line", async () => {
@@ -604,5 +628,48 @@ describe("fetch-snapshot --archive never sends a URL holding a private value", (
     assert.strictEqual(result.status, 1);
     assert.deepStrictEqual(result.seen, [save(BIO_URL)]);
     assert.strictEqual(archives(data), torn);
+  });
+});
+
+describe("archiveTarget matches the URL it sends against the page's private values", () => {
+  // Seam 2 (spec, Testing Decisions): through the CLI the page scan refuses
+  // any cited URL holding a private value first, since the page links the
+  // same URL, so this second check on the URL actually sent is reached only
+  // here.
+  const VALUES = {
+    "ballot-id": ["xx-exampleton-1", "yy-otherville-2"],
+    "private-string": ["Springfield Township", "Peña Ward"],
+    key: ["s3cr3t-fec-key"],
+    title: ["Representative in Congress, 7th District"],
+  };
+  const CASES = [
+    ["https://news.example.com/xx-exampleton-1/story", "private-ballot-id"],
+    ["https://news.example.com/yy_otherville_2/story", "private-ballot-id"],
+    ["https://news.example.com/springfield-township/story", "private-string"],
+    // Recorded as punycode; only its Unicode spelling holds "Peña Ward".
+    ["https://xn--pea-ward-e3a.example.com/story", "private-string"],
+    ["https://news.example.com/s3cr3t-fec-key/story", "private-key"],
+    ["https://news.example.com/representative-in-congress-7th-district/x", "private-title"],
+  ];
+  const REL = `${MONEY}/story.md`;
+  // archiveTarget for one snapshot at `url`, saved in a temp ballot directory.
+  const target = (url) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-archive-"));
+    try {
+      const text = snapshot({ subject: "jane-example", url, body: "Jane Example spoke." });
+      fs.mkdirSync(path.join(dir, path.dirname(REL)), { recursive: true });
+      fs.writeFileSync(path.join(dir, REL), text);
+      return archiveTarget(dir, REL, sha256(text), VALUES, load("yaml"));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  // Value: protects=PR #66 review D2 option A: the URL actually sent is matched, in each spelling a plain fetch matches, against every class the page scan matches, and a match is refused by its class code; fails_when=the match is dropped (the review's mutation, `return target;`), a class or a spelling is skipped; why_new=PR #66 review O1; seam=lib; no_claim=the page scan, which refuses these URLs first through the CLI (the per-class tests above)
+  it("refuses a URL holding each class by its code, and passes a clean one", () => {
+    for (const [url, code] of CASES) assert.deepStrictEqual(target(url), { code }, url);
+    const clean = target(BIO_URL);
+    assert.strictEqual(clean.url.href, BIO_URL);
+    assert.strictEqual(clean.code, undefined);
   });
 });

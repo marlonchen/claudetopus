@@ -183,6 +183,9 @@ describe("discovery-fetch: fetch-snapshot bound to one contest", () => {
         "https://county.example.gov/",
       ],
       ["--keep-short", "_race", "page", "https://county.example.gov/"],
+      // The Wayback batch is the main session's (snapshot-format.md, Saved copies).
+      ["--archive"],
+      ["--archive", BALLOT],
       ["--searched", "us-house-07", "jane-example", "4"],
       [BALLOT, "us-house-07", "_race", "page", "https://county.example.gov/"],
       ["_race", "--keep-short", "https://county.example.gov/"],
