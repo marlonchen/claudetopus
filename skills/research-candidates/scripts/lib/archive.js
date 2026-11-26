@@ -6,13 +6,16 @@
 // Machine to capture the own `url` of each eligible snapshot the page cites,
 // and append the snapshot path and the 14-digit capture time to
 // <ballot>/archives.tsv, which publish reads for a receipt's archive link.
-// The page cites the snapshots the claims of the contests publish shows cite:
-// ready, and not dropped by its step 6.2 scan (page-contests.js); no other
-// snapshot is ever sent. One is eligible when it is not under sources/_ballot/
-// (every --ballot and --ballot --file save is), its subject is not _ballot,
-// its method is html or pdf, never api, its `url` has no query string and it
-// has no `public_url`. A path archives.tsv already lists is skipped, so a
-// rerun resumes where the last one stopped.
+// The page is judged by publish's own code first (publish.js judgePage): its
+// ballot gate, readiness, step 6.2 drop, render and step 6.3 page scan, with
+// nothing written, and while publish would refuse the page nothing is sent and
+// publish's own lines are printed. The page cites the snapshots the claims of
+// the contests it shows cite; no other snapshot is ever sent. One is eligible
+// when it is not under sources/_ballot/ (every --ballot and --ballot --file
+// save is), its subject is not _ballot, its method is html or pdf, never api,
+// its `url` has no query string and it has no `public_url`. A path
+// archives.tsv already lists is skipped, so a rerun resumes where the last
+// one stopped.
 //
 // Each URL is read from bytes that still match the snapshot's manifest line
 // as it stood when the batch began, and is matched against the values the
@@ -29,14 +32,16 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { ARCHIVES, readArchives } = require("./archives-file");
 const { load } = require("./deps");
 const { openBallot, parseBallot } = require("./fetch-common");
 const { isHttp, send, spellings, testTarget } = require("./fetch-page");
 const { Failure, Failures, runCommand } = require("./output");
-const { citedSnapshots, pageContests } = require("./page-contests");
+const { citedSnapshots } = require("./page-contests");
 const { URL_CLASSES, findRefusal } = require("./privacy");
+const { judgePage } = require("./publish");
 const { FRONT_MATTER } = require("./snapshot-file");
-const { isSnapshotPath, verifyManifest } = require("./snapshot-hash");
+const { isSnapshotPath } = require("./snapshot-hash");
 const {
   appendLine,
   checkLog,
@@ -46,7 +51,6 @@ const {
   withLockAsync,
 } = require("./snapshot-store");
 
-const ARCHIVES = "archives.tsv";
 const WAYBACK = "https://web.archive.org";
 // Save Page Now can take a minute on a slow page.
 const TIMEOUT_MS = 120000;
@@ -60,30 +64,6 @@ const STAMP = /^[0-9]{14}$/;
 // The classes the page scan matches (page-scan.js): a fetch URL's, and the
 // printed titles a display_title hides.
 const PAGE_CLASSES = [...URL_CLASSES, "title"];
-
-// archives.tsv as a Map from snapshot path to its 14-digit Wayback capture
-// time; a later line for a path wins. Any other line, or a last line with no
-// newline, fails archives-invalid.
-const ARCHIVE_LINE = /^(sources\/[^\t]+)\t([0-9]{14})$/;
-const readArchives = (ballotDir) => {
-  let text;
-  try {
-    text = fs.readFileSync(path.join(ballotDir, ARCHIVES), "utf8");
-  } catch (error) {
-    if (error.code === "ENOENT") return new Map();
-    throw error;
-  }
-  const lines = text.split("\n");
-  const unended = lines.pop();
-  if (unended !== "") throw new Failure(`${ARCHIVES}:${lines.length + 1}`, "archives-invalid");
-  const archives = new Map();
-  for (const [i, line] of lines.entries()) {
-    const m = ARCHIVE_LINE.exec(line);
-    if (!m || !isSnapshotPath(m[1])) throw new Failure(`${ARCHIVES}:${i + 1}`, "archives-invalid");
-    archives.set(m[1], m[2]);
-  }
-  return archives;
-};
 
 // Each listed snapshot's hash in snapshots.sha256, retired ones left out.
 const manifestHashes = (ballotDir) => {
@@ -211,17 +191,15 @@ const main = (argv) =>
     const YAML = load("yaml");
     // Under the ballot lock, so a save written now is never half seen.
     const { cited, hashes, values } = withLock(ballotDir, (refresh) => {
-      // Only snapshots fetch-snapshot wrote, unchanged since, are ever sent.
-      const tampered = verifyManifest(ballotDir);
-      if (tampered.length) throw new Failures(tampered.map((failure) => failure.line));
-      readArchives(ballotDir);
-      // Only what the page cites, judged as publish judges it, and scanned
-      // with the values its page scan uses.
-      const shown = pageContests(root, ballot, ballotDir, refresh);
+      // Only what a page publish would write cites, judged by publish's own
+      // code, which also refuses a snapshot changed since fetch-snapshot wrote
+      // it and an archives.tsv it cannot read; each URL is scanned with the
+      // values its page scan uses.
+      const page = judgePage(root, ballot, ballotDir, refresh, /* show */ false);
       return {
-        cited: citedSnapshots(shown.shown),
+        cited: citedSnapshots(page.shown),
         hashes: manifestHashes(ballotDir),
-        values: shown.values,
+        values: page.values,
       };
     });
 
@@ -291,4 +269,4 @@ const main = (argv) =>
     return lines.length ? lines : [`${ARCHIVES} up-to-date`];
   });
 
-module.exports = { main, readArchives };
+module.exports = { main };

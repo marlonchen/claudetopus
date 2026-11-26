@@ -14,7 +14,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { readArchives } = require("./archive");
+const { readArchives } = require("./archives-file");
 const { ballotGate } = require("./ballot-gate");
 const { LEDGER } = require("./constants");
 const { readYamlDocument } = require("./data-files");
@@ -106,14 +106,17 @@ const refusalLines = (html, { line, code, spans }, show) => {
   return [`${at} ${code}`, ...new Set(shown)];
 };
 
-// The gates, the scan, then the page: refuses with Failures, or returns the
-// drop and contest lines ending `site/index.html written`, with the page, the
-// slug and each contest's title and readiness for a push. `refresh` keeps the
-// ballot lock fresh; `show` adds each page refusal's matched text and the
-// paths an installed-skill refusal locates by area.
-const publish = (root, ballot, ballotDir, refresh, show) => {
-  // A page from an earlier run never outlives a refused one.
-  fs.rmSync(path.join(siteDir(ballotDir), "index.html"), { force: true });
+// The gates, the scan and the page, with nothing written: refuses with
+// Failures, or returns the drop and contest lines, the page, ballot.yaml as
+// read (`data`), publish.yaml (`config`), `shown`, each contest's readiness
+// as the page shows it, and the private `values` it was scanned with.
+// fetch-snapshot --archive runs it too, so it sends nothing for a page
+// publish would refuse. `refresh` keeps the ballot lock fresh; `show` adds
+// each page refusal's matched text and the paths an installed-skill refusal
+// locates by area.
+const judgePage = (root, ballot, ballotDir, refresh, show) => {
+  // A site/ publish could not write to refuses here too.
+  siteDir(ballotDir);
   // Loaded first, so a missing install is one deps-missing.
   load("yaml");
   const config = readPublishYaml(root);
@@ -144,12 +147,24 @@ const publish = (root, ballot, ballotDir, refresh, show) => {
   const lines = [...drops.lines, ...contestLines];
   if (refusals.length)
     throw new Failures([...lines, ...refusals.flatMap((r) => refusalLines(html, r, show))]);
+  return { lines, page: html, data, config, shown, values };
+};
+
+// The gates, the scan, then the page: refuses with Failures, or returns the
+// drop and contest lines ending `site/index.html written`, with the page, the
+// slug and each contest's title and readiness for a push. `refresh` keeps the
+// ballot lock fresh; `show` adds each page refusal's matched text and the
+// paths an installed-skill refusal locates by area.
+const publish = (root, ballot, ballotDir, refresh, show) => {
+  // A page from an earlier run never outlives a refused one.
+  fs.rmSync(path.join(siteDir(ballotDir), "index.html"), { force: true });
+  const { lines, page, data, config, shown } = judgePage(root, ballot, ballotDir, refresh, show);
   // Only while the lock is still this run's.
   refresh();
-  writeSite(ballotDir, html);
+  writeSite(ballotDir, page);
   return {
     lines: [...lines, `${SITE} written`],
-    page: html,
+    page,
     slug: data.slug,
     config,
     contests: data.contests.map((c) => ({
@@ -185,4 +200,4 @@ const main = (argv) =>
     });
   });
 
-module.exports = { main };
+module.exports = { judgePage, main };

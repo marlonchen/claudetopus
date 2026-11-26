@@ -474,6 +474,19 @@ describe("Scripts", () => {
       assert.ok(WORKFLOW.includes(row[0]), `${row[0]} is in the Scripts table but no step uses it`);
     }
   });
+
+  // Value: protects=ticket 65 (review O1): fetch-snapshot's row names --archive, which only
+  //   step 6 runs, so its Used in lists 6; fails_when=the row drops step 6 while it names
+  //   --archive; why_new=ticket 65; seam=spec text; no_claim=the other rows' modes
+  it("fetch-snapshot's row lists step 6, where --archive runs", () => {
+    const row = rows.find((r) => r[0].includes("fetch-snapshot"));
+    assert.match(row[1], /`--archive`/);
+    const steps = row
+      .at(-1)
+      .split(",")
+      .map((s) => s.trim());
+    assert.ok(steps.includes("6"), `fetch-snapshot is used in ${steps.join(", ")}`);
+  });
 });
 
 // Added by /ship test coverage audit.
@@ -2847,9 +2860,10 @@ describe("AddABallot", () => {
       step3(),
       /On `addresses-leftover`, never open, read or delete the leftover `addresses\.yaml`: the researcher lists its ZIPs in each ballot's `private\.yaml`, then deletes it\./,
     );
+    assert.match(step3(), /The researcher adds it, and the session never repeats it\./);
     assert.match(
       step3(),
-      /A voter name or address printed on a personalized sample ballot, which `ballot-check` reports as `line-unaccounted`, goes under `private_strings` in that ballot's `private\.yaml` in parts \(for example the street line, then the city\), never in `ignored_lines`: the researcher adds it, and the session never repeats it\./,
+      /A voter name or address printed on a personalized sample ballot, which `ballot-check` reports as `line-unaccounted`, goes under `private_strings` in that ballot's `private\.yaml` in parts, never in `ignored_lines`: the name, the house number with its street \(`123 Elm Street`\), never the house number alone, and the city only when it is narrower than the county, since each entry is refused family-wide, in fetch URLs too/,
     );
   });
 
@@ -2884,11 +2898,99 @@ describe("AddABallot", () => {
     assert.match(named[0], /`addresses\.yaml -diff`[^.]*history/);
   });
 
+  // Value: protects=ticket 65 (review O9): no ADR still says the skill stores addresses (ADR
+  //   0017); fails_when=an ADR says the skill or the data repo writes, holds, stores or keeps
+  //   addresses; why_new=the guards above read SKILL.md, the agents and the README only, so ADR
+  //   0002's two sentences went unseen; seam=spec text; no_claim=history notes about
+  //   addresses.yaml and the addresses-leftover code, which ADRs keep on purpose
+  it("no ADR says the skill stores addresses", () => {
+    const adrs = path.join(REPO_ROOT, "research-candidates", "docs", "adrs");
+    const files = fs.readdirSync(adrs).filter((f) => f.endsWith(".md"));
+    assert.ok(files.length >= 17, `only ${files.length} ADRs found`);
+    for (const file of files) {
+      const text = fs.readFileSync(path.join(adrs, file), "utf8");
+      assert.doesNotMatch(
+        text,
+        /\b(?:writes|holds|stores|keeps)\b[^.]*?\baddresses\b(?![.-]\w)/i,
+        `${file} says addresses are stored`,
+      );
+    }
+  });
+
   it("this public repo still ignores a leftover addresses.yaml", () => {
     // The Layout no longer lists it, so PrivateDataIgnored does not cover it.
     const ignored = checkIgnore(["-v"], ["addresses.yaml"]);
     assert.strictEqual(ignored.status, 0, "addresses.yaml is not ignored");
     assert.match(ignored.stdout, /^\.gitignore:/);
+  });
+});
+
+// Added for ticket 65 (phase 1 follow-ups from the whole-branch review of PR #65).
+// Value: protects=the docs say what the code does: --archive runs publish's steps 6.1-6.3
+//   before it sends anything (M1), the leftover refusal keeps addresses.yaml from lingering
+//   unnoticed, not from being read, and names the commands that still run beside it (O2),
+//   --brief is discovery-fetch's (O7), and under the personalized-ballot fallback a companion
+//   holding listed voter text is the researcher's to retire (D4, owner decision 2026-11-25);
+//   fails_when=a doc goes back to the step order, to "keeps it from being read", to
+//   agent-bind --brief, or drops the companion caveat; why_new=ticket 65; seam=spec text;
+//   no_claim=the commands themselves (fixture.test.js, discovery.test.js)
+describe("PhaseOneFollowups", () => {
+  const ADRS = path.join(REPO_ROOT, "research-candidates", "docs", "adrs");
+  const adr = (prefix) => {
+    const file = fs.readdirSync(ADRS).find((f) => f.startsWith(prefix));
+    return fs.readFileSync(path.join(ADRS, file), "utf8");
+  };
+
+  it("--archive runs publish's steps 6.1-6.3 first, in SKILL.md, Saved copies and ADR 0010", () => {
+    assert.match(
+      SKILL,
+      /The batch first runs steps 6\.1-6\.3 itself, with nothing written, and sends nothing while they refuse the page, printing `publish`'s own lines\./,
+    );
+    const saved = between(SNAPSHOT, "## Saved copies");
+    assert.match(
+      saved,
+      /It first runs `publish`'s own code for SKILL\.md steps 6\.1-6\.3, with nothing written/,
+    );
+    assert.match(
+      saved,
+      /While `publish` would refuse the page, it sends nothing and prints `publish`'s own lines\./,
+    );
+    assert.doesNotMatch(saved, /judged as `publish` judges it/);
+    assert.match(adr("0010-"), /sends one only while `publish`'s own gates pass the page/);
+  });
+
+  it("the leftover refusal keeps the file from lingering, and names what still runs", () => {
+    assert.match(BALLOT, /this refusal keeps it from lingering unnoticed/);
+    assert.doesNotMatch(BALLOT, /nothing but this refusal keeps a leftover one from being read/);
+    assert.match(
+      BALLOT,
+      /so `publish`'s ballot gate, `fetch-snapshot --archive`, `agent-bind` and `discovery-fetch --brief` refuse too/,
+    );
+    assert.match(
+      BALLOT,
+      /The commands that do not run `ballot-check` still run beside it: a plain fetch and `--searched`, by `fetch-snapshot` or by `discovery-fetch` for a contest bound before, `check`, `coverage` and `review-list`\./,
+    );
+  });
+
+  it("--brief is discovery-fetch's in every spec file", () => {
+    for (const [file, text] of SPEC_FILES)
+      assert.doesNotMatch(text, /agent-bind --brief/, `${file} says agent-bind --brief`);
+  });
+
+  it("a companion holding listed voter text is the researcher's to retire", () => {
+    const step2 = between(WORKFLOW, "### 2. ", "\n### ");
+    assert.match(
+      step2,
+      /a companion document, such as a pamphlet or voter guide, can print the voter's name or address that `private\.yaml` lists, and `ballot-check` does not scan companion bodies for it[^.]*spotting and retiring such a companion is the researcher's/,
+    );
+    assert.match(
+      adr("0009-"),
+      /spotting and retiring such a companion is the researcher's \(owner decision 2026-11-25/i,
+    );
+    assert.match(
+      adr("0017-"),
+      /spotting and retiring such a companion stays the researcher's \(owner decision 2026-11-25/,
+    );
   });
 });
 

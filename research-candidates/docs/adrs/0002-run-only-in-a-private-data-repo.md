@@ -4,7 +4,7 @@ status: accepted
 
 # The scripts run only in a confirmed private repo
 
-The skill writes addresses, sample ballots and research into whatever project it runs in, and its source repo is public, so a run in the wrong place would put private data one `git push` from the public. Every script that opens a ballot first proves the project root is the private data repo, and treats anything it cannot prove as public (Rule 8).
+The skill writes private strings, sample ballots and research into whatever project it runs in, and its source repo is public, so a run in the wrong place would put private data one `git push` from the public. Every script that opens a ballot first proves the project root is the private data repo, and treats anything it cannot prove as public (Rule 8).
 
 ## Enforcement
 
@@ -20,7 +20,7 @@ A URL that is not on GitHub, a `gh` error or empty output counts as public. Fail
 ## Considered Options
 
 - **Compare repo names.** Rejected. Ids are compared, so another letter case, a `.git` suffix, an ssh URL, a rename or a re-registered name cannot stand in for the source repo.
-- **Install with `npx skills`.** Rejected, because it runs whatever version of that package is newest inside the repo that holds the addresses. The skill is installed with `gh skill install --pin <commit>` at project scope.
+- **Install with `npx skills`.** Rejected, because it runs whatever version of that package is newest inside the repo that holds the private strings. The skill is installed with `gh skill install --pin <commit>` at project scope.
 - **Install at user scope.** Rejected, since the skill would load everywhere and could run only in the data repo.
 - **Run `npm install` inside the skill.** Rejected, because the installed skill must hold only the pinned commit's files. `install-deps` runs `npm ci --ignore-scripts` from the lockfile into a cache outside the skill, so package hashes are checked and no package install script runs.
 
