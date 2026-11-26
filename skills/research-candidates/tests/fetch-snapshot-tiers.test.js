@@ -2,7 +2,7 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_BALLOT, ZIP_PRIVATE } = require("./harness");
+const { BALLOT, DEFAULT_BALLOT } = require("./harness");
 const {
   COUNTY_PAGE,
   PLAIN,
@@ -352,23 +352,20 @@ describe("source-tiers.md: loading tiers.yaml refuses a bad entry", () => {
     "tiers.yaml:5 private-string match\n",
   );
   // Value: protects=a ZIP kept only in private_strings fails a match or source as the ZIP class did, and only as a standalone token; fails_when=the Tiers rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=none
-  const ZIP_ONLY = { private: ZIP_PRIVATE };
+  // The default private.yaml lists the ZIP alone.
   refusesTiers(
     "a match holding a ZIP listed in private_strings",
     `${COUNTY}- match: example.org/zip/99999\n  tier: T2\n  owner: third-party\n  source: X\n`,
     "tiers.yaml:5 private-string match\n",
-    ZIP_ONLY,
   );
   refusesTiers(
     "a source holding a ZIP listed in private_strings",
     `${COUNTY}- match: x.example.com\n  tier: T2\n  owner: third-party\n  source: X News 99999\n`,
     "tiers.yaml:8 private-string source\n",
-    ZIP_ONLY,
   );
   it("passes a match and source holding the ZIP only inside a longer digit run", async () => {
     const data = repo({
       tiers: `${COUNTY}- match: example.org/zip/1999990\n  tier: T2\n  owner: third-party\n  source: X 999991\n`,
-      ...ZIP_ONLY,
     });
     const result = await fetchVia(
       data,

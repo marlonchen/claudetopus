@@ -41,6 +41,7 @@ No`;
 
 const PRIVATE = `private_strings:
   - Precinct 12
+  - "99999"
 ignored_lines:
   - OFFICIAL SAMPLE BALLOT
   - "Yes"
@@ -1140,6 +1141,19 @@ describe("ballot-check: no address stored", () => {
     assert.ok(!data.exists(VIEW));
   });
 
+  // Value: protects=a ballot whose private.yaml lists no ZIP never passes, so every ZIP refusal cannot silently do nothing for it, and the failure prints no value; fails_when=a ballot with no five-digit private_strings entry writes ballot-view.md, or a ZIP+4 or a ZIP inside another entry stands in for the ZIP's own entry; why_new=ticket 66 (PR #65 review D1): the preferred county sample ballot prints no ZIP, so line-unaccounted no longer prompts the researcher to list it; seam=cli; no_claim=agent-bind and --brief (discovery.test.js), publish (fixture.test.js)
+  it("fails a private.yaml with no five-digit private_strings entry, naming no value, and writes no view", async () => {
+    for (const entry of ['"99999-1234"', "Exampleton 99999", '"9999"', '"999999"', null]) {
+      const zipless = PRIVATE.replace(/ {2}- "99999"\n/, entry ? `  - ${entry}\n` : "");
+      const data = setup({ priv: zipless });
+      const result = await ballotCheck(data);
+      assert.deepEqual(lines(result), ["private.yaml zip-missing", "- list-zip"], entry);
+      assert.equal(result.status, 1);
+      assert.ok(!data.exists(VIEW));
+      assert.doesNotMatch(result.stdout, /9999|Exampleton/);
+    }
+  });
+
   // Value: protects=ballot.yaml and ignored_lines, which discovery sends to web searches, refuse another family member's ZIP or place name, as the family's one address file once refused any address's ZIP; fails_when=the Private text rule reads this ballot's private_strings alone; why_new=ticket 27 (PR #54 review, D1), owner confirmed 2026-11-14; seam=cli; no_claim=the sample-ballot accounting and ballot-id-private, which read this ballot's entries only
   it("fails another ballot's private string in ballot.yaml and ignored_lines, never naming it", async () => {
     const data = setup({
@@ -1492,7 +1506,7 @@ describe("ballot-check: party names", () => {
 describe("ballot-check: private lines (run 10)", () => {
   const header = (line, ...entries) => ({
     body: SAMPLE_BODY.replace("Precinct 12", line),
-    priv: `private_strings:\n${entries.map((e) => `  - ${e}\n`).join("")}ignored_lines:\n  - OFFICIAL SAMPLE BALLOT\n  - "Yes"\n  - "No"\n`,
+    priv: `private_strings:\n${[...entries, '"99999"'].map((e) => `  - ${e}\n`).join("")}ignored_lines:\n  - OFFICIAL SAMPLE BALLOT\n  - "Yes"\n  - "No"\n`,
   });
   const at = bodyLine("Precinct 12");
 

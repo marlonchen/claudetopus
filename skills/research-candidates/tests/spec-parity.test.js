@@ -2854,7 +2854,7 @@ describe("AddABallot", () => {
   it("step 3 hands addresses-leftover to the researcher and stores a printed address in parts", () => {
     assert.match(
       step3(),
-      /except `settings-outdated`, `private-diff-shown` and `addresses-leftover`: only the researcher can fix those/,
+      /except `settings-outdated`, `private-diff-shown`, `addresses-leftover` and `zip-missing`: only the researcher can fix those/,
     );
     assert.match(
       step3(),
@@ -3615,5 +3615,56 @@ describe("SnapshotOwner", () => {
       /^- every claim, whatever its tag, whose cited snapshot is filed under another candidate or official of the contest/,
     );
     assert.match(misfiled, /The subject directory cannot clear a claim, only add one/);
+  });
+});
+
+// Added for ticket 66 (PR #65 review D1).
+// Value: protects=the docs state the rule ballot-check enforces: a ballot whose private.yaml
+//   lists no ZIP as its own five-digit entry fails zip-missing with the list-zip hint, writes no
+//   view, and the session hands the code to the researcher without asking for the ZIP; fails_when=
+//   the Codes list drops the code or hint, a doc lets a ZIP+4 or a ZIP inside another entry count,
+//   or step 3 lets the session fix it; why_new=ticket 66; seam=spec text; no_claim=ballot-check's
+//   output (ballot-check.test.js)
+describe("ZipMissing", () => {
+  const ADRS = path.join(REPO_ROOT, "research-candidates", "docs", "adrs");
+  const adr = (prefix) => {
+    const file = fs.readdirSync(ADRS).find((f) => f.startsWith(prefix));
+    return fs.readFileSync(path.join(ADRS, file), "utf8");
+  };
+
+  it("the Codes list gives zip-missing its list-zip hint", () => {
+    const codes = between(BALLOT, "## Command line")
+      .split("\n")
+      .find((l) => l.startsWith("- Private text"));
+    assert.match(
+      codes,
+      /`zip-missing` \(no `private_strings` entry is exactly five digits, located `private\.yaml`\), followed by `- list-zip`/,
+    );
+  });
+
+  it("the private.yaml section, SKILL.md steps 2 and 3 and ADR 0017 state the rule", () => {
+    const rule =
+      /`ballot-check` fails `private\.yaml zip-missing`, followed by `- list-zip`, when no `private_strings` entry is exactly five digits/;
+    assert.match(BALLOT, rule);
+    assert.match(
+      BALLOT,
+      /a ZIP\+4 entry \(`99999-0001`\) or a ZIP inside another entry \(`Exampleton 99999`\) does not count/,
+    );
+    assert.match(
+      BALLOT,
+      /It prints no value and writes no `ballot-view\.md`, so `publish`'s ballot gate, `fetch-snapshot --archive`, `agent-bind` and `discovery-fetch --brief` refuse too/,
+    );
+    assert.match(
+      between(WORKFLOW, "### 2. ", "\n### "),
+      /The ZIP is an entry of its own, exactly five digits with no \+4; `ballot-check` fails `zip-missing` without one \(step 3\)\./,
+    );
+    assert.match(
+      between(WORKFLOW, "### 3. ", "\n### "),
+      /On `zip-missing`, never ask for the ZIP or name one: the researcher lists the voter's ZIP themselves/,
+    );
+    const zip17 = adr("0017-");
+    assert.match(zip17, rule);
+    assert.match(zip17, /Only a whole entry counts/);
+    assert.match(zip17, /A ballot with no US ZIP\*\*[^\n]*cannot pass `ballot-check`/);
   });
 });

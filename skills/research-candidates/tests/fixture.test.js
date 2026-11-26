@@ -377,6 +377,19 @@ describe("fixture ballot: a leftover addresses.yaml", () => {
   });
 });
 
+describe("fixture ballot: a private.yaml that lists no ZIP", () => {
+  // Value: protects=a ballot whose private.yaml lists no ZIP stops publish at its ballot gate, before any page is written, so the page scan never runs without the ZIP; fails_when=the gate passes while ballot-check fails zip-missing; why_new=ticket 66 (PR #65 review D1 showed this copy printing ballot-view.md written); seam=cli; no_claim=none
+  it("refuses at its ballot gate, writing no page", async () => {
+    const data = copy();
+    const priv = `${BALLOT}/private.yaml`;
+    data.write(priv, data.read(priv).replace('  - "99999"\n', ""));
+    const result = await run(data, "publish", [BALLOT]);
+    assert.ok(lines(result).includes("ballot.yaml ballot-check-failed"), result.stdout);
+    assert.strictEqual(result.status, 1);
+    assert.ok(!data.exists(SITE));
+  });
+});
+
 describe("fixture ballot: an installed skill that differs from skill_commit", () => {
   // Plant drift under the installed skill and commit it, as a researcher who
   // missed it would, so the only refusal is the drift's own; publish then

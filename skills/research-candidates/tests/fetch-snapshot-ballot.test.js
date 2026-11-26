@@ -6,14 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
-const {
-  BALLOT,
-  DEFAULT_BALLOT,
-  PDFTOTEXT_STUB,
-  ZIP_PRIVATE,
-  articlePage,
-  runInTty,
-} = require("./harness");
+const { BALLOT, DEFAULT_BALLOT, PDFTOTEXT_STUB, articlePage, runInTty } = require("./harness");
 const {
   body,
   fetchSnapshot,
@@ -437,7 +430,7 @@ describe("fetch-snapshot --ballot refusals", () => {
 
   // Value: protects=a ZIP kept only in private_strings refuses the path as the ZIP class did, hint and all; fails_when=the --ballot path check skips a digits-only private_strings entry; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=the query, which may hold the address
   it("refuses a ZIP listed in private_strings in the path and points to --file", async () => {
-    const data = ballotRepo({ private: ZIP_PRIVATE });
+    const data = ballotRepo();
     const url = "https://county.example.gov/99999/ballot";
     const result = await ballotVia(data, { [url]: { body: SAMPLE } }, [
       BALLOT,
