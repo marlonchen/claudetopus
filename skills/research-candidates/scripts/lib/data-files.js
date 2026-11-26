@@ -367,6 +367,19 @@ const loadPrivate = (root, ballot, location) => {
   return lists;
 };
 
+// A private_strings entry that is a ZIP on its own, never a ZIP+4, once
+// trimmed as the matcher trims it.
+const ZIP = /^[0-9]{5}$/;
+
+// The ZIP rule ballot-check and fetch-snapshot --ballot share: the ZIP is the
+// one part of the address the data repo holds (ADR 0017), listed as its own
+// entry of the ballot's own private_strings; without it every ZIP refusal does
+// nothing. A Failure that names no value, or null.
+const zipMissing = (strings) =>
+  strings.some((s) => ZIP.test(s.trim()))
+    ? null
+    : new Failure("private.yaml", "zip-missing", undefined, "list-zip");
+
 // The values the privacy matcher checks for one ballot (SKILL.md step 6.3),
 // by class: the ballot id, the private_strings of every ballot in the data
 // repo, and the API key values set in the environment. A URL is refused for
@@ -418,4 +431,5 @@ module.exports = {
   parseContests,
   readYamlDocument,
   tiersPrivacy,
+  zipMissing,
 };

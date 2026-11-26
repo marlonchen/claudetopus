@@ -84,6 +84,22 @@ describe("agent-bind and discovery-fetch --brief", () => {
     assert.strictEqual(brief.status, 1);
   });
 
+  // Value: protects=discovery never starts for a ballot whose private.yaml lists no ZIP, so no search runs while every ZIP refusal does nothing for it; fails_when=bind or the brief passes while ballot-check fails zip-missing; why_new=ticket 66; seam=cli; no_claim=ballot-check's own output (ballot-check.test.js)
+  it("binds nothing, and briefs nothing, while private.yaml lists no ZIP", async () => {
+    const data = await checkedBallot();
+    const token = await bind(data, "us-house-07");
+    const priv = `${BALLOT}/private.yaml`;
+    data.write(priv, data.read(priv).replace('  - "99999"\n', ""));
+    const ballot = `${BALLOT}/ballot.yaml`;
+    const bound = await run(data, "agent-bind", [BALLOT, "us-house-07"]);
+    assert.strictEqual(bound.stdout, `${ballot} ballot-check-failed\n`);
+    assert.strictEqual(bound.status, 1);
+    assert.deepStrictEqual(data.list(".bindings"), [token]);
+    const brief = await run(data, "discovery-fetch", [token, "--brief"]);
+    assert.strictEqual(brief.stdout, `${ballot} ballot-check-failed\n`);
+    assert.strictEqual(brief.status, 1);
+  });
+
   // Value: protects=the binding: the main session names only a contest ballot.yaml lists, and a token the agent makes up or mistypes reaches nothing; fails_when=bind takes an unlisted contest, or fetch falls back to some binding; why_new=new; seam=cli; no_claim=a token the agent reads from elsewhere (it has no file tools)
   it("refuses an unlisted contest and an unknown or malformed token", async () => {
     const data = await checkedBallot();
@@ -183,6 +199,9 @@ describe("discovery-fetch: fetch-snapshot bound to one contest", () => {
         "https://county.example.gov/",
       ],
       ["--keep-short", "_race", "page", "https://county.example.gov/"],
+      // The Wayback batch is the main session's (snapshot-format.md, Saved copies).
+      ["--archive"],
+      ["--archive", BALLOT],
       ["--searched", "us-house-07", "jane-example", "4"],
       [BALLOT, "us-house-07", "_race", "page", "https://county.example.gov/"],
       ["_race", "--keep-short", "https://county.example.gov/"],

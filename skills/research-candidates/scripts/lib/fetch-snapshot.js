@@ -22,7 +22,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { jsonToText } = require("./api-text");
-const archive = require("./archive").main;
 const ballotImport = require("./ballot-import").main;
 const { ID_PATTERN, SHORT_PAGE, WALL_SEGMENTS } = require("./constants");
 const { loadContests, loadPrivateValues, loadTiers } = require("./data-files");
@@ -113,7 +112,8 @@ const landedOnWall = (given, page) => {
 const SHORT = { code: "short-page", reason: "short page" };
 
 const MODES = {
-  "--archive": (argv) => archive(argv.slice(1)),
+  // Required here, so discovery-fetch, the agents' tool, never loads publish's code.
+  "--archive": (argv) => require("./archive").main(argv.slice(1)),
   "--ballot": ballotImport,
   "--searched": searched,
   "--keep-short": (argv) => plainFetch(argv.slice(1), { keepShort: true }),

@@ -188,17 +188,17 @@ contests:
 
 const BALLOT = "2026-general/xx-exampleton-1";
 
-// Fictional private values; tests/privacy.test.js plants them in URLs.
+// Fictional private values; tests/privacy.test.js plants them in URLs. The
+// ZIP is its own entry, as ballot-check requires (ballot-format.md, Private
+// text).
 const DEFAULT_PRIVATE = `private_strings:
   - Precinct 12
   - Springfield Township
   - BS-0412
+  - "99999"
 ignored_lines:
   - Vote for one
 `;
-
-// The ZIP held as a private string (ballot-format.md, Private text).
-const ZIP_PRIVATE = DEFAULT_PRIVATE.replace("private_strings:\n", '$&  - "99999"\n');
 
 // Leave an addresses.yaml in `data` that no script can open or parse, so a
 // command that refuses beside it never read it (ticket 27).
@@ -536,7 +536,6 @@ module.exports = {
   PDFTOTEXT_STUB,
   SCRIPTS_DIR,
   SKILL,
-  ZIP_PRIVATE,
   articlePage,
   git,
   installSkill,

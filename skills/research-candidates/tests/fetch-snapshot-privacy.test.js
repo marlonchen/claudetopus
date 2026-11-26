@@ -2,7 +2,7 @@
 
 const assert = require("node:assert");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_PRIVATE, ZIP_PRIVATE } = require("./harness");
+const { BALLOT, DEFAULT_PRIVATE } = require("./harness");
 const { COUNTY_PAGE, fetchVia, frontMatter, repo } = require("./fetch-snapshot-fixture");
 
 // Rule 7's privacy refusals as the discovery agent sees them: a URL holding a
@@ -157,7 +157,8 @@ describe("fetch-snapshot refuses a URL holding a private value", () => {
 });
 
 describe("fetch-snapshot refuses a ZIP listed in private_strings", () => {
-  const zipRepo = () => repo({ private: ZIP_PRIVATE });
+  // The default private.yaml lists the ZIP alone.
+  const zipRepo = () => repo();
 
   // Value: protects=a ZIP kept only in private_strings refuses a URL wherever the ZIP class did; fails_when=a private_strings digit run is not searched alone, or is searched with a word edge; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=another ballot's ZIP (ticket 26)
   it("refuses it in the path, the query and ZIP+4 form, and in a redirect hop", async () => {
