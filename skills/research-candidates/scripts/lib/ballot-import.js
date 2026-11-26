@@ -22,7 +22,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { LEDGER, ROLES } = require("./constants");
-const { loadPrivateValues, loadTiers } = require("./data-files");
+const { loadPrivate, loadPrivateValues, loadTiers, zipMissing } = require("./data-files");
 const { openBallot, parseBallot, parseHttpUrl } = require("./fetch-common");
 const { cleanUrl, decode, fetchPage, isPdf, spellings } = require("./fetch-page");
 const { htmlToText } = require("./html-text");
@@ -166,6 +166,12 @@ const main = (argv) =>
     const args = parseArgs(argv);
     const ballotDir = openBallot(root, args.ballot);
     const values = loadPrivateValues(root, args.ballot);
+    // This mode runs before any ballot-check can, so it applies ballot-check's
+    // ZIP rule itself, before anything is fetched.
+    const zip = zipMissing(
+      loadPrivate(root, args.ballot, `${args.ballot}/private.yaml`).private_strings,
+    );
+    if (zip) throw zip;
     const source = args.file ? fromFile(root, args, values) : fromUrl(args, values);
 
     const entries = loadTiers(root, values, args.ballot);

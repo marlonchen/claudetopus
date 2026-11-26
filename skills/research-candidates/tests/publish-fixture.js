@@ -139,6 +139,7 @@ No`;
 const PRIVATE = `private_strings:
   - Precinct 12
   - Springfield Township
+  - "99999"
 ignored_lines:
   - OFFICIAL SAMPLE BALLOT
   - "Yes"

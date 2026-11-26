@@ -7,7 +7,7 @@
 // never the matched text (Rule 5).
 
 const { load } = require("./deps");
-const { hiddenTitles, otherPrivateStrings, tiersPrivacy } = require("./data-files");
+const { hiddenTitles, otherPrivateStrings, tiersPrivacy, zipMissing } = require("./data-files");
 const { Failure } = require("./output");
 const { CLASSES, YEAR, digitRuns, isEmptyValue, scan } = require("./privacy");
 
@@ -142,6 +142,8 @@ const checkPrivacy = ({ root, ballot, yaml, lists, keys }) => {
     }
     if (strings.some(isEmptyValue))
       failures.push(new Failure("private.yaml", "private-empty", "private_strings"));
+    const zip = zipMissing(strings);
+    if (zip) failures.push(zip);
     const runs = strings.flatMap((s) => digitRuns(s.normalize("NFKC")));
     const number = Number(ballot.split("-").pop());
     if (runs.some((run) => Number(run) === number))

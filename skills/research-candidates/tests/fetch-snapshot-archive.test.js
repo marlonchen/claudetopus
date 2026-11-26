@@ -392,6 +392,20 @@ describe("fetch-snapshot --archive sends only snapshots the page cites", () => {
   });
 });
 
+describe("fetch-snapshot --archive refuses a ballot whose private.yaml lists no ZIP", () => {
+  // Value: protects=ticket 66: the batch runs publish's ballot gate (ticket 65), so a ballot whose private.yaml lists no ZIP, which no URL refusal could catch, sends nothing and records nothing; fails_when=the batch skips the gate or the gate passes while ballot-check fails zip-missing; why_new=ticket 66; seam=cli; no_claim=ballot-check's own output (ballot-check.test.js)
+  it("sends nothing and records nothing", async () => {
+    const data = await ballotCiting();
+    const priv = `${BALLOT}/private.yaml`;
+    data.write(priv, data.read(priv).replace('  - "99999"\n', ""));
+    const result = await archive(data, BASE);
+    assert.strictEqual(result.stdout, "ballot.yaml ballot-check-failed\n");
+    assert.strictEqual(result.status, 1);
+    assert.deepStrictEqual(result.seen, []);
+    assert.strictEqual(archives(data), null);
+  });
+});
+
 describe("fetch-snapshot --archive fails soft when the Wayback Machine is down", () => {
   const TALLY = `${MONEY}/tally.md`;
   const TALLY_URL = "https://news.example.com/tally";
