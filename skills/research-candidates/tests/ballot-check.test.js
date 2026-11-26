@@ -1087,8 +1087,7 @@ describe("ballot-check: private text", () => {
 
   // Value: protects=a ZIP kept only in private_strings fails ballot.yaml and ignored_lines as the ZIP class did, and only as a standalone token; fails_when=the Private text rule skips a digits-only private_strings entry, or searches its digit run with no digit edge; why_new=ticket 25 moves the ZIP into private_strings; seam=cli; no_claim=another ballot's ZIP (ballot-check: no address stored)
   it("fails a ZIP listed in private_strings, never one inside a longer digit run", async () => {
-    const priv = (ignored) =>
-      `${PRIVATE.replace("private_strings:\n", '$&  - "99999"\n')}  - ${ignored}\n`;
+    const priv = (ignored) => `${PRIVATE}  - ${ignored}\n`;
     const leaked = setup({
       ballot: edit("jurisdiction: XX supreme court", "jurisdiction: XX 99999 court"),
       priv: priv("Return to 99999"),
@@ -1141,16 +1140,32 @@ describe("ballot-check: no address stored", () => {
     assert.ok(!data.exists(VIEW));
   });
 
-  // Value: protects=a ballot whose private.yaml lists no ZIP never passes, so every ZIP refusal cannot silently do nothing for it, and the failure prints no value; fails_when=a ballot with no five-digit private_strings entry writes ballot-view.md, or a ZIP+4 or a ZIP inside another entry stands in for the ZIP's own entry; why_new=ticket 66 (PR #65 review D1): the preferred county sample ballot prints no ZIP, so line-unaccounted no longer prompts the researcher to list it; seam=cli; no_claim=agent-bind and --brief (discovery.test.js), publish (fixture.test.js)
+  // Value: protects=a ballot whose private.yaml lists no ZIP never passes, so every ZIP refusal cannot silently do nothing for it, and the failure prints no value; fails_when=a ballot with no five-digit private_strings entry writes ballot-view.md, or a ZIP+4, a ZIP inside another entry or full-width digits stand in for the ZIP's own entry, or a ZIP the matcher refuses fails for a space around it; why_new=ticket 66 (PR #65 review D1; PR #67 review O1, O2): the preferred county sample ballot prints no ZIP, so line-unaccounted no longer prompts the researcher to list it; seam=cli; no_claim=agent-bind and --brief (discovery.test.js), publish (fixture.test.js)
   it("fails a private.yaml with no five-digit private_strings entry, naming no value, and writes no view", async () => {
-    for (const entry of ['"99999-1234"', "Exampleton 99999", '"9999"', '"999999"', null]) {
-      const zipless = PRIVATE.replace(/ {2}- "99999"\n/, entry ? `  - ${entry}\n` : "");
-      const data = setup({ priv: zipless });
+    for (const [entry, passes] of [
+      ['"99999-1234"', false],
+      ["Exampleton 99999", false],
+      ['"9999"', false],
+      ['"999999"', false],
+      ['"９９９９９"', false],
+      [null, false],
+      // Trimmed, as the matcher trims it, so the entry it refuses counts.
+      ['"99999 "', true],
+      ['" 99999"', true],
+    ]) {
+      const data = setup({
+        priv: PRIVATE.replace(/ {2}- "99999"\n/, entry ? `  - ${entry}\n` : ""),
+      });
       const result = await ballotCheck(data);
+      if (passes) {
+        assert.deepEqual(lines(result), ["ballot-view.md written"], entry);
+        assert.equal(result.status, 0);
+        continue;
+      }
       assert.deepEqual(lines(result), ["private.yaml zip-missing", "- list-zip"], entry);
       assert.equal(result.status, 1);
       assert.ok(!data.exists(VIEW));
-      assert.doesNotMatch(result.stdout, /9999|Exampleton/);
+      assert.doesNotMatch(result.stdout, /9999|９|Exampleton/);
     }
   });
 

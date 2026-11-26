@@ -7,15 +7,13 @@
 // never the matched text (Rule 5).
 
 const { load } = require("./deps");
-const { hiddenTitles, otherPrivateStrings, tiersPrivacy } = require("./data-files");
+const { hiddenTitles, otherPrivateStrings, tiersPrivacy, zipMissing } = require("./data-files");
 const { Failure } = require("./output");
 const { CLASSES, YEAR, digitRuns, isEmptyValue, scan } = require("./privacy");
 
 const TEXT_CLASSES = ["private-string"];
 // The fields discovery searches with, or the page builds anchors from.
 const SEARCHED = ["id", "jurisdiction", "search_terms"];
-// A private_strings entry that is a ZIP on its own, never a ZIP+4.
-const ZIP = /^[0-9]{5}$/;
 
 const classCodes = (text, values, classes) => [
   ...new Set(scan(text, values, classes).map((m) => CLASSES[m.class])),
@@ -144,10 +142,8 @@ const checkPrivacy = ({ root, ballot, yaml, lists, keys }) => {
     }
     if (strings.some(isEmptyValue))
       failures.push(new Failure("private.yaml", "private-empty", "private_strings"));
-    // The ZIP is the one part of the address the data repo holds (ADR 0017),
-    // listed as its own entry; without it every ZIP refusal does nothing.
-    if (!strings.some((s) => ZIP.test(s)))
-      failures.push(new Failure("private.yaml", "zip-missing", undefined, "list-zip"));
+    const zip = zipMissing(strings);
+    if (zip) failures.push(zip);
     const runs = strings.flatMap((s) => digitRuns(s.normalize("NFKC")));
     const number = Number(ballot.split("-").pop());
     if (runs.some((run) => Number(run) === number))

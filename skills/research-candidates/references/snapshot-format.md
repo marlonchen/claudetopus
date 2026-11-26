@@ -76,6 +76,7 @@ fetch-snapshot --ballot --file <election>/<ballot-id> <role> <path> <url>
 
 - `not-a-terminal`, `bad-role`, `not-confirmed` (anything but `y` or `yes`), `not-t1` (a host, on any hop, whose tier is not `T1`), `ledger-invalid` (`ballot.ledger` does not end in a newline), `manifest-invalid`; both log checks run before the prompt, so a save that would fail sends nothing.
 - A privacy class code for the URL up to its query, followed by a second line, `- ` and the hint code `use-ballot-file`: save the file into `downloads/` and use `--file`. The query may hold the address, so it is not checked for it; an API key value is refused anywhere in the URL.
+- `zip-missing`, located `private.yaml` and followed by `- list-zip`: no entry of the ballot's own `private_strings` is its ZIP, by `ballot-check`'s rule ([ballot-format.md](ballot-format.md)). It is checked before the prompt, so nothing is sent.
 - `--file`: `file-not-in-downloads` (the path, with symlinks resolved, is not under `downloads/`), `bad-file` (not a regular file; not a PDF or HTML file by both its extension and its first bytes, `%PDF-` or a tag; or an HTML file that names no charset in a `<meta>` and is not valid UTF-8). The file is read once, before the prompt, and that copy is saved.
 - PDFs: `pdftotext-missing` (install poppler), `pdf-unreadable` (also a conversion that takes over a minute), `pdf-no-text`.
 

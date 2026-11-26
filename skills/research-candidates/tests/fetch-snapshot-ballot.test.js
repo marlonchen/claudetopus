@@ -6,7 +6,14 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { describe, it } = require("node:test");
-const { BALLOT, DEFAULT_BALLOT, PDFTOTEXT_STUB, articlePage, runInTty } = require("./harness");
+const {
+  BALLOT,
+  DEFAULT_BALLOT,
+  DEFAULT_PRIVATE,
+  PDFTOTEXT_STUB,
+  articlePage,
+  runInTty,
+} = require("./harness");
 const {
   body,
   fetchSnapshot,
@@ -440,6 +447,31 @@ describe("fetch-snapshot --ballot refusals", () => {
     assert.deepEqual(lines(result), ["_ballot private-string", "- use-ballot-file"]);
     assert.deepEqual(result.seen, []);
     assertNothingWritten(data);
+  });
+
+  // Value: protects=--ballot, which runs before any ballot-check can, refuses a ballot whose private.yaml lists no ZIP before the prompt and sends nothing, as ballot-check fails it; fails_when=--ballot skips the ZIP rule, applies it after the prompt or fetch, or lets another ballot's ZIP stand in for this ballot's; why_new=PR #67 review D1 (option A): a ZIP-in-path --ballot URL was fetched and saved while the ZIP was unlisted; seam=cli; no_claim=the rule's entry shapes (ballot-check.test.js), companion URL paths already saved
+  it("refuses a private.yaml with no ZIP before asking, in both forms, naming no value", async () => {
+    const zipless = DEFAULT_PRIVATE.replace('  - "99999"\n', "");
+    const url = "https://county.example.gov/99999/pamphlet";
+    for (const [args, other] of [
+      [[BALLOT, "pamphlet", url], null],
+      [["--file", BALLOT, "pamphlet", "downloads/pamphlet.pdf", url], null],
+      [
+        [BALLOT, "pamphlet", "https://county.example.gov/pamphlet"],
+        'private_strings:\n  - "88888"\n',
+      ],
+    ]) {
+      const data = ballotRepo({ private: zipless });
+      if (other) data.write("2026-general/xx-exampleton-2/private.yaml", other);
+      if (args[0] === "--file") data.write("downloads/pamphlet.pdf", pdfBytes("Measure A\n"));
+      const result = await ballotVia(data, { [url]: { body: SAMPLE } }, args);
+      assert.deepEqual(lines(result), ["private.yaml zip-missing", "- list-zip"], args.join(" "));
+      assert.equal(result.status, 1);
+      assert.ok(!result.stdout.includes("[y/N]"), "asked before refusing");
+      assert.deepEqual(result.seen, []);
+      assert.doesNotMatch(result.stdout, /9999|8888/);
+      assertNothingWritten(data);
+    }
   });
 
   // Value: protects=another ballot's private string in the path refuses with the --file hint, and in the query passes, as this ballot's do; fails_when=the --ballot check reads this ballot's private_strings only, or checks the query; why_new=ticket 26's scope decision; seam=cli; no_claim=none
