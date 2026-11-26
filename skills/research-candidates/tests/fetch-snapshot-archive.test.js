@@ -1,7 +1,12 @@
 "use strict";
 
 const assert = require("node:assert");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { afterEach, describe, it } = require("node:test");
+const { archiveTarget } = require("../scripts/lib/archive");
+const { load } = require("../scripts/lib/deps");
 const { BALLOT } = require("./harness");
 const { fetchSnapshot, server, sha256 } = require("./fetch-snapshot-fixture");
 const {
@@ -623,5 +628,48 @@ describe("fetch-snapshot --archive never sends a URL holding a private value", (
     assert.strictEqual(result.status, 1);
     assert.deepStrictEqual(result.seen, [save(BIO_URL)]);
     assert.strictEqual(archives(data), torn);
+  });
+});
+
+describe("archiveTarget matches the URL it sends against the page's private values", () => {
+  // Seam 2 (spec, Testing Decisions): through the CLI the page scan refuses
+  // any cited URL holding a private value first, since the page links the
+  // same URL, so this second check on the URL actually sent is reached only
+  // here.
+  const VALUES = {
+    "ballot-id": ["xx-exampleton-1", "yy-otherville-2"],
+    "private-string": ["Springfield Township", "Peña Ward"],
+    key: ["s3cr3t-fec-key"],
+    title: ["Representative in Congress, 7th District"],
+  };
+  const CASES = [
+    ["https://news.example.com/xx-exampleton-1/story", "private-ballot-id"],
+    ["https://news.example.com/yy_otherville_2/story", "private-ballot-id"],
+    ["https://news.example.com/springfield-township/story", "private-string"],
+    // Recorded as punycode; only its Unicode spelling holds "Peña Ward".
+    ["https://xn--pea-ward-e3a.example.com/story", "private-string"],
+    ["https://news.example.com/s3cr3t-fec-key/story", "private-key"],
+    ["https://news.example.com/representative-in-congress-7th-district/x", "private-title"],
+  ];
+  const REL = `${MONEY}/story.md`;
+  // archiveTarget for one snapshot at `url`, saved in a temp ballot directory.
+  const target = (url) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rc-archive-"));
+    try {
+      const text = snapshot({ subject: "jane-example", url, body: "Jane Example spoke." });
+      fs.mkdirSync(path.join(dir, path.dirname(REL)), { recursive: true });
+      fs.writeFileSync(path.join(dir, REL), text);
+      return archiveTarget(dir, REL, sha256(text), VALUES, load("yaml"));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  // Value: protects=PR #66 review D2 option A: the URL actually sent is matched, in each spelling a plain fetch matches, against every class the page scan matches, and a match is refused by its class code; fails_when=the match is dropped (the review's mutation, `return target;`), a class or a spelling is skipped; why_new=PR #66 review O1; seam=lib; no_claim=the page scan, which refuses these URLs first through the CLI (the per-class tests above)
+  it("refuses a URL holding each class by its code, and passes a clean one", () => {
+    for (const [url, code] of CASES) assert.deepStrictEqual(target(url), { code }, url);
+    const clean = target(BIO_URL);
+    assert.strictEqual(clean.url.href, BIO_URL);
+    assert.strictEqual(clean.code, undefined);
   });
 });

@@ -6,29 +6,34 @@
 // Machine to capture the own `url` of each eligible snapshot the page cites,
 // and append the snapshot path and the 14-digit capture time to
 // <ballot>/archives.tsv, which publish reads for a receipt's archive link.
-// The page is judged by publish's own code first (publish.js judgePage): its
-// ballot gate, readiness, step 6.2 drop, render and step 6.3 page scan, with
-// nothing written, and while publish would refuse the page nothing is sent and
-// publish's own lines are printed. The page cites the snapshots the claims of
-// the contests it shows cite; no other snapshot is ever sent. One is eligible
-// when it is not under sources/_ballot/ (every --ballot and --ballot --file
-// save is), its subject is not _ballot, its method is html or pdf, never api,
-// its `url` has no query string and it has no `public_url`. A path
+// The page is judged by publish's own code (publish.js judgePage): its ballot
+// gate, readiness, step 6.2 drop, render and step 6.3 page scan, without
+// writing site/. It is judged once before anything is sent, and again under
+// the ballot lock just before each capture is sent, so a private string
+// listed, a file left at the project root, or any other change publish
+// refuses stops the batch at the next capture. While publish would refuse the
+// page nothing more is sent, and publish's own lines are printed after the
+// lines of the captures already made. The page cites the snapshots the claims
+// of the contests it shows cite; no other snapshot is ever sent. One is
+// eligible when it is not under sources/_ballot/ (every --ballot and --ballot
+// --file save is), its subject is not _ballot, its method is html or pdf,
+// never api, its `url` has no query string and it has no `public_url`. A path
 // archives.tsv already lists is skipped, so a rerun resumes where the last
 // one stopped.
 //
 // Each URL is read from bytes that still match the snapshot's manifest line
 // as it stood when the batch began, and is matched against the values the
-// page is scanned with (every ballot's ids and private strings, key values,
-// and the printed titles a display_title hides) before it is sent; a match is
-// never sent and prints only its class code. The URL is all that leaves: no
-// front matter, body, path or ballot id. Output is `location code` lines
-// located by snapshot path (Rule 5), never a URL. Each capture is asked for
-// under the ballot lock, with archives.tsv read again there, so two runs at
-// once never send the same snapshot twice. A Wayback outage (throttling, no
-// answer, or SERVER_ERRORS server errors in a row) stops the batch and fails
-// soft: nothing is written for it, the receipt simply has no archive link,
-// and a later run picks up from there.
+// page was just scanned with (every ballot's ids and private strings, key
+// values, and the printed titles a display_title hides) before it is sent, a
+// second check behind the page scan on the very URL sent; a match is never
+// sent and prints only its class code. The URL is all that leaves: no front
+// matter, body, path or ballot id. Output is `location code` lines located by
+// snapshot path (Rule 5), never a URL. Each capture is asked for under the
+// ballot lock, with archives.tsv read again there, so two runs at once never
+// send the same snapshot twice. A Wayback outage (throttling, no answer, or
+// SERVER_ERRORS server errors in a row) stops the batch and fails soft:
+// nothing is written for it, the receipt simply has no archive link, and a
+// later run picks up from there.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -107,6 +112,22 @@ const archiveUrl = (ballotDir, rel, hash, YAML) => {
   }
   if (!isHttp(url) || url.username || url.password || url.search || url.hash) return null;
   return { given: fields.url, url: new URL(`${url.protocol}//${url.host}${url.pathname}`) };
+};
+
+// The snapshot at `rel` as archiveUrl reads it, or { code } when its URL, in
+// each spelling a plain fetch matches, holds one of `values`, the private
+// values the page was scanned with, in the classes the page scan matches.
+// The page links the same URL, so the page scan refuses it first; this
+// checks the URL actually sent.
+const archiveTarget = (ballotDir, rel, hash, values, YAML) => {
+  const target = archiveUrl(ballotDir, rel, hash, YAML);
+  if (!target || target.code) return target;
+  const code = findRefusal(
+    [...spellings(target.url, target.given), target.url.href],
+    values,
+    PAGE_CLASSES,
+  );
+  return code ? { code } : target;
 };
 
 // Whether a 14-digit Wayback timestamp is a real UTC time no later than now.
@@ -189,32 +210,22 @@ const main = (argv) =>
     const root = process.cwd();
     const ballotDir = openBallot(root, ballot);
     const YAML = load("yaml");
-    // Under the ballot lock, so a save written now is never half seen.
-    const { cited, hashes, values } = withLock(ballotDir, (refresh) => {
-      // Only what a page publish would write cites, judged by publish's own
-      // code, which also refuses a snapshot changed since fetch-snapshot wrote
-      // it and an archives.tsv it cannot read; each URL is scanned with the
-      // values its page scan uses.
-      const page = judgePage(root, ballot, ballotDir, refresh, /* show */ false);
-      return {
-        cited: citedSnapshots(page.shown),
-        hashes: manifestHashes(ballotDir),
-        values: page.values,
-      };
+    // Only what a page publish would write cites, judged by publish's own
+    // code, which also refuses a snapshot changed since fetch-snapshot wrote
+    // it and an archives.tsv it cannot read.
+    const judge = (refresh) => judgePage(root, ballot, ballotDir, refresh, /* show */ false);
+    // Under the ballot lock, so a save written now is never half seen. A
+    // page publish refuses sends nothing at all.
+    const { cited, hashes, first } = withLock(ballotDir, (refresh) => {
+      const page = judge(refresh);
+      return { cited: citedSnapshots(page.shown), hashes: manifestHashes(ballotDir), first: page };
     });
+    // The private values of the last judgement, which each URL is matched with.
+    let values = first.values;
 
     // The snapshot at `rel`: { given, url } to send, { code } to refuse, or
     // null to skip.
-    const prepare = (rel) => {
-      const target = archiveUrl(ballotDir, rel, hashes.get(rel), YAML);
-      if (!target || target.code) return target;
-      const code = findRefusal(
-        [...spellings(target.url, target.given), target.url.href],
-        values,
-        PAGE_CLASSES,
-      );
-      return code ? { code } : target;
-    };
+    const prepare = (rel) => archiveTarget(ballotDir, rel, hashes.get(rel), values, YAML);
 
     const lines = [];
     let refused = false;
@@ -230,8 +241,16 @@ const main = (argv) =>
         const answer = await withLockAsync(ballotDir, async (refresh) => {
           // Read again here: another run may have captured it meanwhile.
           if (readArchives(ballotDir).has(rel)) return null;
+          // A snapshot that is not eligible needs no judgement.
+          if (!prepare(rel)) return null;
+          // Judged again just before the send, since the lock was let go after
+          // the last judgement: its Failures stop the batch here, and the URL
+          // is matched with the values the page was just scanned with.
+          const page = judge(refresh);
+          if (!citedSnapshots(page.shown).includes(rel)) return null;
+          values = page.values;
           const target = prepare(rel);
-          if (!target || target.code) return target?.code ?? null;
+          if (!target?.url) return target?.code ?? null;
           sent = true;
           const time = await capture(target.url);
           if (!STAMP.test(time)) return time;
@@ -262,6 +281,8 @@ const main = (argv) =>
         refused = true;
       }
     } catch (error) {
+      // publish's own lines, after the captures already made.
+      if (error instanceof Failures) throw new Failures([...lines, ...error.lines]);
       if (error instanceof Failure) throw new Failures([...lines, error.line]);
       throw error;
     }
@@ -269,4 +290,4 @@ const main = (argv) =>
     return lines.length ? lines : [`${ARCHIVES} up-to-date`];
   });
 
-module.exports = { main };
+module.exports = { archiveTarget, main };

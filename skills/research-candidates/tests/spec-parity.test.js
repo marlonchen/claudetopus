@@ -2885,7 +2885,7 @@ describe("AddABallot", () => {
   });
 
   it("SKILL.md names the file only in step 3, the agents never, and README only for history", () => {
-    // Step 3 names a leftover file once, to keep the session out of it, and a printed street line.
+    // Step 3 names a leftover file once, to keep the session out of it.
     assert.doesNotMatch(SKILL.replace(step3(), ""), /addresses\.yaml|street line/i);
     assert.strictEqual(step3().match(/addresses\.yaml/g).length, 1, "step 3 names the file twice");
     for (const file of fs.readdirSync(path.join(SKILL_DIR, "agents"))) {
@@ -2899,21 +2899,37 @@ describe("AddABallot", () => {
   });
 
   // Value: protects=ticket 65 (review O9): no ADR still says the skill stores addresses (ADR
-  //   0017); fails_when=an ADR says the skill or the data repo writes, holds, stores or keeps
-  //   addresses; why_new=the guards above read SKILL.md, the agents and the README only, so ADR
-  //   0002's two sentences went unseen; seam=spec text; no_claim=history notes about
-  //   addresses.yaml and the addresses-leftover code, which ADRs keep on purpose
+  //   0017); fails_when=an ADR says the skill or the data repo writes, holds, stores, keeps,
+  //   saves or records an address or addresses, or that one is written, held, stored, kept,
+  //   saved or recorded; why_new=the guards above read SKILL.md, the agents and the README only,
+  //   so ADR 0002's two sentences went unseen, and PR #66 review O4 found the first regex missed
+  //   the singular and the passive; seam=spec text; no_claim=history notes about addresses.yaml
+  //   and the addresses-leftover code, which ADRs keep on purpose, and "no address" or "not
+  //   stored", which say the opposite
   it("no ADR says the skill stores addresses", () => {
+    const address = String.raw`(?<!\bno\s(?:\w+\s(?:or|and)\s)?)\baddress(?:es)?\b(?![.-]\w)`;
+    const verb = "(?:writes|holds|stores|keeps|saves|records)";
+    const done = "(?:written|held|stored|kept|saved|recorded)";
+    const stores = new RegExp(
+      String.raw`\b${verb}\b[^.]*?${address}|` +
+        String.raw`${address}(?:\s(?:and|or)\s\w+(?:\s\w+)?)?\s(?:is|are|was|were|will be|can be)\s(?:(?!not\b|never\b)\w+\s)?${done}\b`,
+      "i",
+    );
+    // The review's probe sentences, and the ADRs' own denials.
+    for (const said of [
+      "Addresses are stored in the data repo.",
+      "The data repo keeps each voter address.",
+      "The skill saves addresses beside the ballot.",
+    ])
+      assert.match(said, stores);
+    for (const denied of ["The data repo stores no address.", "no street or address is stored."])
+      assert.doesNotMatch(denied, stores);
     const adrs = path.join(REPO_ROOT, "research-candidates", "docs", "adrs");
     const files = fs.readdirSync(adrs).filter((f) => f.endsWith(".md"));
     assert.ok(files.length >= 17, `only ${files.length} ADRs found`);
     for (const file of files) {
       const text = fs.readFileSync(path.join(adrs, file), "utf8");
-      assert.doesNotMatch(
-        text,
-        /\b(?:writes|holds|stores|keeps)\b[^.]*?\baddresses\b(?![.-]\w)/i,
-        `${file} says addresses are stored`,
-      );
+      assert.doesNotMatch(text, stores, `${file} says addresses are stored`);
     }
   });
 
@@ -2941,22 +2957,40 @@ describe("PhaseOneFollowups", () => {
     return fs.readFileSync(path.join(ADRS, file), "utf8");
   };
 
-  it("--archive runs publish's steps 6.1-6.3 first, in SKILL.md, Saved copies and ADR 0010", () => {
+  it("--archive runs publish's steps 6.1-6.3 first and before each capture, in SKILL.md, Saved copies and ADR 0010", () => {
     assert.match(
       SKILL,
-      /The batch first runs steps 6\.1-6\.3 itself, with nothing written, and sends nothing while they refuse the page, printing `publish`'s own lines\./,
+      /The batch runs steps 6\.1-6\.3 itself, without writing `site\/`, first and again just before each capture, and sends nothing while they refuse the page, printing `publish`'s own lines after any `archived` lines\./,
     );
     const saved = between(SNAPSHOT, "## Saved copies");
     assert.match(
       saved,
-      /It first runs `publish`'s own code for SKILL\.md steps 6\.1-6\.3, with nothing written/,
+      /It first runs `publish`'s own code for SKILL\.md steps 6\.1-6\.3, without writing `site\/`/,
     );
     assert.match(
       saved,
-      /While `publish` would refuse the page, it sends nothing and prints `publish`'s own lines\./,
+      /It runs that code again under the ballot lock just before each capture is sent/,
+    );
+    assert.match(
+      saved,
+      /While `publish` would refuse the page, it sends nothing and prints `publish`'s own lines, after the `archived` lines of the captures already made\./,
+    );
+    assert.match(saved, /one leaking URL stops the whole batch/);
+    assert.match(
+      between(SNAPSHOT, "## Command line", "## Saved copies"),
+      /one leaking URL stops the whole batch/,
     );
     assert.doesNotMatch(saved, /judged as `publish` judges it/);
-    assert.match(adr("0010-"), /sends one only while `publish`'s own gates pass the page/);
+    assert.match(
+      adr("0010-"),
+      /sends one only while `publish`'s own gates pass the page, run without writing `site\/` \([^)]*\) before the batch and again just before each capture/,
+    );
+    for (const [file, text] of [
+      ["SKILL.md", SKILL],
+      ["snapshot-format.md", SNAPSHOT],
+      ["ADR 0010", adr("0010-")],
+    ])
+      assert.doesNotMatch(text, /with nothing written/, `${file} says nothing is written`);
   });
 
   it("the leftover refusal keeps the file from lingering, and names what still runs", () => {
@@ -2968,7 +3002,7 @@ describe("PhaseOneFollowups", () => {
     );
     assert.match(
       BALLOT,
-      /The commands that do not run `ballot-check` still run beside it: a plain fetch and `--searched`, by `fetch-snapshot` or by `discovery-fetch` for a contest bound before, `check`, `coverage` and `review-list`\./,
+      /The commands that do not run `ballot-check` still run beside it: a plain fetch and `--searched`, by `fetch-snapshot` or by `discovery-fetch` for a contest bound before, `fetch-snapshot --keep-short`, `--ballot` and `--ballot --file`, `check`, `coverage` and `review-list`\./,
     );
   });
 

@@ -106,14 +106,15 @@ const refusalLines = (html, { line, code, spans }, show) => {
   return [`${at} ${code}`, ...new Set(shown)];
 };
 
-// The gates, the scan and the page, with nothing written: refuses with
+// The gates, the scan and the page, without writing site/: refuses with
 // Failures, or returns the drop and contest lines, the page, ballot.yaml as
 // read (`data`), publish.yaml (`config`), `shown`, each contest's readiness
 // as the page shows it, and the private `values` it was scanned with.
-// fetch-snapshot --archive runs it too, so it sends nothing for a page
-// publish would refuse. `refresh` keeps the ballot lock fresh; `show` adds
-// each page refusal's matched text and the paths an installed-skill refusal
-// locates by area.
+// ballot-check, inside the ballot gate, still rewrites ballot-view.md.
+// fetch-snapshot --archive runs it too, before the batch and again before
+// each capture, so it sends nothing for a page publish would refuse.
+// `refresh` keeps the ballot lock fresh; `show` adds each page refusal's
+// matched text and the paths an installed-skill refusal locates by area.
 const judgePage = (root, ballot, ballotDir, refresh, show) => {
   // A site/ publish could not write to refuses here too.
   siteDir(ballotDir);

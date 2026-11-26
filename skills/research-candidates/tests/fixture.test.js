@@ -561,13 +561,20 @@ describe("fixture ballot: --archive runs publish's gates first", () => {
 
   // Run the batch against a local Wayback that captures every fixture source,
   // so nothing leaves this machine; `saves` are the captures it was asked for.
-  const archive = async (data) => {
+  // `during` runs once, as the first capture is asked for.
+  const archive = async (data, during = () => {}) => {
+    let first = true;
+    const once = () => {
+      if (first) during();
+      first = false;
+    };
     const routes = Object.fromEntries(
       SOURCES.map(([, , , url]) => [
         `https://web.archive.org/save/${bare(url)}`,
         {
           status: 302,
           headers: { location: `https://web.archive.org/web/${STAMP}/${bare(url)}` },
+          during: once,
         },
       ]),
     );
@@ -629,7 +636,7 @@ describe("fixture ballot: --archive runs publish's gates first", () => {
   ];
 
   for (const [name, plant, refused] of REFUSED) {
-    // Value: protects=ticket 65 (review M1): --archive runs publish's own ballot gate, readiness, 6.2 drop, render and 6.3 page scan before it sends anything, so a page publish refuses gets no public, permanent capture, and the batch prints publish's own lines for it; fails_when=the batch judges the page by readiness and the 6.2 drop alone, as it did, or by a copy of publish's gates that misses one; why_new=ticket 65; seam=cli; no_claim=a change made after the batch has judged the page
+    // Value: protects=ticket 65 (review M1): --archive runs publish's own ballot gate, readiness, 6.2 drop, render and 6.3 page scan before it sends anything, so a page publish refuses gets no public, permanent capture, and the batch prints publish's own lines for it; fails_when=the batch judges the page by readiness and the 6.2 drop alone, as it did, or by a copy of publish's gates that misses one; why_new=ticket 65; seam=cli; no_claim=a change made after the first judgement, which each capture's own judgement covers (the mid-batch tests below)
     it(`sends nothing beside ${name}, printing publish's refusal`, async () => {
       const data = copy();
       await plant(data);
@@ -641,6 +648,37 @@ describe("fixture ballot: --archive runs publish's gates first", () => {
       assert.ok(!data.exists(SITE));
       const published = await run(data, "publish", [BALLOT]);
       assert.deepStrictEqual(lines(published), refused);
+    });
+  }
+
+  // Each change the PR #66 review made while the first capture was in flight
+  // (M1): its name, and how it is made in the copy.
+  const MIDBATCH = [
+    [
+      "a private string that a later cited URL holds is listed",
+      (data) => {
+        const file = `${BALLOT}/private.yaml`;
+        // The path of question-1's text, the second cited URL: /questions/library-levy.
+        data.write(
+          file,
+          data.read(file).replace("private_strings:\n", "private_strings:\n  - questions\n"),
+        );
+      },
+    ],
+    ["a leftover addresses.yaml appears", leftover],
+  ];
+
+  for (const [name, change] of MIDBATCH) {
+    // Value: protects=PR #66 review M1 (D1 option A): the batch judges the page again under the ballot lock just before each capture, so a change publish refuses, made while an earlier capture is in flight, stops the batch before the next one is sent, and it prints publish's own lines after the archived ones; fails_when=the page is judged once, at the batch's start, or the judgement leaves the capture's lock; why_new=PR #66 review M1; seam=cli; no_claim=a change made while a capture is in flight, which that capture has already sent
+    it(`stops before the next capture when ${name} mid-batch`, async () => {
+      const data = copy();
+      const result = await archive(data, () => change(data));
+      const published = await run(data, "publish", [BALLOT]);
+      assert.strictEqual(published.status, 1, published.stdout);
+      assert.deepStrictEqual(lines(result), [`${CITED[0]} archived`, ...lines(published)]);
+      assert.strictEqual(result.status, 1);
+      assert.strictEqual(result.saves.length, 1);
+      assert.strictEqual(data.read(`${BALLOT}/archives.tsv`), `${CITED[0]}\t${STAMP}\n`);
     });
   }
 
